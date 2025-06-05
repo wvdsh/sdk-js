@@ -6,7 +6,6 @@ interface WavedashConfig {
 interface WavedashUser {
   id: string;
   username: string;
-  email: string;
 }
 
 interface UnityInstance {
@@ -34,7 +33,6 @@ class WavedashSDK {
   // Come up with a general solution or move this into a separate wavedash/unity package.
   setUnityInstance(unityInstance: UnityInstance): void {
     // This is called in the BROWSER in a custom loading script.
-    console.log('[WavedashJS] Setting Unity instance:', unityInstance);
     this.unityInstance = unityInstance;
   }
 
@@ -42,7 +40,6 @@ class WavedashSDK {
   // Come up with a general solution or move this into a separate wavedash/unity package.
   registerUnityCallbackReceiver(unityCallbackGameObjectName: string): void {
     // This is called in UNITY when the Unity Wavedash SDK is initialized.
-    console.log('[WavedashJS] Setting Unity Callback Receiver:', unityCallbackGameObjectName);
     this.unityCallbackReceiver = unityCallbackGameObjectName;
   }
 
@@ -71,7 +68,6 @@ class WavedashSDK {
 
   notifyLobbyJoined(lobbyData: object): void {
     if (this.unityInstance && this.unityCallbackReceiver) {
-      console.log('[WavedashJS] Notifying Unity that lobby was joined:', lobbyData);
       this.unityInstance.SendMessage(
         this.unityCallbackReceiver,
         'OnLobbyJoinedCallback',
