@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Wavedash SDK Test</title>
+</head>
+<body>
+  <h1>Wavedash SDK Test</h1>
+  <p>Open the browser console to see the SDK in action.</p>
+  
+  <script src="dist/index.js"></script>
+  <script>
+    // Test the SDK
+    async function testSDK() {
+      console.log('Testing Wavedash SDK...');
+      
+      // Check initial state
+      console.log('Is ready before init:', window.WavedashJS.isReady());
+      
+      // Initialize SDK
+      await window.WavedashJS.init({ 
+        gameId: 'test-game', 
+        debug: true 
+      });
+      
+      console.log('Is ready after init:', window.WavedashJS.isReady());
+      
+      // Test without user
+      console.log('User (no user):', window.WavedashJS.getUser());
+      
+      // Simulate user data
+      window.wavedashUser = {
+        id: '123',
+        username: 'testuser',
+        email: 'test@example.com'
+      };
+      
+      // Test with user
+      console.log('User (with data):', window.WavedashJS.getUser());
+    }
+    
+    testSDK();
+  </script>
+</body>
+</html> 

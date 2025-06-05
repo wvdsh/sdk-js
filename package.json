@@ -1,0 +1,14 @@
+{
+  "name": "wavedash-sdk",
+  "version": "0.1.0",
+  "description": "Wavedash JavaScript SDK",
+  "main": "dist/wavedash-sdk.js",
+  "types": "dist/wavedash-sdk.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3"
+  }
+} 
