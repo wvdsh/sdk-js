@@ -18,7 +18,7 @@ class WavedashSDK {
   private initialized: boolean = false;
   private config: WavedashConfig | null = null;
   private unityInstance: UnityInstance | null = null;
-  private unityCallbackGameObjectName: string | null = null;
+  private unityCallbackReceiver: string | null = null;
   private wavedashUser: WavedashUser | null = null;
 
   async init(config: WavedashConfig): Promise<void> {
@@ -32,10 +32,18 @@ class WavedashSDK {
 
   // TODO: This is a Unity-specific solution for JS triggering callbacks in the game.
   // Come up with a general solution or move this into a separate wavedash/unity package.
-  setUnityInstance(unityInstance: UnityInstance, unityCallbackGameObjectName: string): void {
-    console.log('[WavedashJS] Setting Unity instance:', unityInstance, unityCallbackGameObjectName);
+  setUnityInstance(unityInstance: UnityInstance): void {
+    // This is called in the BROWSER in a custom loading script.
+    console.log('[WavedashJS] Setting Unity instance:', unityInstance);
     this.unityInstance = unityInstance;
-    this.unityCallbackGameObjectName = unityCallbackGameObjectName;
+  }
+
+  // TODO: This is a Unity-specific solution for JS triggering callbacks in the game.
+  // Come up with a general solution or move this into a separate wavedash/unity package.
+  registerUnityCallbackReceiver(unityCallbackGameObjectName: string): void {
+    // This is called in UNITY when the Unity Wavedash SDK is initialized.
+    console.log('[WavedashJS] Setting Unity Callback Receiver:', unityCallbackGameObjectName);
+    this.unityCallbackReceiver = unityCallbackGameObjectName;
   }
 
   getUser(): WavedashUser | null {
@@ -62,10 +70,10 @@ class WavedashSDK {
   }
 
   notifyLobbyJoined(lobbyData: object): void {
-    if (this.unityInstance && this.unityCallbackGameObjectName) {
+    if (this.unityInstance && this.unityCallbackReceiver) {
       console.log('[WavedashJS] Notifying Unity that lobby was joined:', lobbyData);
       this.unityInstance.SendMessage(
-        this.unityCallbackGameObjectName,
+        this.unityCallbackReceiver,
         'OnLobbyJoinedCallback',
         JSON.stringify(lobbyData)
       );
