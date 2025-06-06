@@ -27,6 +27,7 @@ class WavedashSDK {
     if (this.config.debug) {
       console.log('[WavedashJS] Initialized with config:', this.config);
     }
+    this.notifyReady();
   }
 
   // TODO: This is a Unity-specific solution for JS triggering callbacks in the game.
@@ -67,7 +68,7 @@ class WavedashSDK {
   }
 
   notifyLobbyJoined(lobbyData: object): void {
-    if (this.unityInstance && this.unityCallbackReceiver) {
+    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
       this.unityInstance.SendMessage(
         this.unityCallbackReceiver,
         'OnLobbyJoinedCallback',
@@ -75,6 +76,25 @@ class WavedashSDK {
       );
     } else {
       console.warn('[WavedashJS] Unity instance not set. Call setUnityInstance() before calling notifyLobbyJoined().');
+    }
+  }
+
+  notifyLobbyLeft(lobbyData: object): void {
+    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
+      this.unityInstance.SendMessage(
+        this.unityCallbackReceiver,
+        'OnLobbyLeftCallback',
+        JSON.stringify(lobbyData)
+      );
+    }
+  }
+
+  notifyReady(): void {
+    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
+      this.unityInstance.SendMessage(
+        this.unityCallbackReceiver,
+        'OnReadyCallback'
+      );
     }
   }
 }

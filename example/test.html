@@ -32,6 +32,17 @@
         id: '123',
         username: 'testuser',
       };
+
+      // Example event
+      window.WavedashJS.notifyLobbyJoined({
+        id: "123",
+        name: "Battle Arena",
+        settings: {
+          gameMode: "deathmatch",
+          timeLimit: 300
+        },
+        players: ["player1", "player2"]
+      });
       
       // Test with user
       console.log('User (with data):', window.WavedashJS.getUser());
