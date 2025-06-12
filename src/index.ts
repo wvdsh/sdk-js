@@ -20,14 +20,13 @@ class WavedashSDK {
   private unityCallbackReceiver: string | null = null;
   private wavedashUser: WavedashUser | null = null;
 
-  async init(config: WavedashConfig): Promise<void> {
+  init(config: WavedashConfig): void {
     this.config = config;
     this.initialized = true;
     
     if (this.config.debug) {
       console.log('[WavedashJS] Initialized with config:', this.config);
     }
-    this.notifyReady();
   }
 
   // TODO: This is a Unity-specific solution for JS triggering callbacks in the game.
@@ -85,15 +84,6 @@ class WavedashSDK {
         this.unityCallbackReceiver,
         'OnLobbyLeftCallback',
         JSON.stringify(lobbyData)
-      );
-    }
-  }
-
-  notifyReady(): void {
-    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
-      this.unityInstance.SendMessage(
-        this.unityCallbackReceiver,
-        'OnReadyCallback'
       );
     }
   }
