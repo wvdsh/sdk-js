@@ -1,14 +1,27 @@
 {
-  "name": "wavedash-sdk",
+  "name": "@wavedash/js",
   "version": "0.1.0",
   "description": "Wavedash JavaScript SDK",
-  "main": "dist/wavedash-sdk.js",
-  "types": "dist/wavedash-sdk.d.ts",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js"
+    }
+  },
   "scripts": {
-    "build": "tsc",
-    "dev": "tsc --watch"
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "prepare": "npm run build"
   },
   "devDependencies": {
+    "tsup": "^8.0.0",
     "typescript": "^5.8.3"
+  },
+  "peerDependencies": {
+    "convex": "^1.24.2"
   }
-} 
+}

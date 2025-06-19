@@ -1,3 +1,7 @@
+import { ConvexClient } from "convex/browser";
+import { api } from "./convex_generated_api";
+import { type GenericId as Id } from "convex/values";
+
 interface WavedashConfig {
   gameId: string;
   debug?: boolean;
@@ -19,6 +23,18 @@ class WavedashSDK {
   private unityInstance: UnityInstance | null = null;
   private unityCallbackReceiver: string | null = null;
   private wavedashUser: WavedashUser | null = null;
+  private convexClient: ConvexClient;
+  private gameSessionToken: string;
+  
+  constructor(convexClient: ConvexClient, gameSessionToken: string, wavedashUser: WavedashUser) {
+    this.convexClient = convexClient;
+    this.gameSessionToken = gameSessionToken;
+    this.wavedashUser = wavedashUser;
+  }
+
+  // ====================
+  // Game -> JS functions
+  // ====================
 
   init(config: WavedashConfig): void {
     this.config = config;
@@ -53,18 +69,76 @@ class WavedashSDK {
       return this.wavedashUser;
     }
 
-    // Check for user data on window
-    if ((window as any).wavedashUser) {
-      this.wavedashUser = (window as any).wavedashUser;
-      return this.wavedashUser;
-    }
-
     return null;
   }
 
   isReady(): boolean {
     return this.initialized;
   }
+
+  async createLobby(): Promise<any> {
+    if (!this.initialized) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+
+    try {
+      const result = await this.convexClient.mutation(
+        api.gameLobby.createAndJoinLobby,
+        {
+          gameSessionToken: this.gameSessionToken,
+        }
+      );
+
+      if (this.config?.debug) {
+        console.log('[WavedashJS] Lobby created:', result);
+      }
+
+      return result;
+    } catch (error) {
+      console.error('[WavedashJS] Failed to create lobby:', error);
+      throw error;
+    }
+  }
+
+  async joinLobby(lobbyId: string): Promise<boolean> {
+    if (!this.initialized) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    
+    try {
+      const success = await this.convexClient.mutation(
+        api.gameLobby.joinLobby,
+        {
+          gameSessionToken: this.gameSessionToken,
+          lobbyId: lobbyId as Id<"lobbies">
+        }
+      );
+
+      if (this.config?.debug) {
+        console.log('[WavedashJS] Lobby joined:', lobbyId,success);
+      }
+      if (success) {
+        this.notifyLobbyJoined({
+          lobbyId: lobbyId,
+          success: success
+        });
+      } else {
+        // TODO: Set up error callbacks
+        console.error('[WavedashJS] Failed to join lobby:', lobbyId);
+      }
+
+      return success;
+    } catch (error) {
+      console.error('[WavedashJS] Failed to join lobby:', error);
+      throw error;
+    }
+  }
+
+  // ============================
+  // JS -> Game Callback Triggers
+  // ============================
 
   notifyLobbyJoined(lobbyData: object): void {
     if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
@@ -87,9 +161,49 @@ class WavedashSDK {
       );
     }
   }
+
+  notifyLobbyCreated(lobbyData: object): void {
+    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
+      this.unityInstance.SendMessage(
+        this.unityCallbackReceiver,
+        'OnLobbyCreatedCallback',
+        JSON.stringify(lobbyData)
+      );
+    }
+  }
+
+  notifyLobbyMessage(payload: object): void {
+    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
+      this.unityInstance.SendMessage(
+        this.unityCallbackReceiver,
+        'OnLobbyMessageCallback',
+        JSON.stringify(payload)
+      );
+    }
+  }
 }
 
 // Add to window
-if (typeof window !== 'undefined') {
-  (window as any).WavedashJS = new WavedashSDK();
-} 
+// if (typeof window !== 'undefined') {
+//   (window as any).WavedashJS = new WavedashSDK();
+// }
+
+// Export for the website to use
+export { WavedashSDK };
+
+// Type-safe initialization helper for the website
+export function setupWavedashSDK<API extends Record<string, any>>(
+  convexClient: ConvexClient,
+  convexAPI: API,
+  gameSessionToken: string,
+  wavedashUser: WavedashUser,
+): WavedashSDK<API> {
+  const sdk = new WavedashSDK(convexClient, convexAPI, gameSessionToken, wavedashUser);
+  
+  if (typeof window !== 'undefined') {
+    (window as any).WavedashJS = sdk;
+    console.log('[WavedashJS] SDK attached to window.WavedashJS');
+  }
+  
+  return sdk;
+}
