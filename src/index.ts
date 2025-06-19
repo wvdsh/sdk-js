@@ -192,13 +192,12 @@ class WavedashSDK {
 export { WavedashSDK };
 
 // Type-safe initialization helper for the website
-export function setupWavedashSDK<API extends Record<string, any>>(
+export function setupWavedashSDK(
   convexClient: ConvexClient,
-  convexAPI: API,
   gameSessionToken: string,
   wavedashUser: WavedashUser,
-): WavedashSDK<API> {
-  const sdk = new WavedashSDK(convexClient, convexAPI, gameSessionToken, wavedashUser);
+): WavedashSDK {
+  const sdk = new WavedashSDK(convexClient, gameSessionToken, wavedashUser);
   
   if (typeof window !== 'undefined') {
     (window as any).WavedashJS = sdk;
