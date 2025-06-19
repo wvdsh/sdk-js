@@ -76,14 +76,14 @@ class WavedashSDK {
     return this.initialized;
   }
 
-  async createLobby(): Promise<any> {
+  async createAndJoinLobby(): Promise<Id<"lobbies">> {
     if (!this.initialized) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
 
     try {
-      const result = await this.convexClient.mutation(
+      const lobbyId = await this.convexClient.mutation(
         api.gameLobby.createAndJoinLobby,
         {
           gameSessionToken: this.gameSessionToken,
@@ -91,10 +91,18 @@ class WavedashSDK {
       );
 
       if (this.config?.debug) {
-        console.log('[WavedashJS] Lobby created:', result);
+        console.log('[WavedashJS] Lobby created:', lobbyId);
+      }
+      if (lobbyId) {
+        this.notifyLobbyJoined({
+          id: lobbyId,
+        });
+      } else {
+        // TODO: Set up error callbacks
+        console.error('[WavedashJS] Failed to create lobby');
       }
 
-      return result;
+      return lobbyId;
     } catch (error) {
       console.error('[WavedashJS] Failed to create lobby:', error);
       throw error;
@@ -157,16 +165,6 @@ class WavedashSDK {
       this.unityInstance.SendMessage(
         this.unityCallbackReceiver,
         'OnLobbyLeftCallback',
-        JSON.stringify(lobbyData)
-      );
-    }
-  }
-
-  notifyLobbyCreated(lobbyData: object): void {
-    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
-      this.unityInstance.SendMessage(
-        this.unityCallbackReceiver,
-        'OnLobbyCreatedCallback',
         JSON.stringify(lobbyData)
       );
     }
