@@ -1,5 +1,5 @@
 import { ConvexClient } from "convex/browser";
-import { api } from "./convex_generated_api";
+import { api } from "./convex_api";
 import { type GenericId as Id } from "convex/values";
 
 interface WavedashConfig {
