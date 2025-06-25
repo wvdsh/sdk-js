@@ -12,7 +12,7 @@ interface WavedashUser {
   username: string;
 }
 
-interface UnityInstance {
+interface EngineInstance {
   SendMessage(objectName: string, methodName: string, value?: string | number): void;
   // ... other internal properties and methods
 }
@@ -20,8 +20,8 @@ interface UnityInstance {
 class WavedashSDK {
   private initialized: boolean = false;
   private config: WavedashConfig | null = null;
-  private unityInstance: UnityInstance | null = null;
-  private unityCallbackReceiver: string | null = null;
+  private engineInstance: EngineInstance | null = null;
+  private engineCallbackReceiver: string = "WavedashCallbackReceiver";
   private wavedashUser: WavedashUser | null = null;
   private convexClient: ConvexClient;
   private gameSessionToken: string;
@@ -37,6 +37,20 @@ class WavedashSDK {
   // ====================
 
   init(config: WavedashConfig): void {
+    if (!config) {
+      console.error('[WavedashJS] Initialized with empty config');
+      return;
+    }
+    if (typeof config === 'string') {
+      try {
+        config = JSON.parse(config);
+      }
+      catch (e) {
+        console.error('[WavedashJS] Initialized with invalid config:', e);
+        return;
+      }
+    }
+  
     this.config = config;
     this.initialized = true;
     
@@ -45,20 +59,13 @@ class WavedashSDK {
     }
   }
 
-  // TODO: This is a Unity-specific solution for JS triggering callbacks in the game.
-  // Come up with a general solution or move this into a separate wavedash/unity package.
-  setUnityInstance(unityInstance: UnityInstance): void {
-    // This is called in the BROWSER in a custom loading script.
-    this.unityInstance = unityInstance;
+  setEngineInstance(engineInstance: EngineInstance): void {
+    // In the Unity case, our custom HTML page sets this once the unity instance is ready.
+    // In the Godot case, the Godot plugin sets this value itself.
+    this.engineInstance = engineInstance;
   }
 
-  // TODO: This is a Unity-specific solution for JS triggering callbacks in the game.
-  // Come up with a general solution or move this into a separate wavedash/unity package.
-  registerUnityCallbackReceiver(unityCallbackGameObjectName: string): void {
-    // This is called in UNITY when the Unity Wavedash SDK is initialized.
-    this.unityCallbackReceiver = unityCallbackGameObjectName;
-  }
-
+  // TODO this should return a JSON string
   getUser(): WavedashUser | null {
     if (!this.initialized) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
@@ -76,6 +83,7 @@ class WavedashSDK {
     return this.initialized;
   }
 
+  // TODO Resolve promises here rather than manually calling notifyLobbyJoined
   async createLobby(): Promise<Id<"lobbies">> {
     if (!this.initialized) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
@@ -147,10 +155,11 @@ class WavedashSDK {
   // JS -> Game Callback Triggers
   // ============================
 
+  // TODO these should all be handled by the Unity JS Lib
   notifyLobbyJoined(lobbyData: object): void {
-    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
-      this.unityInstance.SendMessage(
-        this.unityCallbackReceiver,
+    if (this.initialized && this.engineInstance && this.engineCallbackReceiver) {
+      this.engineInstance.SendMessage(
+        this.engineCallbackReceiver,
         'OnLobbyJoinedCallback',
         JSON.stringify(lobbyData)
       );
@@ -160,9 +169,9 @@ class WavedashSDK {
   }
 
   notifyLobbyLeft(lobbyData: object): void {
-    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
-      this.unityInstance.SendMessage(
-        this.unityCallbackReceiver,
+    if (this.initialized && this.engineInstance && this.engineCallbackReceiver) {
+      this.engineInstance.SendMessage(
+        this.engineCallbackReceiver,
         'OnLobbyLeftCallback',
         JSON.stringify(lobbyData)
       );
@@ -170,9 +179,9 @@ class WavedashSDK {
   }
 
   notifyLobbyMessage(payload: object): void {
-    if (this.initialized && this.unityInstance && this.unityCallbackReceiver) {
-      this.unityInstance.SendMessage(
-        this.unityCallbackReceiver,
+    if (this.initialized && this.engineInstance && this.engineCallbackReceiver) {
+      this.engineInstance.SendMessage(
+        this.engineCallbackReceiver,
         'OnLobbyMessageCallback',
         JSON.stringify(payload)
       );
