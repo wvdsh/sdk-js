@@ -116,7 +116,7 @@ class WavedashSDK {
     }
   }
 
-  async joinLobby(lobbyId: string): Promise<boolean> {
+  async joinLobby(lobbyId: string): Promise<string> {
     if (!this.initialized) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
@@ -134,7 +134,10 @@ class WavedashSDK {
       if (this.config?.debug) {
         console.log('[WavedashJS] Lobby joined:', lobbyId, success);
       }
-      return success;
+      return JSON.stringify({
+        success: success,
+        id: lobbyId
+      });
     } catch (error) {
       console.error('[WavedashJS] Failed to join lobby:', error);
       throw error;
