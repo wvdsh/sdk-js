@@ -22,7 +22,7 @@ class WavedashSDK {
   private config: WavedashConfig | null = null;
   private engineInstance: EngineInstance | null = null;
   private engineCallbackReceiver: string = "WavedashCallbackReceiver";
-  private wavedashUser: WavedashUser | null = null;
+  private wavedashUser: WavedashUser;
   private convexClient: ConvexClient;
   private gameSessionToken: string;
   
@@ -71,18 +71,13 @@ class WavedashSDK {
       return null;
     }
 
-    if (this.wavedashUser) {
-      return JSON.stringify(this.wavedashUser);
-    }
-
-    return null;
+    return JSON.stringify(this.wavedashUser);
   }
 
   isReady(): boolean {
-    return this.initialized;
+    return this.initialized && this.engineInstance !== null && this.engineInstance !== undefined;
   }
 
-  // TODO Resolve promises here rather than manually calling notifyLobbyJoined
   async createLobby(): Promise<Id<"lobbies">> {
     if (!this.initialized) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
@@ -148,10 +143,9 @@ class WavedashSDK {
   // JS -> Game Event Broadcasting
   // =============================
 
-  // TODO these should all be handled by the Unity JS Lib
   notifyLobbyJoined(lobbyData: object): void {
-    if (this.initialized && this.engineInstance) {
-      this.engineInstance.SendMessage(
+    if (this.isReady()) {
+      this.engineInstance!.SendMessage(
         this.engineCallbackReceiver,
         'LobbyJoined',
         JSON.stringify(lobbyData)
@@ -162,8 +156,8 @@ class WavedashSDK {
   }
 
   notifyLobbyLeft(lobbyData: object): void {
-    if (this.initialized && this.engineInstance) {
-      this.engineInstance.SendMessage(
+    if (this.isReady()) {
+      this.engineInstance!.SendMessage(
         this.engineCallbackReceiver,
         'LobbyLeft',
         JSON.stringify(lobbyData)
@@ -174,8 +168,8 @@ class WavedashSDK {
   }
 
   notifyLobbyMessage(payload: object): void {
-    if (this.initialized && this.engineInstance) {
-      this.engineInstance.SendMessage(
+    if (this.isReady()) {
+      this.engineInstance!.SendMessage(
         this.engineCallbackReceiver,
         'LobbyMessage',
         JSON.stringify(payload)
