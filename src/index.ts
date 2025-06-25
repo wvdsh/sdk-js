@@ -25,6 +25,7 @@ class WavedashSDK {
   private wavedashUser: WavedashUser;
   private convexClient: ConvexClient;
   private gameSessionToken: string;
+  private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
   
   constructor(convexClient: ConvexClient, gameSessionToken: string, wavedashUser: WavedashUser) {
     this.convexClient = convexClient;
@@ -78,6 +79,47 @@ class WavedashSDK {
     return this.initialized && this.engineInstance !== null && this.engineInstance !== undefined;
   }
 
+  unsubscribeFromLobbyMessages(): void {
+    if (this.lobbyMessagesUnsubscribeFn) {
+      this.lobbyMessagesUnsubscribeFn();
+      this.lobbyMessagesUnsubscribeFn = null;
+      if (this.config?.debug) {
+        console.log('[WavedashJS] Unsubscribed from lobby messages');
+      }
+    }
+  }
+
+  subscribeToLobbyMessages(lobbyId: string): void {
+    // Unsubscribe from previous lobby if any
+    this.unsubscribeFromLobbyMessages();
+    
+    // Subscribe to new lobby
+    const { getCurrentValue, unsubscribe } = this.convexClient.onUpdate(
+      api.gameLobby.lobbyMessages, 
+      {
+        gameSessionToken: this.gameSessionToken,
+        lobbyId: lobbyId as Id<"lobbies">
+      }, 
+      (messages) => {
+        console.log('[WavedashJS] Lobby messages updated:', messages);
+        // Notify the game about new messages
+        if (messages && messages.length > 0) {
+          this.notifyLobbyMessage({
+            id: lobbyId,
+            messages: messages
+          });
+        }
+      }
+    );
+    
+    // Store the unsubscribe function
+    this.lobbyMessagesUnsubscribeFn = unsubscribe;
+    
+    if (this.config?.debug) {
+      console.log('[WavedashJS] Subscribed to lobby messages for:', lobbyId);
+    }
+  }
+
   async createLobby(): Promise<Id<"lobbies">> {
     if (!this.initialized) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
@@ -95,15 +137,8 @@ class WavedashSDK {
       if (this.config?.debug) {
         console.log('[WavedashJS] Lobby created:', lobbyId);
       }
-      if (lobbyId) {
-        this.notifyLobbyJoined({
-          id: lobbyId
-        });
-      } else {
-        // TODO: Set up error callbacks
-        console.error('[WavedashJS] Failed to create lobby');
-      }
-
+      // Subscribe to lobby messages
+      this.subscribeToLobbyMessages(lobbyId);
       return lobbyId;
     } catch (error) {
       console.error('[WavedashJS] Failed to create lobby:', error);
@@ -129,12 +164,62 @@ class WavedashSDK {
       if (this.config?.debug) {
         console.log('[WavedashJS] Lobby joined:', lobbyId, success);
       }
+      // Subscribe to lobby messages
+      this.subscribeToLobbyMessages(lobbyId);
       return JSON.stringify({
         success: success,
         id: lobbyId
       });
     } catch (error) {
       console.error('[WavedashJS] Failed to join lobby:', error);
+      throw error;
+    }
+  }
+
+  async leaveLobby(lobbyId: string): Promise<void> {
+    if (!this.initialized) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    
+    try {
+      await this.convexClient.mutation(
+        api.gameLobby.leaveLobby,
+        {
+          gameSessionToken: this.gameSessionToken,
+          lobbyId: lobbyId as Id<"lobbies">
+        }
+      );
+      
+      // Clean up subscription
+      this.unsubscribeFromLobbyMessages();
+      
+      if (this.config?.debug) {
+        console.log('[WavedashJS] Left lobby:', lobbyId);
+      }
+    } catch (error) {
+      console.error('[WavedashJS] Failed to leave lobby:', error);
+      throw error;
+    }
+  }
+
+  async sendLobbyMessage(lobbyId: string, message: string): Promise<void> {
+    if (!this.initialized) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    
+    try {
+      await this.convexClient.mutation(
+        api.gameLobby.sendMessage,
+        {
+          gameSessionToken: this.gameSessionToken,
+          lobbyId: lobbyId as Id<"lobbies">,
+          message: message
+        }
+      );
+    } catch (error) {
+      console.error('[WavedashJS] Failed to send lobby message:', error);
       throw error;
     }
   }
