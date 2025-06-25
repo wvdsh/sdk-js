@@ -135,15 +135,6 @@ class WavedashSDK {
       if (this.config?.debug) {
         console.log('[WavedashJS] Lobby joined:', lobbyId, success);
       }
-      if (success) {
-        this.notifyLobbyJoined({
-          id: lobbyId
-        });
-      } else {
-        // TODO: Set up error callbacks
-        console.error('[WavedashJS] Failed to join lobby:', lobbyId);
-      }
-
       return success;
     } catch (error) {
       console.error('[WavedashJS] Failed to join lobby:', error);
@@ -151,40 +142,44 @@ class WavedashSDK {
     }
   }
 
-  // ============================
-  // JS -> Game Callback Triggers
-  // ============================
+  // =============================
+  // JS -> Game Event Broadcasting
+  // =============================
 
   // TODO these should all be handled by the Unity JS Lib
   notifyLobbyJoined(lobbyData: object): void {
-    if (this.initialized && this.engineInstance && this.engineCallbackReceiver) {
+    if (this.initialized && this.engineInstance) {
       this.engineInstance.SendMessage(
         this.engineCallbackReceiver,
-        'OnLobbyJoinedCallback',
+        'LobbyJoined',
         JSON.stringify(lobbyData)
       );
-    } else {
-      console.warn('[WavedashJS] Unity instance not set. Call setUnityInstance() before calling notifyLobbyJoined().');
+    } else if (this.config?.debug) {
+      console.warn('[WavedashJS] Engine instance not set. Call setEngineInstance() before calling notifyLobbyJoined().');
     }
   }
 
   notifyLobbyLeft(lobbyData: object): void {
-    if (this.initialized && this.engineInstance && this.engineCallbackReceiver) {
+    if (this.initialized && this.engineInstance) {
       this.engineInstance.SendMessage(
         this.engineCallbackReceiver,
-        'OnLobbyLeftCallback',
+        'LobbyLeft',
         JSON.stringify(lobbyData)
       );
+    } else if (this.config?.debug) {
+      console.warn('[WavedashJS] Engine instance not set. Call setEngineInstance() before calling notifyLobbyLeft().');
     }
   }
 
   notifyLobbyMessage(payload: object): void {
-    if (this.initialized && this.engineInstance && this.engineCallbackReceiver) {
+    if (this.initialized && this.engineInstance) {
       this.engineInstance.SendMessage(
         this.engineCallbackReceiver,
-        'OnLobbyMessageCallback',
+        'LobbyMessage',
         JSON.stringify(payload)
       );
+    } else if (this.config?.debug) {
+      console.warn('[WavedashJS] Engine instance not set. Call setEngineInstance() before calling notifyLobbyMessage().');
     }
   }
 }
