@@ -65,15 +65,14 @@ class WavedashSDK {
     this.engineInstance = engineInstance;
   }
 
-  // TODO this should return a JSON string
-  getUser(): WavedashUser | null {
+  getUser(): string | null {
     if (!this.initialized) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       return null;
     }
 
     if (this.wavedashUser) {
-      return this.wavedashUser;
+      return JSON.stringify(this.wavedashUser);
     }
 
     return null;
