@@ -1,5 +1,5 @@
 {
-  "name": "@wavedash/js",
+  "name": "@wvdsh/js",
   "version": "0.0.1",
   "description": "Wavedash JavaScript SDK",
   "main": "./dist/index.js",
@@ -21,7 +21,6 @@
   },
   "scripts": {
     "build": "tsup",
-    "build:browser": "tsup --format iife --global-name WavedashSDK",
     "dev": "tsup --watch",
     "prepare": "npm run build"
   },
