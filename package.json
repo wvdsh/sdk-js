@@ -5,6 +5,11 @@
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
   "types": "./dist/index.d.ts",
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wvdsh/sdk-js.git"
@@ -22,7 +27,8 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "prepare": "npm run build"
+    "prepare": "npm run build",
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "tsup": "^8.0.0",
