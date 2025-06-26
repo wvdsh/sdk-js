@@ -6,12 +6,12 @@ This package is hosted on GitHub Packages. Follow these steps to install from Gi
 1. Go to https://github.com/settings/tokens and create a Personal Access Token with read:packages permission
 2. Copy it and add to your bash profile
 ```
-export GITHUB_TOKEN=yourtoken >> ~/.bashrc
+export NODE_AUTH_TOKEN=yourtoken >> ~/.bashrc
 ```
 3. Add the following to your `.npmrc` file in your project
 ```
 @wvdsh:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN} 
+//npm.pkg.github.com/:_authToken=${NODE_AUTH_TOKEN} 
 ```
 
 Now install the package:
