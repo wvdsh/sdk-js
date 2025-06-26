@@ -4,10 +4,14 @@ The JS Wavedash SDK allows games developers to interact with the Wavedash Online
 # Local Installation
 This package is hosted on GitHub Packages. Follow these steps to install from GitHub Packages
 1. Go to https://github.com/settings/tokens and create a Personal Access Token with read:packages permission
-2. Add the following to your `.npmrc` file in your project
+2. Copy it and add to your bash profile
+```
+export GITHUB_PACKAGES_TOKEN=$yourtoken' >> ~/.bashrc
+```
+3. Add the following to your `.npmrc` file in your project
 ```
 @wvdsh:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_AUTH_TOKEN} 
+//npm.pkg.github.com/:_authToken=${GITHUB_PACKAGES_TOKEN} 
 ```
 
 Now install the package:
