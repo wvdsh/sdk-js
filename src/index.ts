@@ -279,7 +279,6 @@ class WavedashSDK {
 
 // Export for the website to use
 export { WavedashSDK };
-export { ConvexClient } from "convex/browser";
 
 // Type-safe initialization helper for the website
 export function setupWavedashSDK(
