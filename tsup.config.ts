@@ -13,7 +13,7 @@ export default defineConfig({
   splitting: false,
   sourcemap: true,
   clean: true,
-  external: ["convex"],
-  noExternal: [],
+  external: [],
+  noExternal: ["convex"],
   globalName: "WavedashSDK",
 });
