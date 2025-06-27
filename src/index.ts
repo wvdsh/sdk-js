@@ -1,6 +1,9 @@
 import { ConvexClient } from "convex/browser";
-import { api } from "./convex_api";
+import { api, PublicApiType } from "./convex_api";
 import { type GenericId as Id } from "convex/values";
+
+// Extract the lobbyType from the API type
+type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
 
 interface WavedashConfig {
   gameId: string;
@@ -120,17 +123,21 @@ class WavedashSDK {
     }
   }
 
-  async createLobby(): Promise<Id<"lobbies">> {
+  async createLobby(lobbyType: string, maxPlayers?: number): Promise<Id<"lobbies">> {
     if (!this.initialized) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
+
+    console.log('[WavedashJS] Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
 
     try {
       const lobbyId = await this.convexClient.mutation(
         api.gameLobby.createAndJoinLobby,
         {
           gameSessionToken: this.gameSessionToken,
+          lobbyType: lobbyType as LobbyType,
+          maxPlayers: maxPlayers
         }
       );
 

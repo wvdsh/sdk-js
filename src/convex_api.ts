@@ -56,7 +56,11 @@ export type PublicApiType = {
     createAndJoinLobby: FunctionReference<
       "mutation",
       "public",
-      { gameSessionToken: string },
+      {
+        gameSessionToken: string;
+        lobbyType: "PUBLIC" | "FRIENDS_ONLY" | "PRIVATE";
+        maxPlayers?: number;
+      },
       any
     >;
     joinLobby: FunctionReference<
