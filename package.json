@@ -26,6 +26,7 @@
   },
   "scripts": {
     "build": "tsup",
+    "build:browser": "tsup --format iife --global-name WavedashSDK",
     "dev": "tsup --watch",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
