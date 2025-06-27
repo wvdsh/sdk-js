@@ -285,6 +285,7 @@ export function setupWavedashSDK(
     (window as any).WavedashJS = sdk;
     console.log('[WavedashJS] SDK attached to window.WavedashJS');
   }
+
   
   return sdk;
 }
