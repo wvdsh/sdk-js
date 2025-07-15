@@ -1,9 +1,12 @@
 import { ConvexClient } from "convex/browser";
 import { api, PublicApiType } from "./convex_api";
 import { type GenericId as Id } from "convex/values";
+import * as Constants from "./constants";
 
 // Extract the lobbyType from the API type
 type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
+type LeaderboardSortMethod = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
+type LeaderboardDisplayType = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
 
 interface WavedashConfig {
   gameId: string;
@@ -29,6 +32,8 @@ class WavedashSDK {
   private convexClient: ConvexClient;
   private gameSessionToken: string;
   private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
+
+  Constants = Constants;
   
   constructor(convexClient: ConvexClient, gameSessionToken: string, wavedashUser: WavedashUser) {
     this.convexClient = convexClient;
@@ -79,7 +84,50 @@ class WavedashSDK {
   }
 
   isReady(): boolean {
-    return this.initialized && this.engineInstance !== null && this.engineInstance !== undefined;
+    return !!(this.engineInstance && this.initialized);
+  }
+
+  async getLeaderboard(leaderboardName: string): Promise<string> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    
+    try {
+    const leaderboard = await this.convexClient.query(
+      api.leaderboards.getLeaderboard,
+      {
+        gameSessionToken: this.gameSessionToken,
+        name: leaderboardName
+      });
+      return JSON.stringify(leaderboard || {});
+    } catch (error) {
+      console.error('[WavedashJS] Failed to get leaderboard:', error);
+      throw error;
+    }
+  }
+
+  async getOrCreateLeaderboard(leaderboardName: string, sortMethod: LeaderboardSortMethod, displayType: LeaderboardDisplayType): Promise<string> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    
+    try {
+      const leaderboard = await this.convexClient.mutation(
+        api.leaderboards.getOrCreateLeaderboard,
+        {
+          gameSessionToken: this.gameSessionToken,
+          name: leaderboardName,
+          sortOrder: sortMethod,
+          displayType: displayType
+        }
+      );
+      return JSON.stringify(leaderboard || {});
+    } catch (error) {
+      console.error('[WavedashJS] Failed to get or create leaderboard:', error);
+      throw error;
+    }
   }
 
   unsubscribeFromLobbyMessages(): void {
@@ -103,7 +151,7 @@ class WavedashSDK {
         gameSessionToken: this.gameSessionToken,
         lobbyId: lobbyId as Id<"lobbies">
       }, 
-      (messages) => {
+      (messages: any) => {
         console.log('[WavedashJS] Lobby messages updated:', messages);
         // Notify the game about new messages
         if (messages && messages.length > 0) {
@@ -123,8 +171,8 @@ class WavedashSDK {
     }
   }
 
-  async createLobby(lobbyType: string, maxPlayers?: number): Promise<Id<"lobbies">> {
-    if (!this.initialized) {
+  async createLobby(lobbyType: number, maxPlayers?: number): Promise<Id<"lobbies">> {
+    if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
@@ -154,7 +202,7 @@ class WavedashSDK {
   }
 
   async joinLobby(lobbyId: string): Promise<string> {
-    if (!this.initialized) {
+    if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
@@ -184,7 +232,7 @@ class WavedashSDK {
   }
 
   async leaveLobby(lobbyId: string): Promise<void> {
-    if (!this.initialized) {
+    if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
@@ -211,7 +259,7 @@ class WavedashSDK {
   }
 
   async sendLobbyMessage(lobbyId: string, message: string): Promise<void> {
-    if (!this.initialized) {
+    if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
