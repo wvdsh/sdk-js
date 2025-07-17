@@ -30,14 +30,12 @@ class WavedashSDK {
   private engineCallbackReceiver: string = "WavedashCallbackReceiver";
   private wavedashUser: WavedashUser;
   private convexClient: ConvexClient;
-  private gameSessionToken: string;
   private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
 
   Constants = Constants;
   
-  constructor(convexClient: ConvexClient, gameSessionToken: string, wavedashUser: WavedashUser) {
+  constructor(convexClient: ConvexClient, wavedashUser: WavedashUser) {
     this.convexClient = convexClient;
-    this.gameSessionToken = gameSessionToken;
     this.wavedashUser = wavedashUser;
   }
 
@@ -97,7 +95,6 @@ class WavedashSDK {
     const leaderboard = await this.convexClient.query(
       api.leaderboards.getLeaderboard,
       {
-        gameSessionToken: this.gameSessionToken,
         name: leaderboardName
       });
       return JSON.stringify(leaderboard || {});
@@ -117,7 +114,6 @@ class WavedashSDK {
       const leaderboard = await this.convexClient.mutation(
         api.leaderboards.getOrCreateLeaderboard,
         {
-          gameSessionToken: this.gameSessionToken,
           name: leaderboardName,
           sortOrder: sortMethod,
           displayType: displayType
@@ -148,7 +144,6 @@ class WavedashSDK {
     const { getCurrentValue, unsubscribe } = this.convexClient.onUpdate(
       api.gameLobby.lobbyMessages, 
       {
-        gameSessionToken: this.gameSessionToken,
         lobbyId: lobbyId as Id<"lobbies">
       }, 
       (messages: any) => {
@@ -183,7 +178,6 @@ class WavedashSDK {
       const lobbyId = await this.convexClient.mutation(
         api.gameLobby.createAndJoinLobby,
         {
-          gameSessionToken: this.gameSessionToken,
           lobbyType: lobbyType as LobbyType,
           maxPlayers: maxPlayers
         }
@@ -211,7 +205,6 @@ class WavedashSDK {
       const success = await this.convexClient.mutation(
         api.gameLobby.joinLobby,
         {
-          gameSessionToken: this.gameSessionToken,
           lobbyId: lobbyId as Id<"lobbies">
         }
       );
@@ -241,7 +234,6 @@ class WavedashSDK {
       await this.convexClient.mutation(
         api.gameLobby.leaveLobby,
         {
-          gameSessionToken: this.gameSessionToken,
           lobbyId: lobbyId as Id<"lobbies">
         }
       );
@@ -268,7 +260,6 @@ class WavedashSDK {
       await this.convexClient.mutation(
         api.gameLobby.sendMessage,
         {
-          gameSessionToken: this.gameSessionToken,
           lobbyId: lobbyId as Id<"lobbies">,
           message: message
         }
@@ -331,10 +322,9 @@ export { WavedashSDK };
 // Type-safe initialization helper for the website
 export function setupWavedashSDK(
   convexClient: ConvexClient,
-  gameSessionToken: string,
   wavedashUser: WavedashUser,
 ): WavedashSDK {
-  const sdk = new WavedashSDK(convexClient, gameSessionToken, wavedashUser);
+  const sdk = new WavedashSDK(convexClient, wavedashUser);
   
   if (typeof window !== 'undefined') {
     (window as any).WavedashJS = sdk;
