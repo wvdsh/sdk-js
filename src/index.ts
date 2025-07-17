@@ -30,14 +30,13 @@ class WavedashSDK {
   private engineCallbackReceiver: string = "WavedashCallbackReceiver";
   private wavedashUser: WavedashUser;
   private convexClient: ConvexClient;
-  private gameSessionToken: string;
   private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
+  private gameSessionToken: string = "DEPRECATED"
 
   Constants = Constants;
   
-  constructor(convexClient: ConvexClient, gameSessionToken: string, wavedashUser: WavedashUser) {
+  constructor(convexClient: ConvexClient, wavedashUser: WavedashUser) {
     this.convexClient = convexClient;
-    this.gameSessionToken = gameSessionToken;
     this.wavedashUser = wavedashUser;
   }
 
@@ -331,10 +330,9 @@ export { WavedashSDK };
 // Type-safe initialization helper for the website
 export function setupWavedashSDK(
   convexClient: ConvexClient,
-  gameSessionToken: string,
   wavedashUser: WavedashUser,
 ): WavedashSDK {
-  const sdk = new WavedashSDK(convexClient, gameSessionToken, wavedashUser);
+  const sdk = new WavedashSDK(convexClient, wavedashUser);
   
   if (typeof window !== 'undefined') {
     (window as any).WavedashJS = sdk;

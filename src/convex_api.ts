@@ -45,7 +45,7 @@ export type PublicApiType = {
       { orgSlug: string; slug: string },
       any
     >;
-    hasUserPurchased: FunctionReference<
+    getPurchasedGameOrThrow: FunctionReference<
       "query",
       "public",
       { gameId: Id<"games"> },
@@ -57,10 +57,11 @@ export type PublicApiType = {
       { gameId: Id<"games"> },
       any
     >;
-    launchGame: FunctionReference<
+    getById: FunctionReference<"query", "public", { id: Id<"games"> }, any>;
+    createPlayKey: FunctionReference<
       "mutation",
       "public",
-      { gameId: Id<"games"> },
+      { gameBuildId?: Id<"gameBuilds">; gameId: Id<"games"> },
       any
     >;
   };
@@ -68,37 +69,37 @@ export type PublicApiType = {
     lobbyUsers: FunctionReference<
       "query",
       "public",
-      { gameSessionToken: string; lobbyId: Id<"lobbies"> },
+      { lobbyId: Id<"lobbies"> },
       any
     >;
     createAndJoinLobby: FunctionReference<
       "mutation",
       "public",
-      { gameSessionToken: string; lobbyType: 0 | 1 | 2; maxPlayers?: number },
+      { lobbyType: 0 | 1 | 2; maxPlayers?: number },
       any
     >;
     joinLobby: FunctionReference<
       "mutation",
       "public",
-      { gameSessionToken: string; lobbyId: Id<"lobbies"> },
+      { lobbyId: Id<"lobbies"> },
       any
     >;
     leaveLobby: FunctionReference<
       "mutation",
       "public",
-      { gameSessionToken: string; lobbyId: Id<"lobbies"> },
+      { lobbyId: Id<"lobbies"> },
       any
     >;
     sendMessage: FunctionReference<
       "mutation",
       "public",
-      { gameSessionToken: string; lobbyId: Id<"lobbies">; message: string },
+      { lobbyId: Id<"lobbies">; message: string },
       any
     >;
     lobbyMessages: FunctionReference<
       "query",
       "public",
-      { gameSessionToken: string; lobbyId: Id<"lobbies"> },
+      { lobbyId: Id<"lobbies"> },
       any
     >;
   };
@@ -106,20 +107,19 @@ export type PublicApiType = {
     getUGCDownloadUrl: FunctionReference<
       "query",
       "public",
-      { gameSessionToken: string; ugcId: Id<"userGeneratedContent"> },
+      { ugcId: Id<"userGeneratedContent"> },
       { isPublic: boolean; url: string } | null
     >;
     getUGCMetadata: FunctionReference<
       "query",
       "public",
-      { gameSessionToken: string; ugcId: Id<"userGeneratedContent"> },
+      { ugcId: Id<"userGeneratedContent"> },
       {
         _creationTime: number;
         _id: Id<"userGeneratedContent">;
         canAccess: boolean;
         contentType: number;
         description?: string;
-        gameId: Id<"games">;
         title?: string;
         userId: Id<"users">;
         visibility: number;
@@ -139,7 +139,6 @@ export type PublicApiType = {
       {
         contentType: 0 | 1 | 2 | 3 | 4;
         description?: string;
-        gameSessionToken: string;
         metadata?: ArrayBuffer;
         title?: string;
         ugcId: Id<"userGeneratedContent">;
@@ -150,7 +149,7 @@ export type PublicApiType = {
     deleteUGCItem: FunctionReference<
       "mutation",
       "public",
-      { gameSessionToken: string; ugcId: Id<"userGeneratedContent"> },
+      { ugcId: Id<"userGeneratedContent"> },
       boolean
     >;
   };
@@ -158,18 +157,13 @@ export type PublicApiType = {
     getLeaderboard: FunctionReference<
       "query",
       "public",
-      { gameSessionToken: string; name: string },
+      { name: string },
       { id: Id<"leaderboards">; name: string; numEntries: number } | null
     >;
     getOrCreateLeaderboard: FunctionReference<
       "mutation",
       "public",
-      {
-        displayType?: 0 | 1 | 2;
-        gameSessionToken: string;
-        name: string;
-        sortOrder?: 0 | 1;
-      },
+      { displayType?: 0 | 1 | 2; name: string; sortOrder?: 0 | 1 },
       {
         created: boolean;
         id: Id<"leaderboards">;
@@ -180,15 +174,14 @@ export type PublicApiType = {
     attachLeaderboardUGC: FunctionReference<
       "mutation",
       "public",
-      {
-        gameSessionToken: string;
-        leaderboardId: Id<"leaderboards">;
-        ugcId: Id<"userGeneratedContent">;
-      },
+      { leaderboardId: Id<"leaderboards">; ugcId: Id<"userGeneratedContent"> },
       boolean
     >;
   };
-  organizations: { list: FunctionReference<"query", "public", any, any> };
+  organizations: {
+    list: FunctionReference<"query", "public", any, any>;
+    current: FunctionReference<"query", "public", any, any>;
+  };
   auth: {
     oauth: {
       googleOAuthCallback: FunctionReference<
@@ -208,10 +201,24 @@ export type PublicApiType = {
       refresh: FunctionReference<
         "mutation",
         "public",
-        { sessionToken: string },
+        { orgId?: Id<"organizations">; sessionToken: string },
+        any
+      >;
+      switchOrganization: FunctionReference<
+        "mutation",
+        "public",
+        { organizationId: Id<"organizations">; sessionToken: string },
         any
       >;
     };
+  };
+  gameBuilds: {
+    getIfPurchased: FunctionReference<
+      "query",
+      "public",
+      { gameBuildId: Id<"gameBuilds"> },
+      any
+    >;
   };
 };
 export type InternalApiType = {};
