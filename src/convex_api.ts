@@ -24,6 +24,13 @@ export type PublicApiType = {
       },
       any
     >;
+    getById: FunctionReference<"query", "public", { id: Id<"games"> }, any>;
+    get: FunctionReference<
+      "query",
+      "public",
+      { orgSlug: string; slug: string },
+      any
+    >;
     listPurchased: FunctionReference<
       "query",
       "public",
@@ -39,12 +46,6 @@ export type PublicApiType = {
       },
       any
     >;
-    get: FunctionReference<
-      "query",
-      "public",
-      { orgSlug: string; slug: string },
-      any
-    >;
     getPurchasedGameOrThrow: FunctionReference<
       "query",
       "public",
@@ -57,7 +58,6 @@ export type PublicApiType = {
       { gameId: Id<"games"> },
       any
     >;
-    getById: FunctionReference<"query", "public", { id: Id<"games"> }, any>;
     createPlayKey: FunctionReference<
       "mutation",
       "public",
@@ -82,7 +82,7 @@ export type PublicApiType = {
       "mutation",
       "public",
       { lobbyId: Id<"lobbies"> },
-      any
+      boolean
     >;
     leaveLobby: FunctionReference<
       "mutation",
@@ -158,7 +158,7 @@ export type PublicApiType = {
       "query",
       "public",
       { name: string },
-      { id: Id<"leaderboards">; name: string; numEntries: number } | null
+      { id: Id<"leaderboards">; name: string; numEntries: number }
     >;
     getOrCreateLeaderboard: FunctionReference<
       "mutation",
@@ -169,6 +169,36 @@ export type PublicApiType = {
         id: Id<"leaderboards">;
         name: string;
         numEntries: number;
+      }
+    >;
+    getLeaderboardEntriesForUsers: FunctionReference<
+      "query",
+      "public",
+      { leaderboardId: Id<"leaderboards">; userIds: Array<Id<"users">> },
+      {
+        entries: Array<{
+          score: number;
+          timestamp: number;
+          userId: Id<"users">;
+          username?: string;
+        }>;
+        leaderboardId: Id<"leaderboards">;
+        totalEntries: number;
+      }
+    >;
+    createLeaderboardEntry: FunctionReference<
+      "mutation",
+      "public",
+      {
+        keepBest: boolean;
+        leaderboardId: Id<"leaderboards">;
+        metadata?: ArrayBuffer;
+        score: number;
+      },
+      {
+        entryId: Id<"leaderboardEntries">;
+        leaderboardId: Id<"leaderboards">;
+        totalEntries: number;
       }
     >;
     attachLeaderboardUGC: FunctionReference<

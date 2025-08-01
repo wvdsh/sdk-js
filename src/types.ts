@@ -7,6 +7,7 @@ export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"
 export type LeaderboardSortMethod = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
 export type LeaderboardDisplayType = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
 export type Leaderboard = FunctionReturnType<typeof api.leaderboards.getLeaderboard>;
+export type LeaderboardEntries = FunctionReturnType<typeof api.leaderboards.getLeaderboardEntriesForUsers>;
 
 // Configuration and user types
 export interface WavedashConfig {
@@ -30,18 +31,6 @@ export interface WavedashResponse<T> {
   data: T | null;
   message?: string;
   // TODO: errorCode?
-}
-
-export interface LeaderboardResponse {
-  success: boolean;
-  message?: string;
-  data: Leaderboard | null;
-}
-
-export interface LobbyJoinResponse {
-  success: boolean;
-  id: string | null;
-  message?: string;
 }
 
 // Re-export Id for convenience

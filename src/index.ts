@@ -10,6 +10,7 @@ import type {
   WavedashUser,
   EngineInstance,
   Leaderboard,
+  LeaderboardEntries,
   WavedashResponse
 } from "./types";
 
@@ -49,7 +50,8 @@ class WavedashSDK {
       const result = await operation();
       return this.formatResponse({
         success: true,
-        data: result
+        data: result,
+        // TODO: Return original arguments here as well so caller can see what was passed in
       });
     } catch (error) {
       console.error(`[WavedashJS] `, error);
@@ -172,6 +174,24 @@ class WavedashSDK {
           displayType: displayType
         }
       ),
+    );
+  }
+
+  async getLeaderboardEntriesForUsers(leaderboardId: Id<"leaderboards">, userIds: Id<"users">[]): Promise<string | WavedashResponse<LeaderboardEntries>> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    if(this.config?.debug) {
+      console.log('[WavedashJS] Getting leaderboard entries for users:', userIds);
+    }
+    // Game engines pass along structured data as JSON strings, so we need to parse them
+    if (typeof userIds === 'string') {
+      userIds = JSON.parse(userIds);
+    }
+
+    return this.handleAsyncOperation(
+      () => this.convexClient.query(api.leaderboards.getLeaderboardEntriesForUsers, { leaderboardId: leaderboardId, userIds: userIds as Id<"users">[] })
     );
   }
 
