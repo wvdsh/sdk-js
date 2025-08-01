@@ -21,6 +21,7 @@ class WavedashSDK {
   private wavedashUser: WavedashUser;
   private convexClient: ConvexClient;
   private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
+  public testVersion = 1231234;
 
   Constants = Constants;
   
@@ -38,6 +39,55 @@ class WavedashSDK {
   // Game engines expect a string, so we need to format the response accordingly
   private formatResponse<T>(data: T): T | string {
     return this.isGameEngine() ? JSON.stringify(data) : data;
+  }
+
+  // Helper to handle async operations with consistent error handling
+  private async handleAsyncOperation<T>(
+    operation: () => Promise<T>,
+  ): Promise<string | WavedashResponse<T>> {
+    try {
+      const result = await operation();
+      return this.formatResponse({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] `, error);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  // Helper to handle async operations that can return null
+  private async handleAsyncOperationWithNull<T>(
+    operation: () => Promise<T | null>,
+    nullMessage: string
+  ): Promise<string | WavedashResponse<T>> {
+    try {
+      const result = await operation();
+      if (result === null) {
+        return this.formatResponse({
+          // TODO: 404 error code here. Error codes for not found, bad request, etc
+          success: false,
+          data: null,
+          message: nullMessage
+        });
+      }
+      return this.formatResponse({
+        success: true,
+        data: result
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] `, error);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   // ====================
@@ -92,26 +142,15 @@ class WavedashSDK {
       throw new Error('SDK not initialized');
     }
     
-    try {
-      const leaderboard = await this.convexClient.query(
+    return this.handleAsyncOperationWithNull(
+      () => this.convexClient.query(
         api.leaderboards.getLeaderboard,
         {
           name: leaderboardName
         }
-      );
-      if (leaderboard) {
-        return this.formatResponse({success: true, data: leaderboard});
-      } else {
-        return this.formatResponse({success: false, data: null, message: "Leaderboard does not exist"});
-      }
-    } catch (error) {
-      console.error('[WavedashJS] Failed to get leaderboard:', error);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+      ),
+      `Leaderboard does not exist: ${leaderboardName}`
+    );
   }
 
   async getOrCreateLeaderboard(leaderboardName: string, sortMethod: LeaderboardSortMethod, displayType: LeaderboardDisplayType): Promise<string | WavedashResponse<Leaderboard>> {
@@ -119,28 +158,21 @@ class WavedashSDK {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
+
+    if(this.config?.debug) {
+      console.log('[WavedashJS] Getting or creating leaderboard:', leaderboardName);
+    }
     
-    try {
-      const leaderboard = await this.convexClient.mutation(
+    return this.handleAsyncOperation(
+      () => this.convexClient.mutation(
         api.leaderboards.getOrCreateLeaderboard,
         {
           name: leaderboardName,
           sortOrder: sortMethod,
           displayType: displayType
         }
-      );
-      return this.formatResponse({
-        success: true,
-        data: leaderboard
-      });
-    } catch (error) {
-      console.error('[WavedashJS] Failed to get or create leaderboard:', error);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+      ),
+    );
   }
 
   unsubscribeFromLobbyMessages(): void {
@@ -191,32 +223,24 @@ class WavedashSDK {
 
     console.log('[WavedashJS] Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
 
-    try {
-      const lobbyId = await this.convexClient.mutation(
-        api.gameLobby.createAndJoinLobby,
-        {
-          lobbyType: lobbyType as LobbyType,
-          maxPlayers: maxPlayers
-        }
-      );
+    return this.handleAsyncOperation(
+      async () => {
+        const lobbyId = await this.convexClient.mutation(
+          api.gameLobby.createAndJoinLobby,
+          {
+            lobbyType: lobbyType as LobbyType,
+            maxPlayers: maxPlayers
+          }
+        );
 
-      if (this.config?.debug) {
-        console.log('[WavedashJS] Lobby created:', lobbyId);
-      }
-      // Subscribe to lobby messages
-      this.subscribeToLobbyMessages(lobbyId);
-      return this.formatResponse({
-        success: true,
-        data: lobbyId
-      });
-    } catch (error) {
-      console.error('[WavedashJS] Failed to create lobby:', error);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+        if (this.config?.debug) {
+          console.log('[WavedashJS] Lobby created:', lobbyId);
+        }
+        // Subscribe to lobby messages
+        this.subscribeToLobbyMessages(lobbyId);
+        return lobbyId;
+      },
+    );
   }
 
   async joinLobby(lobbyId: string): Promise<string | WavedashResponse<Id<"lobbies">>> {
@@ -225,38 +249,27 @@ class WavedashSDK {
       throw new Error('SDK not initialized');
     }
     
-    try {
-      const success = await this.convexClient.mutation(
-        api.gameLobby.joinLobby,
-        {
-          lobbyId: lobbyId as Id<"lobbies">
+    return this.handleAsyncOperation(
+      async () => {
+        const success = await this.convexClient.mutation(
+          api.gameLobby.joinLobby,
+          {
+            lobbyId: lobbyId as Id<"lobbies">
+          }
+        );
+        
+        if (!success) {
+          if (this.config?.debug) {
+            console.log('[WavedashJS] Failed to join lobby:', lobbyId);
+          }
+          throw new Error(`Failed to join lobby: ${lobbyId}`);
         }
-      );
-      if (success) {
+        
         // Subscribe to lobby messages
         this.subscribeToLobbyMessages(lobbyId);
-        return this.formatResponse({
-          success: true,
-          data: lobbyId as Id<"lobbies">
-        });
-      } else {
-        if (this.config?.debug) {
-          console.log('[WavedashJS] Failed to join lobby:', lobbyId);
-        }
-        return this.formatResponse({
-          success: false,
-          data: null,
-          message: `Failed to join lobby: ${lobbyId}`
-        });
-      }
-    } catch (error) {
-      console.error('[WavedashJS] Failed to join lobby:', error);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+        return lobbyId as Id<"lobbies">;
+      },
+    );
   }
 
   async leaveLobby(lobbyId: string): Promise<string | WavedashResponse<boolean>> {
@@ -265,32 +278,24 @@ class WavedashSDK {
       throw new Error('SDK not initialized');
     }
     
-    try {
-      await this.convexClient.mutation(
-        api.gameLobby.leaveLobby,
-        {
-          lobbyId: lobbyId as Id<"lobbies">
+    return this.handleAsyncOperation(
+      async () => {
+        await this.convexClient.mutation(
+          api.gameLobby.leaveLobby,
+          {
+            lobbyId: lobbyId as Id<"lobbies">
+          }
+        );
+        
+        // Clean up subscription
+        this.unsubscribeFromLobbyMessages();
+        
+        if (this.config?.debug) {
+          console.log('[WavedashJS] Left lobby:', lobbyId);
         }
-      );
-      
-      // Clean up subscription
-      this.unsubscribeFromLobbyMessages();
-      
-      if (this.config?.debug) {
-        console.log('[WavedashJS] Left lobby:', lobbyId);
-      }
-      return this.formatResponse({
-        success: true,
-        data: true
-      });
-    } catch (error) {
-      console.error('[WavedashJS] Failed to leave lobby:', error);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+        return true;
+      },
+    );
   }
 
   async sendLobbyMessage(lobbyId: string, message: string): Promise<string | WavedashResponse<boolean>> {
@@ -299,26 +304,18 @@ class WavedashSDK {
       throw new Error('SDK not initialized');
     }
     
-    try {
-      await this.convexClient.mutation(
-        api.gameLobby.sendMessage,
-        {
-          lobbyId: lobbyId as Id<"lobbies">,
-          message: message
-        }
-      );
-      return this.formatResponse({
-        success: true,
-        data: true
-      });
-    } catch (error) {
-      console.error('[WavedashJS] Failed to send lobby message:', error);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+    return this.handleAsyncOperation(
+      async () => {
+        await this.convexClient.mutation(
+          api.gameLobby.sendMessage,
+          {
+            lobbyId: lobbyId as Id<"lobbies">,
+            message: message
+          }
+        );
+        return true;
+      },
+    );
   }
 
   // =============================
@@ -369,6 +366,9 @@ class WavedashSDK {
 
 // Export for the website to use
 export { WavedashSDK };
+
+// Re-export all types
+export type * from "./types";
 
 // Type-safe initialization helper for the website
 export function setupWavedashSDK(

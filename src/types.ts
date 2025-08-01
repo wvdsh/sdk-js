@@ -29,6 +29,7 @@ export interface WavedashResponse<T> {
   success: boolean;
   data: T | null;
   message?: string;
+  // TODO: errorCode?
 }
 
 export interface LeaderboardResponse {
