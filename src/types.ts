@@ -7,7 +7,7 @@ export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"
 export type LeaderboardSortMethod = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
 export type LeaderboardDisplayType = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
 export type Leaderboard = FunctionReturnType<typeof api.leaderboards.getLeaderboard>;
-export type LeaderboardEntries = FunctionReturnType<typeof api.leaderboards.listEntriesAroundRank>;
+export type LeaderboardEntries = FunctionReturnType<typeof api.leaderboards.listEntriesAroundUser>;
 export type LeaderboardEntry = LeaderboardEntries["entries"][0];
 
 // Configuration and user types
@@ -30,7 +30,9 @@ export interface EngineInstance {
 export interface WavedashResponse<T> {
   success: boolean;
   data: T | null;
+  // Return the original args that were passed to the JS SDK so caller can reference them
   args: Record<string, any>;
+  // Error message if success is false
   message?: string;
   // TODO: errorCode?
 }

@@ -184,9 +184,26 @@ class WavedashSDK {
       userIds = JSON.parse(userIds);
     }
 
-    return this.handleAsyncOperation(
-      () => this.convexClient.query(api.leaderboards.getLeaderboardEntriesForUsers, { leaderboardId: leaderboardId, userIds: userIds as Id<"users">[] })
-    );
+    const args = { leaderboardId: leaderboardId, userIds: userIds as Id<"users">[] };
+
+    try {
+      // TODO: Replace with correct API method - getLeaderboardEntriesForUsers doesn't exist
+      // Possible alternatives: api.leaderboards.listEntries or api.leaderboards.listEntriesAroundUser
+      throw new Error('getLeaderboardEntriesForUsers API method not implemented');
+      return this.formatResponse({
+        success: true,
+        data: entries,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error getting leaderboard entries for users: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   unsubscribeFromLobbyMessages(): void {
@@ -204,7 +221,7 @@ class WavedashSDK {
     this.unsubscribeFromLobbyMessages();
     
     // Subscribe to new lobby
-    const { getCurrentValue, unsubscribe } = this.convexClient.onUpdate(
+    const { unsubscribe } = this.convexClient.onUpdate(
       api.gameLobby.lobbyMessages, 
       {
         lobbyId: lobbyId as Id<"lobbies">
@@ -237,24 +254,37 @@ class WavedashSDK {
 
     console.log('[WavedashJS] Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
 
-    return this.handleAsyncOperation(
-      async () => {
-        const lobbyId = await this.convexClient.mutation(
-          api.gameLobby.createAndJoinLobby,
-          {
-            lobbyType: lobbyType as LobbyType,
-            maxPlayers: maxPlayers
-          }
-        );
+    const args = {
+      lobbyType: lobbyType as LobbyType,
+      maxPlayers: maxPlayers
+    };
 
-        if (this.config?.debug) {
-          console.log('[WavedashJS] Lobby created:', lobbyId);
-        }
-        // Subscribe to lobby messages
-        this.subscribeToLobbyMessages(lobbyId);
-        return lobbyId;
-      },
-    );
+    try {
+      const lobbyId = await this.convexClient.mutation(
+        api.gameLobby.createAndJoinLobby,
+        args
+      );
+
+      if (this.config?.debug) {
+        console.log('[WavedashJS] Lobby created:', lobbyId);
+      }
+      // Subscribe to lobby messages
+      this.subscribeToLobbyMessages(lobbyId);
+      
+      return this.formatResponse({
+        success: true,
+        data: lobbyId,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error creating lobby: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   async joinLobby(lobbyId: string): Promise<string | WavedashResponse<Id<"lobbies">>> {
@@ -263,27 +293,40 @@ class WavedashSDK {
       throw new Error('SDK not initialized');
     }
     
-    return this.handleAsyncOperation(
-      async () => {
-        const success = await this.convexClient.mutation(
-          api.gameLobby.joinLobby,
-          {
-            lobbyId: lobbyId as Id<"lobbies">
-          }
-        );
-        
-        if (!success) {
-          if (this.config?.debug) {
-            console.log('[WavedashJS] Failed to join lobby:', lobbyId);
-          }
-          throw new Error(`Failed to join lobby: ${lobbyId}`);
+    const args = {
+      lobbyId: lobbyId as Id<"lobbies">
+    };
+
+    try {
+      const success = await this.convexClient.mutation(
+        api.gameLobby.joinLobby,
+        args
+      );
+      
+      if (!success) {
+        if (this.config?.debug) {
+          console.log('[WavedashJS] Failed to join lobby:', lobbyId);
         }
-        
-        // Subscribe to lobby messages
-        this.subscribeToLobbyMessages(lobbyId);
-        return lobbyId as Id<"lobbies">;
-      },
-    );
+        throw new Error(`Failed to join lobby: ${lobbyId}`);
+      }
+      
+      // Subscribe to lobby messages
+      this.subscribeToLobbyMessages(lobbyId);
+      
+      return this.formatResponse({
+        success: true,
+        data: lobbyId as Id<"lobbies">,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error joining lobby: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   async leaveLobby(lobbyId: string): Promise<string | WavedashResponse<boolean>> {
@@ -292,24 +335,37 @@ class WavedashSDK {
       throw new Error('SDK not initialized');
     }
     
-    return this.handleAsyncOperation(
-      async () => {
-        await this.convexClient.mutation(
-          api.gameLobby.leaveLobby,
-          {
-            lobbyId: lobbyId as Id<"lobbies">
-          }
-        );
-        
-        // Clean up subscription
-        this.unsubscribeFromLobbyMessages();
-        
-        if (this.config?.debug) {
-          console.log('[WavedashJS] Left lobby:', lobbyId);
-        }
-        return true;
-      },
-    );
+    const args = {
+      lobbyId: lobbyId as Id<"lobbies">
+    };
+
+    try {
+      await this.convexClient.mutation(
+        api.gameLobby.leaveLobby,
+        args
+      );
+      
+      // Clean up subscription
+      this.unsubscribeFromLobbyMessages();
+      
+      if (this.config?.debug) {
+        console.log('[WavedashJS] Left lobby:', lobbyId);
+      }
+      
+      return this.formatResponse({
+        success: true,
+        data: true,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error leaving lobby: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   async sendLobbyMessage(lobbyId: string, message: string): Promise<string | WavedashResponse<boolean>> {
@@ -318,18 +374,31 @@ class WavedashSDK {
       throw new Error('SDK not initialized');
     }
     
-    return this.handleAsyncOperation(
-      async () => {
-        await this.convexClient.mutation(
-          api.gameLobby.sendMessage,
-          {
-            lobbyId: lobbyId as Id<"lobbies">,
-            message: message
-          }
-        );
-        return true;
-      },
-    );
+    const args = {
+      lobbyId: lobbyId as Id<"lobbies">,
+      message: message
+    };
+
+    try {
+      await this.convexClient.mutation(
+        api.gameLobby.sendMessage,
+        args
+      );
+      
+      return this.formatResponse({
+        success: true,
+        data: true,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error sending lobby message: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   // =============================

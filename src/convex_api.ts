@@ -343,6 +343,18 @@ export type PublicApiType = {
     };
     gameBranches: {
       list: FunctionReference<"query", "public", { gameId: Id<"games"> }, any>;
+      listAvailable: FunctionReference<
+        "query",
+        "public",
+        { gameId: Id<"games"> },
+        any
+      >;
+      listClouds: FunctionReference<
+        "query",
+        "public",
+        Record<string, never>,
+        any
+      >;
       get: FunctionReference<
         "query",
         "public",
@@ -374,6 +386,33 @@ export type PublicApiType = {
         any
       >;
     };
+    gameBuilds: {
+      list: FunctionReference<
+        "query",
+        "public",
+        {
+          gameBranchId: Id<"gameBranches">;
+          paginationOpts: {
+            cursor: string | null;
+            endCursor?: string | null;
+            id?: number;
+            maximumBytesRead?: number;
+            maximumRowsRead?: number;
+            numItems: number;
+          };
+        },
+        any
+      >;
+      del: FunctionReference<
+        "mutation",
+        "public",
+        { buildId: Id<"gameBuilds"> },
+        any
+      >;
+    };
+  };
+  gameBuilds: {
+    get: FunctionReference<"query", "public", Record<string, never>, any>;
   };
 };
 export type InternalApiType = {};
