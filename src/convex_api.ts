@@ -25,7 +25,8 @@ export type PublicApiType = {
       any
     >;
     getById: FunctionReference<"query", "public", { id: Id<"games"> }, any>;
-    get: FunctionReference<
+    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
+    getGameOrgAndAccess: FunctionReference<
       "query",
       "public",
       { orgSlug: string; slug: string },
@@ -61,7 +62,11 @@ export type PublicApiType = {
     createPlayKey: FunctionReference<
       "mutation",
       "public",
-      { gameBuildId?: Id<"gameBuilds">; gameId: Id<"games"> },
+      {
+        gameBranchId?: Id<"gameBranches">;
+        gameBuildId?: Id<"gameBuilds">;
+        gameId: Id<"games">;
+      },
       any
     >;
   };
@@ -154,11 +159,34 @@ export type PublicApiType = {
     >;
   };
   leaderboards: {
+    attachLeaderboardUGC: FunctionReference<
+      "mutation",
+      "public",
+      { leaderboardId: Id<"leaderboards">; ugcId: Id<"userGeneratedContent"> },
+      boolean
+    >;
     getLeaderboard: FunctionReference<
       "query",
       "public",
       { name: string },
-      { id: Id<"leaderboards">; name: string; numEntries: number }
+      { id: Id<"leaderboards">; name: string; totalEntries: number }
+    >;
+    getMyLeaderboardEntry: FunctionReference<
+      "query",
+      "public",
+      { leaderboardId: Id<"leaderboards"> },
+      {
+        entry: null | {
+          globalRank: number;
+          metadata?: ArrayBuffer;
+          score: number;
+          timestamp: number;
+          ugcId?: Id<"userGeneratedContent">;
+          userId: Id<"users">;
+          username?: string;
+        };
+        totalEntries: number;
+      }
     >;
     getOrCreateLeaderboard: FunctionReference<
       "mutation",
@@ -168,25 +196,48 @@ export type PublicApiType = {
         created: boolean;
         id: Id<"leaderboards">;
         name: string;
-        numEntries: number;
-      }
-    >;
-    getLeaderboardEntriesForUsers: FunctionReference<
-      "query",
-      "public",
-      { leaderboardId: Id<"leaderboards">; userIds: Array<Id<"users">> },
-      {
-        entries: Array<{
-          score: number;
-          timestamp: number;
-          userId: Id<"users">;
-          username?: string;
-        }>;
-        leaderboardId: Id<"leaderboards">;
         totalEntries: number;
       }
     >;
-    createLeaderboardEntry: FunctionReference<
+    listEntries: FunctionReference<
+      "query",
+      "public",
+      { leaderboardId: Id<"leaderboards">; limit: number; offset: number },
+      {
+        entries: Array<{
+          globalRank: number;
+          metadata?: ArrayBuffer;
+          score: number;
+          timestamp: number;
+          ugcId?: Id<"userGeneratedContent">;
+          userId: Id<"users">;
+          username?: string;
+        }>;
+        totalEntries: number;
+      }
+    >;
+    listEntriesAroundUser: FunctionReference<
+      "query",
+      "public",
+      {
+        countAhead: number;
+        countBehind: number;
+        leaderboardId: Id<"leaderboards">;
+      },
+      {
+        entries: Array<{
+          globalRank: number;
+          metadata?: ArrayBuffer;
+          score: number;
+          timestamp: number;
+          ugcId?: Id<"userGeneratedContent">;
+          userId: Id<"users">;
+          username?: string;
+        }>;
+        totalEntries: number;
+      }
+    >;
+    upsertLeaderboardEntry: FunctionReference<
       "mutation",
       "public",
       {
@@ -197,20 +248,14 @@ export type PublicApiType = {
       },
       {
         entryId: Id<"leaderboardEntries">;
-        leaderboardId: Id<"leaderboards">;
+        score: number;
+        scoreChanged: boolean;
         totalEntries: number;
       }
     >;
-    attachLeaderboardUGC: FunctionReference<
-      "mutation",
-      "public",
-      { leaderboardId: Id<"leaderboards">; ugcId: Id<"userGeneratedContent"> },
-      boolean
-    >;
   };
   organizations: {
-    list: FunctionReference<"query", "public", any, any>;
-    current: FunctionReference<"query", "public", any, any>;
+    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
   };
   auth: {
     oauth: {
@@ -231,24 +276,104 @@ export type PublicApiType = {
       refresh: FunctionReference<
         "mutation",
         "public",
-        { orgId?: Id<"organizations">; sessionToken: string },
-        any
-      >;
-      switchOrganization: FunctionReference<
-        "mutation",
-        "public",
-        { organizationId: Id<"organizations">; sessionToken: string },
+        { sessionToken: string },
         any
       >;
     };
   };
-  gameBuilds: {
-    getIfPurchased: FunctionReference<
-      "query",
-      "public",
-      { gameBuildId: Id<"gameBuilds"> },
-      any
-    >;
+  developers: {
+    games: {
+      list: FunctionReference<
+        "query",
+        "public",
+        { orgId: Id<"organizations"> },
+        any
+      >;
+      get: FunctionReference<"query", "public", { gameId: Id<"games"> }, any>;
+      create: FunctionReference<
+        "mutation",
+        "public",
+        { orgId: Id<"organizations">; title: string },
+        any
+      >;
+      del: FunctionReference<
+        "mutation",
+        "public",
+        { gameId: Id<"games"> },
+        any
+      >;
+      switchTo: FunctionReference<
+        "mutation",
+        "public",
+        { gameId: Id<"games"> },
+        any
+      >;
+    };
+    organizations: {
+      list: FunctionReference<"query", "public", any, any>;
+      get: FunctionReference<
+        "query",
+        "public",
+        { orgId: Id<"organizations"> },
+        any
+      >;
+      create: FunctionReference<"mutation", "public", { name: string }, any>;
+      del: FunctionReference<
+        "mutation",
+        "public",
+        { orgId: Id<"organizations"> },
+        any
+      >;
+      switchTo: FunctionReference<
+        "mutation",
+        "public",
+        { orgId: Id<"organizations"> },
+        any
+      >;
+    };
+    apiKeys: {
+      list: FunctionReference<"query", "public", Record<string, never>, any>;
+      create: FunctionReference<"mutation", "public", { name: string }, any>;
+      del: FunctionReference<
+        "mutation",
+        "public",
+        { keyId: Id<"apiKeys"> },
+        any
+      >;
+    };
+    gameBranches: {
+      list: FunctionReference<"query", "public", { gameId: Id<"games"> }, any>;
+      get: FunctionReference<
+        "query",
+        "public",
+        { gameBranchId: Id<"gameBranches"> },
+        any
+      >;
+      create: FunctionReference<
+        "mutation",
+        "public",
+        {
+          gameCloud: "SANDBOX" | "PRODUCTION";
+          gameId: Id<"games">;
+          name: string;
+          r2Key?: string;
+          type:
+            | "INTERNAL"
+            | "PRODUCTION"
+            | "DEMO"
+            | "PLAYTEST"
+            | "ALPHA"
+            | "BETA";
+        },
+        any
+      >;
+      switchTo: FunctionReference<
+        "mutation",
+        "public",
+        { gameBranchId: Id<"gameBranches"> },
+        any
+      >;
+    };
   };
 };
 export type InternalApiType = {};

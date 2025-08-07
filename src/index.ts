@@ -10,7 +10,7 @@ import type {
   WavedashUser,
   EngineInstance,
   Leaderboard,
-  LeaderboardEntries,
+  LeaderboardEntry,
   WavedashResponse
 } from "./types";
 
@@ -22,7 +22,8 @@ class WavedashSDK {
   private wavedashUser: WavedashUser;
   private convexClient: ConvexClient;
   private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
-  public testVersion = 1231234;
+
+  private leaderboardCache: Map<Id<"leaderboards">, Leaderboard> = new Map();
 
   Constants = Constants;
   
@@ -40,56 +41,6 @@ class WavedashSDK {
   // Game engines expect a string, so we need to format the response accordingly
   private formatResponse<T>(data: T): T | string {
     return this.isGameEngine() ? JSON.stringify(data) : data;
-  }
-
-  // Helper to handle async operations with consistent error handling
-  private async handleAsyncOperation<T>(
-    operation: () => Promise<T>,
-  ): Promise<string | WavedashResponse<T>> {
-    try {
-      const result = await operation();
-      return this.formatResponse({
-        success: true,
-        data: result,
-        // TODO: Return original arguments here as well so caller can see what was passed in
-      });
-    } catch (error) {
-      console.error(`[WavedashJS] `, error);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
-  }
-
-  // Helper to handle async operations that can return null
-  private async handleAsyncOperationWithNull<T>(
-    operation: () => Promise<T | null>,
-    nullMessage: string
-  ): Promise<string | WavedashResponse<T>> {
-    try {
-      const result = await operation();
-      if (result === null) {
-        return this.formatResponse({
-          // TODO: 404 error code here. Error codes for not found, bad request, etc
-          success: false,
-          data: null,
-          message: nullMessage
-        });
-      }
-      return this.formatResponse({
-        success: true,
-        data: result
-      });
-    } catch (error) {
-      console.error(`[WavedashJS] `, error);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
   }
 
   // ====================
@@ -131,28 +82,44 @@ class WavedashSDK {
       return null;
     }
 
-    return this.formatResponse(this.wavedashUser) as string | WavedashUser;
+    return this.formatResponse(this.wavedashUser);
   }
 
   isReady(): boolean {
     return this.initialized;
   }
 
-  async getLeaderboard(leaderboardName: string): Promise<string | WavedashResponse<Leaderboard>> {
+  async getLeaderboard(name: string): Promise<string | WavedashResponse<Leaderboard>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    
-    return this.handleAsyncOperationWithNull(
-      () => this.convexClient.query(
+    if(this.config?.debug) {
+      console.log(`[WavedashJS] Getting leaderboard: ${name}`);
+    }
+
+    const args = { name }
+
+    try {
+      const leaderboard = await this.convexClient.query(
         api.leaderboards.getLeaderboard,
-        {
-          name: leaderboardName
-        }
-      ),
-      `Leaderboard does not exist: ${leaderboardName}`
-    );
+        args
+      );
+      this.leaderboardCache.set(leaderboard.id, leaderboard);
+      return this.formatResponse({
+        success: true,
+        data: leaderboard,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error getting leaderboard: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
   }
 
   async getOrCreateLeaderboard(leaderboardName: string, sortMethod: LeaderboardSortMethod, displayType: LeaderboardDisplayType): Promise<string | WavedashResponse<Leaderboard>> {
@@ -164,17 +131,44 @@ class WavedashSDK {
     if(this.config?.debug) {
       console.log('[WavedashJS] Getting or creating leaderboard:', leaderboardName);
     }
-    
-    return this.handleAsyncOperation(
-      () => this.convexClient.mutation(
+
+    const args = {
+      name: leaderboardName,
+      sortOrder: sortMethod,
+      displayType: displayType
+    };
+
+    try {
+      const leaderboard = await this.convexClient.mutation(
         api.leaderboards.getOrCreateLeaderboard,
-        {
-          name: leaderboardName,
-          sortOrder: sortMethod,
-          displayType: displayType
-        }
-      ),
-    );
+        args
+      );
+      this.leaderboardCache.set(leaderboard.id, leaderboard);
+      return this.formatResponse({
+        success: true,
+        data: leaderboard,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error getting or creating leaderboard: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async getMyLeaderboardEntry(leaderboardId: Id<"leaderboards">): Promise<string | WavedashResponse<LeaderboardEntry>> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    if(this.config?.debug) {
+      console.log(`[WavedashJS] Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`);
+    }
+    return null;
   }
 
   async getLeaderboardEntriesForUsers(leaderboardId: Id<"leaderboards">, userIds: Id<"users">[]): Promise<string | WavedashResponse<LeaderboardEntries>> {
