@@ -196,7 +196,7 @@ class WavedashSDK {
         userId: this.wavedashUser.id,
         username: this.wavedashUser.username
       } : null;
-      
+
       return this.formatResponse({
         success: true,
         data: entry,
@@ -211,6 +211,12 @@ class WavedashSDK {
         message: error instanceof Error ? error.message : String(error)
       });
     }
+  }
+
+  // Synchronously get leaderboard entry count from cache
+  getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
+    const cachedLeaderboard = this.leaderboardCache.get(leaderboardId);
+    return cachedLeaderboard ? cachedLeaderboard.totalEntries : -1;
   }
 
   async listLeaderboardEntriesAroundUser(leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
