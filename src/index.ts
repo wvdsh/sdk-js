@@ -12,7 +12,8 @@ import type {
   Leaderboard,
   LeaderboardEntry,
   LeaderboardEntries,
-  WavedashResponse
+  WavedashResponse,
+  UpsertedLeaderboardEntry
 } from "./types";
 
 class WavedashSDK {
@@ -190,9 +191,15 @@ class WavedashSDK {
         const totalEntries = result.totalEntries;
         this.updateLeaderboardCache(leaderboardId, totalEntries);
       }
+      const entry = result.entry ? {
+        ...result.entry,
+        userId: this.wavedashUser.id,
+        username: this.wavedashUser.username
+      } : null;
+      
       return this.formatResponse({
         success: true,
-        data: result.entry,
+        data: entry,
         args: args
       });
     } catch (error) {
@@ -206,7 +213,7 @@ class WavedashSDK {
     }
   }
 
-  async listEntriesAroundUser(leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
+  async listLeaderboardEntriesAroundUser(leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
@@ -242,7 +249,7 @@ class WavedashSDK {
     }
   }
 
-  async listEntries(leaderboardId: Id<"leaderboards">, offset: number, limit: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
+  async listLeaderboardEntries(leaderboardId: Id<"leaderboards">, offset: number, limit: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
@@ -270,6 +277,49 @@ class WavedashSDK {
       });
     } catch (error) {
       console.error(`[WavedashJS] Error listing entries: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async uploadLeaderboardScore(leaderboardId: Id<"leaderboards">, score: number, keepBest: boolean, metadata?: ArrayBuffer): Promise<string | WavedashResponse<UpsertedLeaderboardEntry>> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+
+    if(this.config?.debug) {
+      console.log(`[WavedashJS] Uploading score ${score} to leaderboard: ${leaderboardId}`);
+    }
+
+    const args = { leaderboardId, score, keepBest, metadata }
+    
+    try {
+      const result = await this.convexClient.mutation(
+        api.leaderboards.upsertLeaderboardEntry,
+        args
+      );
+      if (result && result.totalEntries) {
+        const totalEntries = result.totalEntries;
+        this.updateLeaderboardCache(leaderboardId, totalEntries);
+      }
+      const entry = {
+        ...result.entry,
+        userId: this.wavedashUser.id,
+        username: this.wavedashUser.username
+      }
+
+      return this.formatResponse({
+        success: true,
+        data: entry,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error upserting leaderboard entry: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,

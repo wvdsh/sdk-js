@@ -182,8 +182,6 @@ export type PublicApiType = {
           score: number;
           timestamp: number;
           ugcId?: Id<"userGeneratedContent">;
-          userId: Id<"users">;
-          username?: string;
         };
         totalEntries: number;
       }
@@ -247,9 +245,12 @@ export type PublicApiType = {
         score: number;
       },
       {
-        entryId: Id<"leaderboardEntries">;
-        score: number;
-        scoreChanged: boolean;
+        entry: {
+          entryId: Id<"leaderboardEntries">;
+          globalRank: number;
+          score: number;
+          scoreChanged: boolean;
+        };
         totalEntries: number;
       }
     >;

@@ -9,15 +9,19 @@ export type LeaderboardDisplayType = PublicApiType["leaderboards"]["getOrCreateL
 export type Leaderboard = FunctionReturnType<typeof api.leaderboards.getLeaderboard>;
 export type LeaderboardEntries = FunctionReturnType<typeof api.leaderboards.listEntriesAroundUser>["entries"];
 export type LeaderboardEntry = LeaderboardEntries[number];
+export type UpsertedLeaderboardEntry = FunctionReturnType<typeof api.leaderboards.upsertLeaderboardEntry>["entry"] & {
+  userId: Id<"users">;
+  username: string;
+};
 
 // Configuration and user types
 export interface WavedashConfig {
-  gameId: string;
+  gameId: Id<"games">;
   debug?: boolean;
 }
 
 export interface WavedashUser {
-  id: string;
+  id: Id<"users">;
   username: string;
 }
 
