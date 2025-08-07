@@ -168,35 +168,25 @@ class WavedashSDK {
     if(this.config?.debug) {
       console.log(`[WavedashJS] Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`);
     }
-    return null;
-  }
 
-  async getLeaderboardEntriesForUsers(leaderboardId: Id<"leaderboards">, userIds: Id<"users">[]): Promise<string | WavedashResponse<LeaderboardEntries>> {
-    if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
-    if(this.config?.debug) {
-      console.log('[WavedashJS] Getting leaderboard entries for users:', userIds);
-    }
-    // Game engines pass along structured data as JSON strings, so we need to parse them
-    if (typeof userIds === 'string') {
-      userIds = JSON.parse(userIds);
-    }
-
-    const args = { leaderboardId: leaderboardId, userIds: userIds as Id<"users">[] };
+    const args = { leaderboardId }
 
     try {
-      // TODO: Replace with correct API method - getLeaderboardEntriesForUsers doesn't exist
-      // Possible alternatives: api.leaderboards.listEntries or api.leaderboards.listEntriesAroundUser
-      throw new Error('getLeaderboardEntriesForUsers API method not implemented');
+      const result = await this.convexClient.query(
+        api.leaderboards.getMyLeaderboardEntry,
+        args
+      );
+      if (result) {
+        // TODO: Update cache with latest totalEntries value
+        const totalEntries = result.totalEntries;
+      }
       return this.formatResponse({
         success: true,
-        data: entries,
+        data: result.entry,
         args: args
       });
     } catch (error) {
-      console.error(`[WavedashJS] Error getting leaderboard entries for users: ${error}`);
+      console.error(`[WavedashJS] Error getting my leaderboard entry: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,
