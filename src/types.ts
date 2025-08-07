@@ -8,7 +8,6 @@ export type LeaderboardSortMethod = PublicApiType["leaderboards"]["getOrCreateLe
 export type LeaderboardDisplayType = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
 export type Leaderboard = FunctionReturnType<typeof api.leaderboards.getLeaderboard>;
 export type LeaderboardEntries = FunctionReturnType<typeof api.leaderboards.listEntriesAroundUser>["entries"];
-export type LeaderboardEntry = LeaderboardEntries[number];
 export type UpsertedLeaderboardEntry = FunctionReturnType<typeof api.leaderboards.upsertLeaderboardEntry>["entry"] & {
   userId: Id<"users">;
   username: string;

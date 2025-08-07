@@ -10,7 +10,6 @@ import type {
   WavedashUser,
   EngineInstance,
   Leaderboard,
-  LeaderboardEntry,
   LeaderboardEntries,
   WavedashResponse,
   UpsertedLeaderboardEntry
@@ -171,7 +170,9 @@ class WavedashSDK {
     }
   }
 
-  async getMyLeaderboardEntry(leaderboardId: Id<"leaderboards">): Promise<string | WavedashResponse<LeaderboardEntry>> {
+  // This is called get my "entries" but under the hood we enforce one entry per user
+  // The engine SDK expects a list of entries, so we return a list with 0 or 1 entries
+  async getMyLeaderboardEntries(leaderboardId: Id<"leaderboards">): Promise<string | WavedashResponse<LeaderboardEntries>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
@@ -197,9 +198,13 @@ class WavedashSDK {
         username: this.wavedashUser.username
       } : null;
 
+      // TODO: Kind of weird to return a list when it will only ever have 0 or 1 entries
+      // But this allows all get entries functions to share the same return type which the game SDK expects
+      const entries = entry ? [entry] : [];
+
       return this.formatResponse({
         success: true,
-        data: entry,
+        data: entries,
         args: args
       });
     } catch (error) {
