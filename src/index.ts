@@ -11,6 +11,7 @@ import type {
   EngineInstance,
   Leaderboard,
   LeaderboardEntry,
+  LeaderboardEntries,
   WavedashResponse
 } from "./types";
 
@@ -43,22 +44,30 @@ class WavedashSDK {
     return this.isGameEngine() ? JSON.stringify(data) : data;
   }
 
+  // Helper to update the leaderboard cache with the latest totalEntries value
+  private updateLeaderboardCache(leaderboardId: Id<"leaderboards">, totalEntries: number): void {
+    const cachedLeaderboard = this.leaderboardCache.get(leaderboardId);
+    if (cachedLeaderboard && typeof totalEntries === "number") {
+      this.leaderboardCache.set(leaderboardId, { ...cachedLeaderboard, totalEntries });
+    }
+  }
+
   // ====================
   // Game -> JS functions
   // ====================
 
-  init(config: WavedashConfig): void {
+  init(config: WavedashConfig): boolean {
     if (!config) {
       console.error('[WavedashJS] Initialized with empty config');
-      return;
+      return false;
     }
     if (typeof config === 'string') {
       try {
         config = JSON.parse(config);
       }
-      catch (e) {
-        console.error('[WavedashJS] Initialized with invalid config:', e);
-        return;
+      catch (error) {
+        console.error('[WavedashJS] Initialized with invalid config:', error);
+        return false;
       }
     }
   
@@ -68,6 +77,7 @@ class WavedashSDK {
     if (this.config.debug) {
       console.log('[WavedashJS] Initialized with config:', this.config);
     }
+    return true;
   }
 
   setEngineInstance(engineInstance: EngineInstance): void {
@@ -176,9 +186,9 @@ class WavedashSDK {
         api.leaderboards.getMyLeaderboardEntry,
         args
       );
-      if (result) {
-        // TODO: Update cache with latest totalEntries value
+      if (result && result.totalEntries) {
         const totalEntries = result.totalEntries;
+        this.updateLeaderboardCache(leaderboardId, totalEntries);
       }
       return this.formatResponse({
         success: true,
@@ -187,6 +197,79 @@ class WavedashSDK {
       });
     } catch (error) {
       console.error(`[WavedashJS] Error getting my leaderboard entry: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async listEntriesAroundUser(leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    if(this.config?.debug) {
+      console.log(`[WavedashJS] Listing entries around user for leaderboard: ${leaderboardId}`);
+    }
+
+    const args = { leaderboardId, countAhead, countBehind }
+
+    try {
+      const result = await this.convexClient.query(
+        api.leaderboards.listEntriesAroundUser,
+        args
+      );
+      if (result && result.totalEntries) {
+        const totalEntries = result.totalEntries;
+        this.updateLeaderboardCache(leaderboardId, totalEntries);
+      }
+      return this.formatResponse({
+        success: true,
+        data: result.entries,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error listing entries around user: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async listEntries(leaderboardId: Id<"leaderboards">, offset: number, limit: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    
+    if(this.config?.debug) {
+      console.log(`[WavedashJS] Listing entries for leaderboard: ${leaderboardId}`);
+    }
+
+    const args = { leaderboardId, offset, limit }
+
+    try {
+      const result = await this.convexClient.query(
+        api.leaderboards.listEntries,
+        args
+      );
+      if (result && result.totalEntries) {
+        const totalEntries = result.totalEntries;
+        this.updateLeaderboardCache(leaderboardId, totalEntries);
+      }
+      return this.formatResponse({
+        success: true,
+        data: result.entries,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error listing entries: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,
