@@ -1,6 +1,6 @@
 {
   "name": "@wvdsh/js",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "Wavedash JavaScript SDK",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
