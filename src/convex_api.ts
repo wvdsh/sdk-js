@@ -241,8 +241,8 @@ export type PublicApiType = {
       {
         keepBest: boolean;
         leaderboardId: Id<"leaderboards">;
-        metadata?: ArrayBuffer;
         score: number;
+        ugcId?: Id<"userGeneratedContent">;
       },
       {
         entry: {

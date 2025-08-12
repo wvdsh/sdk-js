@@ -297,7 +297,7 @@ class WavedashSDK {
     }
   }
 
-  async uploadLeaderboardScore(leaderboardId: Id<"leaderboards">, score: number, keepBest: boolean, metadata?: ArrayBuffer): Promise<string | WavedashResponse<UpsertedLeaderboardEntry>> {
+  async uploadLeaderboardScore(leaderboardId: Id<"leaderboards">, score: number, keepBest: boolean, ugcId?: Id<"userGeneratedContent">): Promise<string | WavedashResponse<UpsertedLeaderboardEntry>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
@@ -307,7 +307,7 @@ class WavedashSDK {
       console.log(`[WavedashJS] Uploading score ${score} to leaderboard: ${leaderboardId}`);
     }
 
-    const args = { leaderboardId, score, keepBest, metadata }
+    const args = { leaderboardId, score, keepBest, ugcId }
     
     try {
       const result = await this.convexClient.mutation(
