@@ -122,11 +122,11 @@ export type PublicApiType = {
         _creationTime: number;
         _id: Id<"userGeneratedContent">;
         canAccess: boolean;
-        contentType: number;
         description?: string;
         title?: string;
+        ugcType: 0 | 1 | 2 | 3 | 4;
         userId: Id<"users">;
-        visibility: number;
+        visibility: 0 | 1 | 2;
       } | null
     >;
   };
@@ -136,11 +136,12 @@ export type PublicApiType = {
       "public",
       {
         description?: string;
+        filePathToUpload?: string;
         title?: string;
         ugcType: 0 | 1 | 2 | 3 | 4;
         visibility?: 0 | 1 | 2;
       },
-      Id<"userGeneratedContent">
+      { ugcId: Id<"userGeneratedContent">; uploadUrl?: string }
     >;
     startUGCUpload: FunctionReference<
       "mutation",
@@ -153,6 +154,12 @@ export type PublicApiType = {
       "public",
       { success: boolean; ugcId: Id<"userGeneratedContent"> },
       boolean
+    >;
+    getUGCItemDownloadUrl: FunctionReference<
+      "query",
+      "public",
+      { ugcId: Id<"userGeneratedContent"> },
+      string
     >;
     updateUGCMetadata: FunctionReference<
       "mutation",

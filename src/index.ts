@@ -90,6 +90,23 @@ class WavedashSDK {
     throw new Error("Unrecognized value shape from IndexedDB");
   }
 
+  private async storeToIndexedDB(dbName: string, storeName: string, key: string, value: any): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const openReq = indexedDB.open(dbName);
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
+        const putReq = store.put(value, key);
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+        tx.oncomplete = () => db.close();
+      };
+    });
+  }
+
   private async uploadFromIndexedDb(uploadUrl: string, indexedDBKey: string): Promise<boolean> {
     // TODO: The DB name '/userfs' and Object Store name 'FILE_DATA' might be Godot specific
     // see where Unity saves files to IndexedDB
@@ -394,20 +411,38 @@ class WavedashSDK {
   }
 
   // USER GENERATED CONTENT
-  
-  async createUGCItem(ugcType: UGCType, title?: string, description?: string, visibility?: UGCVisibility): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
+  /**
+   * Creates a new UGC item and uploads the file to the server if a filePath is provided
+   * @param ugcType 
+   * @param title 
+   * @param description 
+   * @param visibility 
+   * @param filePath - optional IndexedDB key file path to upload to the server. If not provided, the UGC item will be created but no file will be uploaded.
+   * @returns ugcId
+   */
+  async createUGCItem(ugcType: UGCType, title?: string, description?: string, visibility?: UGCVisibility, filePath?: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
 
-    const args = { ugcType, title, description, visibility }
+    const args = { ugcType, title, description, visibility, filePath }
 
     try {
-      const ugcId = await this.convexClient.mutation(
+      const { ugcId, uploadUrl } = await this.convexClient.mutation(
         api.userGeneratedContent.createUGCItem,
         args
       );
+      if (filePath && uploadUrl) {
+        const success = await this.uploadFromIndexedDb(uploadUrl, filePath);
+        await this.convexClient.mutation(
+          api.userGeneratedContent.finishUGCUpload,
+          { success: success, ugcId: ugcId }
+        );
+        if (!success) {
+          throw new Error(`Failed to upload UGC item: ${filePath}`);
+        }
+      }
       return this.formatResponse({
         success: true,
         data: ugcId as Id<"userGeneratedContent">,
@@ -464,6 +499,43 @@ class WavedashSDK {
         message: error instanceof Error ? error.message : String(error)
       });
     }
+  }
+
+  async downloadUGCItem(ugcId: Id<"userGeneratedContent">, localFilePath: string): Promise<string | WavedashResponse<string>> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+
+    const args = { ugcId, localFilePath }
+
+    try {
+      const downloadUrl = await this.convexClient.query(
+        api.userGeneratedContent.getUGCItemDownloadUrl,
+        { ugcId: args.ugcId }
+      );
+      const response = await fetch(downloadUrl);
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      
+      // Store to IndexedDB instead of filesystem
+      await this.storeToIndexedDB('/userfs', 'FILE_DATA', args.localFilePath, { contents: arrayBuffer });
+      return this.formatResponse({
+        success: true,
+        data: args.localFilePath,
+        args: args
+      });
+    }
+    catch (error) {
+      console.error(`[WavedashJS] Error downloading UGC item: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+    
   }
 
   unsubscribeFromLobbyMessages(): void {
