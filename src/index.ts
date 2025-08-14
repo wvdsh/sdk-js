@@ -12,7 +12,9 @@ import type {
   Leaderboard,
   LeaderboardEntries,
   WavedashResponse,
-  UpsertedLeaderboardEntry
+  UpsertedLeaderboardEntry,
+  UGCType,
+  UGCVisibility
 } from "./types";
 
 class WavedashSDK {
@@ -50,6 +52,55 @@ class WavedashSDK {
     if (cachedLeaderboard && typeof totalEntries === "number") {
       this.leaderboardCache.set(leaderboardId, { ...cachedLeaderboard, totalEntries });
     }
+  }
+
+  private async getRecordFromIndexedDB(dbName: string, storeName: string, key: string): Promise<Record<string, any> | null> {
+    return new Promise((resolve, reject) => {
+      const openReq = indexedDB.open(dbName);
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema?"));
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(storeName, "readonly");
+        const store = tx.objectStore(storeName);
+        const getReq = store.get(key);
+        getReq.onsuccess = () => resolve(getReq.result);
+        getReq.onerror = () => reject(getReq.error);
+        tx.oncomplete = () => db.close();
+      };
+    });
+  }
+
+  private toBlobFromIndexedDBValue(value: any): Blob {
+    if (value == null) throw new Error("File not found in IndexedDB");
+    // Common IDBFS shapes:
+    // - { contents: ArrayBuffer } or { contents: Uint8Array }
+    // - Blob
+    // - ArrayBuffer / Uint8Array
+    if (value.contents != null) {
+      const buf = value.contents instanceof Uint8Array ? value.contents : new Uint8Array(value.contents);
+      return new Blob([buf], { type: "application/octet-stream" });
+    }
+    if (value instanceof Blob) return value;
+    if (value instanceof Uint8Array) return new Blob([value], { type: "application/octet-stream" });
+    if (value instanceof ArrayBuffer) return new Blob([value], { type: "application/octet-stream" });
+    // Fallback for shapes like { data: ArrayBuffer } or { blob: Blob }
+    if (value.data instanceof ArrayBuffer) return new Blob([value.data], { type: "application/octet-stream" });
+    if (value.blob instanceof Blob) return value.blob;
+    throw new Error("Unrecognized value shape from IndexedDB");
+  }
+
+  private async uploadFromIndexedDb(uploadUrl: string, indexedDBKey: string): Promise<boolean> {
+    // TODO: The DB name '/userfs' and Object Store name 'FILE_DATA' might be Godot specific
+    // see where Unity saves files to IndexedDB
+    const record = await this.getRecordFromIndexedDB('/userfs', 'FILE_DATA', indexedDBKey);
+    if (!record) return false;
+    const blob = this.toBlobFromIndexedDBValue(record);
+    const response = await fetch(uploadUrl, {
+      method: 'POST',
+      body: blob
+    });
+    return response.ok;
   }
 
   // ====================
@@ -331,6 +382,75 @@ class WavedashSDK {
       });
     } catch (error) {
       console.error(`[WavedashJS] Error upserting leaderboard entry: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  // USER GENERATED CONTENT
+  
+  async createUGCItem(ugcType: UGCType, title?: string, description?: string, visibility?: UGCVisibility): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+
+    const args = { ugcType, title, description, visibility }
+
+    try {
+      const ugcId = await this.convexClient.mutation(
+        api.userGeneratedContent.createUGCItem,
+        args
+      );
+      return this.formatResponse({
+        success: true,
+        data: ugcId as Id<"userGeneratedContent">,
+        args: args
+      });
+    }
+    catch (error) {
+      console.error(`[WavedashJS] Error creating UGC item: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
+  async uploadUGCItem(ugcId: Id<"userGeneratedContent">, filePath: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+
+    const args = { ugcId, filePath }
+
+    try {
+      const uploadUrl = await this.convexClient.mutation(
+        api.userGeneratedContent.startUGCUpload,
+        { ugcId: args.ugcId }
+      );
+
+      const success = await this.uploadFromIndexedDb(uploadUrl, args.filePath);
+      await this.convexClient.mutation(
+        api.userGeneratedContent.finishUGCUpload,
+        { success: success, ugcId: args.ugcId }
+      );
+
+      return this.formatResponse({
+        success: success,
+        data: args.ugcId,
+        args: args
+      });
+    }
+    catch (error) {
+      console.error(`[WavedashJS] Error uploading UGC item: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,

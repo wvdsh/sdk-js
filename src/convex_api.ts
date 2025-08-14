@@ -24,7 +24,6 @@ export type PublicApiType = {
       },
       any
     >;
-    getById: FunctionReference<"query", "public", { id: Id<"games"> }, any>;
     getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
     getGameOrgAndAccess: FunctionReference<
       "query",
@@ -132,22 +131,38 @@ export type PublicApiType = {
     >;
   };
   userGeneratedContent: {
-    createEmptyUGCItem: FunctionReference<
-      "mutation",
-      "public",
-      { contentType: 0 | 1 | 2 | 3 | 4; gameSessionToken: string },
-      { ugcId: Id<"userGeneratedContent">; uploadUrl: string }
-    >;
-    updateUGCItem: FunctionReference<
+    createUGCItem: FunctionReference<
       "mutation",
       "public",
       {
-        contentType: 0 | 1 | 2 | 3 | 4;
+        description?: string;
+        title?: string;
+        ugcType: 0 | 1 | 2 | 3 | 4;
+        visibility?: 0 | 1 | 2;
+      },
+      Id<"userGeneratedContent">
+    >;
+    startUGCUpload: FunctionReference<
+      "mutation",
+      "public",
+      { ugcId: Id<"userGeneratedContent"> },
+      string
+    >;
+    finishUGCUpload: FunctionReference<
+      "mutation",
+      "public",
+      { success: boolean; ugcId: Id<"userGeneratedContent"> },
+      boolean
+    >;
+    updateUGCMetadata: FunctionReference<
+      "mutation",
+      "public",
+      {
         description?: string;
         metadata?: ArrayBuffer;
         title?: string;
         ugcId: Id<"userGeneratedContent">;
-        visibility: 0 | 1 | 2;
+        visibility?: 0 | 1 | 2;
       },
       boolean
     >;
@@ -255,9 +270,6 @@ export type PublicApiType = {
       }
     >;
   };
-  organizations: {
-    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
-  };
   auth: {
     oauth: {
       googleOAuthCallback: FunctionReference<
@@ -303,6 +315,12 @@ export type PublicApiType = {
         { gameId: Id<"games"> },
         any
       >;
+      update: FunctionReference<
+        "mutation",
+        "public",
+        { gameId: Id<"games">; title: string },
+        any
+      >;
       switchTo: FunctionReference<
         "mutation",
         "public",
@@ -319,6 +337,12 @@ export type PublicApiType = {
         any
       >;
       create: FunctionReference<"mutation", "public", { name: string }, any>;
+      update: FunctionReference<
+        "mutation",
+        "public",
+        { name: string; orgId: Id<"organizations"> },
+        any
+      >;
       del: FunctionReference<
         "mutation",
         "public",
