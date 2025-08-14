@@ -161,17 +161,17 @@ export type PublicApiType = {
       { ugcId: Id<"userGeneratedContent"> },
       string
     >;
-    updateUGCMetadata: FunctionReference<
+    updateUGCItem: FunctionReference<
       "mutation",
       "public",
       {
+        createPresignedUploadUrl?: boolean;
         description?: string;
-        metadata?: ArrayBuffer;
         title?: string;
         ugcId: Id<"userGeneratedContent">;
         visibility?: 0 | 1 | 2;
       },
-      boolean
+      { ugcId: Id<"userGeneratedContent">; uploadUrl?: string }
     >;
     deleteUGCItem: FunctionReference<
       "mutation",

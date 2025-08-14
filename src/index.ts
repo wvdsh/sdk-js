@@ -460,6 +460,54 @@ class WavedashSDK {
     }
   }
 
+  /**
+   * Updates a UGC item and uploads the file to the server if a filePath is provided
+   * @param ugcId 
+   * @param title 
+   * @param description 
+   * @param visibility 
+   * @param filePath - optional IndexedDB key file path to upload to the server. If not provided, the UGC item will be updated but no file will be uploaded.
+   * @returns ugcId
+   */
+  async updateUGCItem(ugcId: Id<"userGeneratedContent">, title?: string, description?: string, visibility?: UGCVisibility, filePath?: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
+    
+    const args = { ugcId, title, description, visibility, filePath }
+
+    try {
+      const { uploadUrl } = await this.convexClient.mutation(
+        api.userGeneratedContent.updateUGCItem,
+        { ugcId, title, description, visibility, createPresignedUploadUrl: !!filePath }
+      );
+      if (filePath && uploadUrl) {
+        const success = await this.uploadFromIndexedDb(uploadUrl, filePath);
+        await this.convexClient.mutation(
+          api.userGeneratedContent.finishUGCUpload,
+          { success: success, ugcId: ugcId }
+        );
+        if (!success) {
+          throw new Error(`Failed to upload UGC item: ${filePath}`);
+        }
+      }
+      return this.formatResponse({
+        success: true,
+        data: ugcId,
+        args: args
+      });
+    } catch (error) {
+      console.error(`[WavedashJS] Error updating UGC item: ${error}`);
+      return this.formatResponse({
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  }
+
   async uploadUGCItem(ugcId: Id<"userGeneratedContent">, filePath: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
