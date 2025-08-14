@@ -58,7 +58,7 @@ class WavedashSDK {
     return new Promise((resolve, reject) => {
       const openReq = indexedDB.open(dbName);
       openReq.onerror = () => reject(openReq.error);
-      openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema?"));
+      openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
       openReq.onsuccess = () => {
         const db = openReq.result;
         const tx = db.transaction(storeName, "readonly");
@@ -94,7 +94,9 @@ class WavedashSDK {
     // TODO: The DB name '/userfs' and Object Store name 'FILE_DATA' might be Godot specific
     // see where Unity saves files to IndexedDB
     const record = await this.getRecordFromIndexedDB('/userfs', 'FILE_DATA', indexedDBKey);
-    if (!record) return false;
+    if (!record){
+      throw new Error(`File not found in IndexedDB: ${indexedDBKey}`);
+    }
     const blob = this.toBlobFromIndexedDBValue(record);
     const response = await fetch(uploadUrl, {
       method: 'POST',
@@ -451,6 +453,10 @@ class WavedashSDK {
     }
     catch (error) {
       console.error(`[WavedashJS] Error uploading UGC item: ${error}`);
+      await this.convexClient.mutation(
+        api.userGeneratedContent.finishUGCUpload,
+        { success: false, ugcId: args.ugcId }
+      );
       return this.formatResponse({
         success: false,
         data: null,
