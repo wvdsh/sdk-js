@@ -99,7 +99,7 @@ class WavedashSDK {
     }
     const blob = this.toBlobFromIndexedDBValue(record);
     const response = await fetch(uploadUrl, {
-      method: 'POST',
+      method: 'PUT',
       body: blob
     });
     return response.ok;
