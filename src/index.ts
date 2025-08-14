@@ -431,7 +431,7 @@ class WavedashSDK {
     try {
       const { ugcId, uploadUrl } = await this.convexClient.mutation(
         api.userGeneratedContent.createUGCItem,
-        args
+        { ugcType, title, description, visibility, createPresignedUploadUrl: !!filePath }
       );
       if (filePath && uploadUrl) {
         const success = await this.uploadFromIndexedDb(uploadUrl, filePath);
@@ -501,13 +501,13 @@ class WavedashSDK {
     }
   }
 
-  async downloadUGCItem(ugcId: Id<"userGeneratedContent">, localFilePath: string): Promise<string | WavedashResponse<string>> {
+  async downloadUGCItem(ugcId: Id<"userGeneratedContent">, filePath: string): Promise<string | WavedashResponse<string>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
 
-    const args = { ugcId, localFilePath }
+    const args = { ugcId, filePath }
 
     try {
       const downloadUrl = await this.convexClient.query(
@@ -518,11 +518,15 @@ class WavedashSDK {
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
       
-      // Store to IndexedDB instead of filesystem
-      await this.storeToIndexedDB('/userfs', 'FILE_DATA', args.localFilePath, { contents: arrayBuffer });
+      // Store to IndexedDB with Godot IDBFS structure
+      await this.storeToIndexedDB('/userfs', 'FILE_DATA', args.filePath, {
+        contents: arrayBuffer,
+        timestamp: Date.now(),
+        mode: 33206  // Standard file permissions (rw-rw-rw-)
+      });
       return this.formatResponse({
         success: true,
-        data: args.localFilePath,
+        data: args.filePath,
         args: args
       });
     }

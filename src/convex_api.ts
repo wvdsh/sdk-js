@@ -135,8 +135,8 @@ export type PublicApiType = {
       "mutation",
       "public",
       {
+        createPresignedUploadUrl?: boolean;
         description?: string;
-        filePathToUpload?: string;
         title?: string;
         ugcType: 0 | 1 | 2 | 3 | 4;
         visibility?: 0 | 1 | 2;
