@@ -74,15 +74,17 @@ class WavedashSDK {
   private toBlobFromIndexedDBValue(value: any): Blob {
     if (value == null) throw new Error("File not found in IndexedDB");
     // Common IDBFS shapes:
-    // - { contents: ArrayBuffer } or { contents: Uint8Array }
+    // - { contents: ArrayBuffer } or { contents: Uint8Array } or { contents: Int8Array }
     // - Blob
-    // - ArrayBuffer / Uint8Array
+    // - ArrayBuffer / Uint8Array / Int8Array
     if (value.contents != null) {
-      const buf = value.contents instanceof Uint8Array ? value.contents : new Uint8Array(value.contents);
+      const buf = (value.contents instanceof Uint8Array || value.contents instanceof Int8Array) 
+        ? value.contents 
+        : new Uint8Array(value.contents);
       return new Blob([buf], { type: "application/octet-stream" });
     }
     if (value instanceof Blob) return value;
-    if (value instanceof Uint8Array) return new Blob([value], { type: "application/octet-stream" });
+    if (value instanceof Uint8Array || value instanceof Int8Array) return new Blob([value], { type: "application/octet-stream" });
     if (value instanceof ArrayBuffer) return new Blob([value], { type: "application/octet-stream" });
     // Fallback for shapes like { data: ArrayBuffer } or { blob: Blob }
     if (value.data instanceof ArrayBuffer) return new Blob([value.data], { type: "application/octet-stream" });
@@ -585,7 +587,7 @@ class WavedashSDK {
       
       // Store to IndexedDB with Godot IDBFS structure
       await this.storeToIndexedDB('/userfs', 'FILE_DATA', args.filePath, {
-        contents: arrayBuffer,
+        contents: new Int8Array(arrayBuffer),  // Convert to Int8Array for Godot compatibility
         timestamp: Date.now(),
         mode: 33206  // Standard file permissions (rw-rw-rw-)
       });
