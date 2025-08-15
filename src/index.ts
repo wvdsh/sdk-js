@@ -112,7 +112,8 @@ class WavedashSDK {
     // see where Unity saves files to IndexedDB
     const record = await this.getRecordFromIndexedDB('/userfs', 'FILE_DATA', indexedDBKey);
     if (!record){
-      throw new Error(`File not found in IndexedDB: ${indexedDBKey}`);
+      // throw new Error(`File not found in IndexedDB: ${indexedDBKey}`);
+      return false;
     }
     const blob = this.toBlobFromIndexedDBValue(record);
     const response = await fetch(uploadUrl, {
@@ -462,6 +463,7 @@ class WavedashSDK {
 
   /**
    * Updates a UGC item and uploads the file to the server if a filePath is provided
+   * TODO: GD Script cannot call with optional arguments, convert this to accept a single dictionary of updates
    * @param ugcId 
    * @param title 
    * @param description 
