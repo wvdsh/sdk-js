@@ -444,6 +444,7 @@ class WavedashSDK {
       );
       if (filePath && uploadUrl) {
         const success = await this.uploadFromIndexedDb(uploadUrl, filePath);
+        // TODO: This should be handled on the backend using R2 event notifications
         await this.convexClient.mutation(
           api.userGeneratedContent.finishUGCUpload,
           { success: success, ugcId: ugcId }
@@ -494,6 +495,7 @@ class WavedashSDK {
       );
       if (filePath && uploadUrl) {
         const success = await this.uploadFromIndexedDb(uploadUrl, filePath);
+        // TODO: This should be handled on the backend using R2 event notifications
         await this.convexClient.mutation(
           api.userGeneratedContent.finishUGCUpload,
           { success: success, ugcId: ugcId }
@@ -533,6 +535,7 @@ class WavedashSDK {
       );
 
       const success = await this.uploadFromIndexedDb(uploadUrl, args.filePath);
+      // TODO: This should be handled on the backend using R2 event notifications
       await this.convexClient.mutation(
         api.userGeneratedContent.finishUGCUpload,
         { success: success, ugcId: args.ugcId }
@@ -546,6 +549,7 @@ class WavedashSDK {
     }
     catch (error) {
       console.error(`[WavedashJS] Error uploading UGC item: ${error}`);
+      // TODO: This should be handled on the backend using R2 event notifications
       await this.convexClient.mutation(
         api.userGeneratedContent.finishUGCUpload,
         { success: false, ugcId: args.ugcId }
@@ -559,7 +563,7 @@ class WavedashSDK {
     }
   }
 
-  async downloadUGCItem(ugcId: Id<"userGeneratedContent">, filePath: string): Promise<string | WavedashResponse<string>> {
+  async downloadUGCItem(ugcId: Id<"userGeneratedContent">, filePath: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
@@ -573,6 +577,9 @@ class WavedashSDK {
         { ugcId: args.ugcId }
       );
       const response = await fetch(downloadUrl);
+      if (!response.ok) {
+        throw new Error(`Failed to download UGC item: ${downloadUrl}`);
+      }
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
       
@@ -584,7 +591,7 @@ class WavedashSDK {
       });
       return this.formatResponse({
         success: true,
-        data: args.filePath,
+        data: args.ugcId,
         args: args
       });
     }
