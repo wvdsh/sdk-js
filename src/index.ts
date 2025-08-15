@@ -110,17 +110,25 @@ class WavedashSDK {
   private async uploadFromIndexedDb(uploadUrl: string, indexedDBKey: string): Promise<boolean> {
     // TODO: The DB name '/userfs' and Object Store name 'FILE_DATA' might be Godot specific
     // see where Unity saves files to IndexedDB
+    if (this.config?.debug) {
+      console.log(`[WavedashJS] Uploading ${indexedDBKey} to: ${uploadUrl}`);
+    }
     const record = await this.getRecordFromIndexedDB('/userfs', 'FILE_DATA', indexedDBKey);
     if (!record){
-      // throw new Error(`File not found in IndexedDB: ${indexedDBKey}`);
+      console.error(`[WavedashJS] File not found in IndexedDB: ${indexedDBKey}`);
       return false;
     }
-    const blob = this.toBlobFromIndexedDBValue(record);
-    const response = await fetch(uploadUrl, {
-      method: 'PUT',
-      body: blob
-    });
-    return response.ok;
+    try {
+      const blob = this.toBlobFromIndexedDBValue(record);
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: blob
+      });
+      return response.ok;
+    } catch (error) {
+      console.error(`[WavedashJS] Error uploading from IndexedDB: ${error}`);
+      return false;
+    }
   }
 
   // ====================
