@@ -4,6 +4,8 @@ import { api, PublicApiType } from "./convex_api";
 
 // Extract types from the API
 export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
+export type UGCType = PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
+export type UGCVisibility = PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
 export type LeaderboardSortMethod = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
 export type LeaderboardDisplayType = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
 export type Leaderboard = FunctionReturnType<typeof api.leaderboards.getLeaderboard>;
@@ -26,6 +28,8 @@ export interface WavedashUser {
 
 export interface EngineInstance {
   SendMessage(objectName: string, methodName: string, value?: string | number): void;
+  // Godot exposes a copyToFS method that can be used to copy data to the filesystem
+  copyToFS?(filePath: string, data: ArrayBuffer): void;
   // ... other internal properties and methods
 }
 

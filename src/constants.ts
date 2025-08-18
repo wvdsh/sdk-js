@@ -36,7 +36,7 @@ export const LEADERBOARD_DISPLAY_TYPE = {
 } as const;
 
 // ========== USER GENERATED CONTENT ==========
-export const UGC_CONTENT_TYPE = {
+export const UGC_TYPE = {
 	SCREENSHOT: 0,
 	VIDEO: 1,
 	COMMUNITY: 2,
@@ -48,4 +48,11 @@ export const UGC_VISIBILITY = {
 	PUBLIC: 0,
 	FRIENDS_ONLY: 1,
 	PRIVATE: 2
+} as const;
+
+export const UGC_UPLOAD_STATUS = {
+	NOT_STARTED: 0,
+	UPLOADING: 1,
+	FAILED: 2,
+	COMPLETED: 3
 } as const;

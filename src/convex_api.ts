@@ -24,7 +24,6 @@ export type PublicApiType = {
       },
       any
     >;
-    getById: FunctionReference<"query", "public", { id: Id<"games"> }, any>;
     getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
     getGameOrgAndAccess: FunctionReference<
       "query",
@@ -123,33 +122,56 @@ export type PublicApiType = {
         _creationTime: number;
         _id: Id<"userGeneratedContent">;
         canAccess: boolean;
-        contentType: number;
         description?: string;
         title?: string;
+        ugcType: 0 | 1 | 2 | 3 | 4;
         userId: Id<"users">;
-        visibility: number;
+        visibility: 0 | 1 | 2;
       } | null
     >;
   };
   userGeneratedContent: {
-    createEmptyUGCItem: FunctionReference<
+    createUGCItem: FunctionReference<
       "mutation",
       "public",
-      { contentType: 0 | 1 | 2 | 3 | 4; gameSessionToken: string },
-      { ugcId: Id<"userGeneratedContent">; uploadUrl: string }
+      {
+        createPresignedUploadUrl?: boolean;
+        description?: string;
+        title?: string;
+        ugcType: 0 | 1 | 2 | 3 | 4;
+        visibility?: 0 | 1 | 2;
+      },
+      { ugcId: Id<"userGeneratedContent">; uploadUrl?: string }
+    >;
+    startUGCUpload: FunctionReference<
+      "mutation",
+      "public",
+      { ugcId: Id<"userGeneratedContent"> },
+      string
+    >;
+    finishUGCUpload: FunctionReference<
+      "mutation",
+      "public",
+      { success: boolean; ugcId: Id<"userGeneratedContent"> },
+      boolean
+    >;
+    getUGCItemDownloadUrl: FunctionReference<
+      "query",
+      "public",
+      { ugcId: Id<"userGeneratedContent"> },
+      string
     >;
     updateUGCItem: FunctionReference<
       "mutation",
       "public",
       {
-        contentType: 0 | 1 | 2 | 3 | 4;
+        createPresignedUploadUrl?: boolean;
         description?: string;
-        metadata?: ArrayBuffer;
         title?: string;
         ugcId: Id<"userGeneratedContent">;
-        visibility: 0 | 1 | 2;
+        visibility?: 0 | 1 | 2;
       },
-      boolean
+      { ugcId: Id<"userGeneratedContent">; uploadUrl?: string }
     >;
     deleteUGCItem: FunctionReference<
       "mutation",
@@ -241,8 +263,8 @@ export type PublicApiType = {
       {
         keepBest: boolean;
         leaderboardId: Id<"leaderboards">;
-        metadata?: ArrayBuffer;
         score: number;
+        ugcId?: Id<"userGeneratedContent">;
       },
       {
         entry: {
@@ -254,9 +276,6 @@ export type PublicApiType = {
         totalEntries: number;
       }
     >;
-  };
-  organizations: {
-    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
   };
   auth: {
     oauth: {
@@ -303,6 +322,12 @@ export type PublicApiType = {
         { gameId: Id<"games"> },
         any
       >;
+      update: FunctionReference<
+        "mutation",
+        "public",
+        { gameId: Id<"games">; title: string },
+        any
+      >;
       switchTo: FunctionReference<
         "mutation",
         "public",
@@ -319,6 +344,12 @@ export type PublicApiType = {
         any
       >;
       create: FunctionReference<"mutation", "public", { name: string }, any>;
+      update: FunctionReference<
+        "mutation",
+        "public",
+        { name: string; orgId: Id<"organizations"> },
+        any
+      >;
       del: FunctionReference<
         "mutation",
         "public",
@@ -414,6 +445,23 @@ export type PublicApiType = {
   };
   gameBuilds: {
     get: FunctionReference<"query", "public", Record<string, never>, any>;
+  };
+  test: {
+    leaderboards: {
+      testAggregateInclusiveBounds: FunctionReference<
+        "query",
+        "public",
+        { leaderboardId: Id<"leaderboards"> },
+        {
+          countWithInclusiveFalse: number;
+          countWithInclusiveTrue: number;
+          iteratorCountWithInclusiveFalse: number;
+          iteratorCountWithInclusiveTrue: number;
+          scoreToExclude: number;
+          totalCount: number;
+        }
+      >;
+    };
   };
 };
 export type InternalApiType = {};
