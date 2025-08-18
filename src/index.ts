@@ -139,6 +139,7 @@ class WavedashSDK {
     this.initialized = true;
     
     if (this.config.debug) {
+      // TODO: Set up proper logging with log levels set by config
       console.log('[WavedashJS] Initialized with config:', this.config);
     }
     return true;
@@ -577,9 +578,6 @@ class WavedashSDK {
           console.log(`[WavedashJS] Copying UGC item to filesystem: ${args.filePath}`, '...');
         }
         this.engineInstance.copyToFS(args.filePath, arrayBuffer);
-        if (this.config?.debug) {
-          console.log(`[WavedashJS] Copied UGC item to filesystem: ${args.filePath}`);
-        }
       } else {
         console.warn('[WavedashJS] Engine instance does not support copyToFS. UGC item will not be saved to filesystem.');
       }
@@ -647,8 +645,9 @@ class WavedashSDK {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-
-    console.log('[WavedashJS] Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
+    if (this.config?.debug){
+      console.log('[WavedashJS] Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
+    }
 
     const args = {
       lobbyType: lobbyType as LobbyType,
