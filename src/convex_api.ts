@@ -446,5 +446,22 @@ export type PublicApiType = {
   gameBuilds: {
     get: FunctionReference<"query", "public", Record<string, never>, any>;
   };
+  test: {
+    leaderboards: {
+      testAggregateInclusiveBounds: FunctionReference<
+        "query",
+        "public",
+        { leaderboardId: Id<"leaderboards"> },
+        {
+          countWithInclusiveFalse: number;
+          countWithInclusiveTrue: number;
+          iteratorCountWithInclusiveFalse: number;
+          iteratorCountWithInclusiveTrue: number;
+          scoreToExclude: number;
+          totalCount: number;
+        }
+      >;
+    };
+  };
 };
 export type InternalApiType = {};

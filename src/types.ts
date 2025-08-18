@@ -28,6 +28,8 @@ export interface WavedashUser {
 
 export interface EngineInstance {
   SendMessage(objectName: string, methodName: string, value?: string | number): void;
+  // Godot exposes a copyToFS method that can be used to copy data to the filesystem
+  copyToFS?(filePath: string, data: ArrayBuffer): void;
   // ... other internal properties and methods
 }
 

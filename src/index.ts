@@ -92,23 +92,6 @@ class WavedashSDK {
     throw new Error("Unrecognized value shape from IndexedDB");
   }
 
-  private async storeToIndexedDB(dbName: string, storeName: string, key: string, value: any): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const openReq = indexedDB.open(dbName);
-      openReq.onerror = () => reject(openReq.error);
-      openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
-      openReq.onsuccess = () => {
-        const db = openReq.result;
-        const tx = db.transaction(storeName, "readwrite");
-        const store = tx.objectStore(storeName);
-        const putReq = store.put(value, key);
-        putReq.onsuccess = () => resolve();
-        putReq.onerror = () => reject(putReq.error);
-        tx.oncomplete = () => db.close();
-      };
-    });
-  }
-
   private async uploadFromIndexedDb(uploadUrl: string, indexedDBKey: string): Promise<boolean> {
     // TODO: The DB name '/userfs' and Object Store name 'FILE_DATA' might be Godot specific
     // see where Unity saves files to IndexedDB
@@ -161,9 +144,12 @@ class WavedashSDK {
     return true;
   }
 
+  /**
+   * Set the engine instance (Unity or Godot).
+   * If using a game engine, call this function before starting the game.
+   * @param engineInstance - The engine instance.
+   */
   setEngineInstance(engineInstance: EngineInstance): void {
-    // In the Unity case, our custom HTML page sets this once the unity instance is ready.
-    // In the Godot case, the Godot plugin sets this value itself.
     this.engineInstance = engineInstance;
   }
 
@@ -584,13 +570,20 @@ class WavedashSDK {
       }
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
-      
-      // Store to IndexedDB with Godot IDBFS structure
-      await this.storeToIndexedDB('/userfs', 'FILE_DATA', args.filePath, {
-        contents: new Int8Array(arrayBuffer),  // Convert to Int8Array for Godot compatibility
-        timestamp: Date.now(),
-        mode: 33206  // Standard file permissions (rw-rw-rw-)
-      });
+
+      // TODO: copyToFS is a Godot specific method, we'll need to implement something similar for Unity
+      if(this.engineInstance?.copyToFS) {
+        if (this.config?.debug) {
+          console.log(`[WavedashJS] Copying UGC item to filesystem: ${args.filePath}`, '...');
+        }
+        this.engineInstance.copyToFS(args.filePath, arrayBuffer);
+        if (this.config?.debug) {
+          console.log(`[WavedashJS] Copied UGC item to filesystem: ${args.filePath}`);
+        }
+      } else {
+        console.warn('[WavedashJS] Engine instance does not support copyToFS. UGC item will not be saved to filesystem.');
+      }
+
       return this.formatResponse({
         success: true,
         data: args.ugcId,
