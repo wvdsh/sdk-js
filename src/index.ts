@@ -431,7 +431,10 @@ class WavedashSDK {
         api.userGeneratedContent.createUGCItem,
         { ugcType, title, description, visibility, createPresignedUploadUrl: !!filePath }
       );
-      if (filePath && uploadUrl) {
+      if (filePath && !uploadUrl) {
+        throw new Error(`Failed to create a presigned upload URL for UGC item: ${filePath}`);
+      }
+      else if (filePath && uploadUrl) {
         const success = await this.uploadFromIndexedDb(uploadUrl, filePath);
         // TODO: This should be handled on the backend using R2 event notifications
         await this.convexClient.mutation(
@@ -482,7 +485,10 @@ class WavedashSDK {
         api.userGeneratedContent.updateUGCItem,
         { ugcId, title, description, visibility, createPresignedUploadUrl: !!filePath }
       );
-      if (filePath && uploadUrl) {
+      if (filePath && !uploadUrl) {
+        throw new Error(`Failed to create a presigned upload URL for UGC item: ${filePath}`);
+      }
+      else if (filePath && uploadUrl) {
         const success = await this.uploadFromIndexedDb(uploadUrl, filePath);
         // TODO: This should be handled on the backend using R2 event notifications
         await this.convexClient.mutation(
