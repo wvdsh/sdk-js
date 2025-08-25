@@ -606,13 +606,29 @@ class WavedashSDK {
       const arrayBuffer = await blob.arrayBuffer();
 
       // TODO: copyToFS is a Godot specific method, we'll need to implement something similar for Unity
+      // copyToFS is used to load the Godot .pck file, so it should be safe to use for relatively large files
       if(this.engineInstance?.copyToFS) {
+        const fileSizeMB = arrayBuffer.byteLength / (1024 * 1024);
         if (this.config?.debug) {
-          console.log(`[WavedashJS] Copying UGC item to filesystem: ${args.filePath}`, '...');
+          console.log(`[WavedashJS] Copying UGC item to filesystem: ${args.filePath} (${fileSizeMB.toFixed(2)}MB)`);
         }
-        this.engineInstance.copyToFS(args.filePath, arrayBuffer);
+        
+        // Warn about large files that might cause issues
+        if (fileSizeMB > 100) {
+          console.warn(`[WavedashJS] Large UGC file detected (${fileSizeMB.toFixed(2)}MB). This may cause memory issues or slow performance.`);
+        }
+        
+        try {
+          this.engineInstance.copyToFS(args.filePath, arrayBuffer);
+          if (this.config?.debug) {
+            console.log(`[WavedashJS] Successfully copied ${fileSizeMB.toFixed(2)}MB to filesystem`);
+          }
+        } catch (error) {
+          console.error(`[WavedashJS] Failed to copy file to filesystem: ${error}`);
+          throw new Error(`Failed to save file to filesystem: ${error instanceof Error ? error.message : String(error)}`);
+        }
       } else {
-        console.warn('[WavedashJS] Engine instance does not support copyToFS. UGC item will not be saved to filesystem.');
+        throw new Error('Engine instance does not support copyToFS. UGC item will not be saved to filesystem.');
       }
 
       return this.formatResponse({
