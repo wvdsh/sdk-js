@@ -54,21 +54,47 @@ class WavedashSDK {
     }
   }
 
-  private async getRecordFromIndexedDB(dbName: string, storeName: string, key: string): Promise<Record<string, any> | null> {
-    return new Promise((resolve, reject) => {
-      const openReq = indexedDB.open(dbName);
-      openReq.onerror = () => reject(openReq.error);
-      openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
-      openReq.onsuccess = () => {
-        const db = openReq.result;
-        const tx = db.transaction(storeName, "readonly");
-        const store = tx.objectStore(storeName);
-        const getReq = store.get(key);
-        getReq.onsuccess = () => resolve(getReq.result);
-        getReq.onerror = () => reject(getReq.error);
-        tx.oncomplete = () => db.close();
-      };
-    });
+  private async getRecordFromIndexedDB(dbName: string, storeName: string, key: string, maxRetries: number = 5): Promise<Record<string, any> | null> {
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      try {
+        const result = await new Promise<Record<string, any> | null>((resolve, reject) => {
+          const openReq = indexedDB.open(dbName);
+          openReq.onerror = () => reject(openReq.error);
+          openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+          openReq.onsuccess = () => {
+            const db = openReq.result;
+            const tx = db.transaction(storeName, "readonly");
+            const store = tx.objectStore(storeName);
+            const getReq = store.get(key);
+            getReq.onsuccess = () => resolve(getReq.result);
+            getReq.onerror = () => reject(getReq.error);
+            tx.oncomplete = () => db.close();
+          };
+        });
+        
+        if (result !== null && result !== undefined) {
+          return result;
+        }
+        
+        // File not found, wait before retry (exponential backoff)
+        if (attempt < maxRetries) {
+          const delay = Math.min(50 * Math.pow(2, attempt), 1000); // 50ms, 100ms, 200ms, 400ms, 800ms, max 1s
+          if (this.config?.debug) {
+            console.log(`[WavedashJS] File not found in IndexedDB, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1}): ${key}`);
+          }
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+      } catch (error) {
+        if (attempt === maxRetries) {
+          throw error;
+        }
+        // Wait before retry on error too
+        const delay = Math.min(50 * Math.pow(2, attempt), 1000);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
+    
+    return null;
   }
 
   private toBlobFromIndexedDBValue(value: any): Blob {
@@ -98,12 +124,12 @@ class WavedashSDK {
     if (this.config?.debug) {
       console.log(`[WavedashJS] Uploading ${indexedDBKey} to: ${uploadUrl}`);
     }
-    const record = await this.getRecordFromIndexedDB('/userfs', 'FILE_DATA', indexedDBKey);
-    if (!record){
-      console.error(`[WavedashJS] File not found in IndexedDB: ${indexedDBKey}`);
-      return false;
-    }
     try {
+      const record = await this.getRecordFromIndexedDB('/userfs', 'FILE_DATA', indexedDBKey);
+      if (!record){
+        console.error(`[WavedashJS] File not found in IndexedDB: ${indexedDBKey}`);
+        return false;
+      }
       const blob = this.toBlobFromIndexedDBValue(record);
       const response = await fetch(uploadUrl, {
         method: 'PUT',
