@@ -134,6 +134,7 @@ class WavedashSDK {
       const response = await fetch(uploadUrl, {
         method: 'PUT',
         body: blob
+        // credentials not needed for presigned upload URL
       });
       return response.ok;
     } catch (error) {
@@ -597,7 +598,7 @@ class WavedashSDK {
         api.userGeneratedContent.getUGCItemDownloadUrl,
         { ugcId: args.ugcId }
       );
-      const response = await fetch(downloadUrl);
+      const response = await fetch(downloadUrl, {credentials: 'include'});
       if (!response.ok) {
         throw new Error(`Failed to download UGC item: ${downloadUrl}`);
       }
