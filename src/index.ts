@@ -1,6 +1,7 @@
 import { ConvexClient } from "convex/browser";
 import { api } from "./convex_api";
 import * as Constants from "./constants";
+import { LeaderboardService } from "./services/LeaderboardService";
 import type {
   Id,
   LobbyType,
@@ -18,21 +19,22 @@ import type {
 } from "./types";
 
 class WavedashSDK {
-  private initialized: boolean = false;
-  private config: WavedashConfig | null = null;
+  protected initialized: boolean = false;
+  config: WavedashConfig | null = null;
   private engineInstance: EngineInstance | null = null;
   private engineCallbackReceiver: string = "WavedashCallbackReceiver";
-  private wavedashUser: WavedashUser;
-  private convexClient: ConvexClient;
+  protected wavedashUser: WavedashUser;
+  protected convexClient: ConvexClient;
   private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
 
-  private leaderboardCache: Map<Id<"leaderboards">, Leaderboard> = new Map();
+  private leaderboards: LeaderboardService;
 
   Constants = Constants;
   
   constructor(convexClient: ConvexClient, wavedashUser: WavedashUser) {
     this.convexClient = convexClient;
     this.wavedashUser = wavedashUser;
+    this.leaderboards = new LeaderboardService(convexClient, wavedashUser);
   }
 
   // Helper to determine if we're in a game engine context
@@ -42,16 +44,8 @@ class WavedashSDK {
 
   // Helper to format response based on context
   // Game engines expect a string, so we need to format the response accordingly
-  private formatResponse<T>(data: T): T | string {
+  protected formatResponse<T>(data: T): T | string {
     return this.isGameEngine() ? JSON.stringify(data) : data;
-  }
-
-  // Helper to update the leaderboard cache with the latest totalEntries value
-  private updateLeaderboardCache(leaderboardId: Id<"leaderboards">, totalEntries: number): void {
-    const cachedLeaderboard = this.leaderboardCache.get(leaderboardId);
-    if (cachedLeaderboard && typeof totalEntries === "number") {
-      this.leaderboardCache.set(leaderboardId, { ...cachedLeaderboard, totalEntries });
-    }
   }
 
   private async writeToIndexedDB(dbName: string, storeName: string, key: string, data: Uint8Array): Promise<void> {
@@ -89,7 +83,7 @@ class WavedashSDK {
         const tx = db.transaction(storeName, "readonly");
         const store = tx.objectStore(storeName);
         const getReq = store.get(key);
-        getReq.onsuccess = () => resolve(getReq.result || null);
+        getReq.onsuccess = () => resolve(getReq.result);
         getReq.onerror = () => reject(getReq.error);
         tx.oncomplete = () => db.close();
       };
@@ -223,32 +217,11 @@ class WavedashSDK {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if(this.config?.debug) {
+    if (this.config?.debug) {
       console.log(`[WavedashJS] Getting leaderboard: ${name}`);
     }
-
-    const args = { name }
-
-    try {
-      const leaderboard = await this.convexClient.query(
-        api.leaderboards.getLeaderboard,
-        args
-      );
-      this.leaderboardCache.set(leaderboard.id, leaderboard);
-      return this.formatResponse({
-        success: true,
-        data: leaderboard,
-        args: args
-      });
-    } catch (error) {
-      console.error(`[WavedashJS] Error getting leaderboard: ${error}`);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+    const result = await this.leaderboards.getLeaderboard(name);
+    return this.formatResponse(result);
   }
 
   async getOrCreateLeaderboard(name: string, sortOrder: LeaderboardSortOrder, displayType: LeaderboardDisplayType): Promise<string | WavedashResponse<Leaderboard>> {
@@ -256,33 +229,11 @@ class WavedashSDK {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-
-    if(this.config?.debug) {
-      console.log('[WavedashJS] Getting or creating leaderboard:', name);
+    if (this.config?.debug) {
+      console.log(`[WavedashJS] Getting or creating leaderboard: ${name}`);
     }
-
-    const args = { name, sortOrder, displayType };
-
-    try {
-      const leaderboard = await this.convexClient.mutation(
-        api.leaderboards.getOrCreateLeaderboard,
-        args
-      );
-      this.leaderboardCache.set(leaderboard.id, leaderboard);
-      return this.formatResponse({
-        success: true,
-        data: leaderboard,
-        args: args
-      });
-    } catch (error) {
-      console.error(`[WavedashJS] Error getting or creating leaderboard: ${error}`);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+    const result = await this.leaderboards.getOrCreateLeaderboard(name, sortOrder, displayType);
+    return this.formatResponse(result);
   }
 
   // This is called get my "entries" but under the hood we enforce one entry per user
@@ -292,51 +243,20 @@ class WavedashSDK {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if(this.config?.debug) {
+    if (this.config?.debug) {
       console.log(`[WavedashJS] Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`);
     }
-
-    const args = { leaderboardId }
-
-    try {
-      const result = await this.convexClient.query(
-        api.leaderboards.getMyLeaderboardEntry,
-        args
-      );
-      if (result && result.totalEntries) {
-        const totalEntries = result.totalEntries;
-        this.updateLeaderboardCache(leaderboardId, totalEntries);
-      }
-      const entry = result.entry ? {
-        ...result.entry,
-        userId: this.wavedashUser.id,
-        username: this.wavedashUser.username
-      } : null;
-
-      // TODO: Kind of weird to return a list when it will only ever have 0 or 1 entries
-      // But this allows all get entries functions to share the same return type which the game SDK expects
-      const entries = entry ? [entry] : [];
-
-      return this.formatResponse({
-        success: true,
-        data: entries,
-        args: args
-      });
-    } catch (error) {
-      console.error(`[WavedashJS] Error getting my leaderboard entry: ${error}`);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+    const result = await this.leaderboards.getMyLeaderboardEntries(leaderboardId);
+    return this.formatResponse(result);
   }
 
   // Synchronously get leaderboard entry count from cache
   getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
-    const cachedLeaderboard = this.leaderboardCache.get(leaderboardId);
-    return cachedLeaderboard ? cachedLeaderboard.totalEntries : -1;
+    if (!this.isReady()) {
+      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      return -1;
+    }
+    return this.leaderboards.getLeaderboardEntryCount(leaderboardId);
   }
 
   async listLeaderboardEntriesAroundUser(leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
@@ -344,35 +264,11 @@ class WavedashSDK {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if(this.config?.debug) {
+    if (this.config?.debug) {
       console.log(`[WavedashJS] Listing entries around user for leaderboard: ${leaderboardId}`);
     }
-
-    const args = { leaderboardId, countAhead, countBehind }
-
-    try {
-      const result = await this.convexClient.query(
-        api.leaderboards.listEntriesAroundUser,
-        args
-      );
-      if (result && result.totalEntries) {
-        const totalEntries = result.totalEntries;
-        this.updateLeaderboardCache(leaderboardId, totalEntries);
-      }
-      return this.formatResponse({
-        success: true,
-        data: result.entries,
-        args: args
-      });
-    } catch (error) {
-      console.error(`[WavedashJS] Error listing entries around user: ${error}`);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+    const result = await this.leaderboards.listLeaderboardEntriesAroundUser(leaderboardId, countAhead, countBehind);
+    return this.formatResponse(result);
   }
 
   async listLeaderboardEntries(leaderboardId: Id<"leaderboards">, offset: number, limit: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
@@ -380,36 +276,11 @@ class WavedashSDK {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    
-    if(this.config?.debug) {
+    if (this.config?.debug) {
       console.log(`[WavedashJS] Listing entries for leaderboard: ${leaderboardId}`);
     }
-
-    const args = { leaderboardId, offset, limit }
-
-    try {
-      const result = await this.convexClient.query(
-        api.leaderboards.listEntries,
-        args
-      );
-      if (result && result.totalEntries) {
-        const totalEntries = result.totalEntries;
-        this.updateLeaderboardCache(leaderboardId, totalEntries);
-      }
-      return this.formatResponse({
-        success: true,
-        data: result.entries,
-        args: args
-      });
-    } catch (error) {
-      console.error(`[WavedashJS] Error listing entries: ${error}`);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+    const result = await this.leaderboards.listLeaderboardEntries(leaderboardId, offset, limit);
+    return this.formatResponse(result);
   }
 
   async uploadLeaderboardScore(leaderboardId: Id<"leaderboards">, score: number, keepBest: boolean, ugcId?: Id<"userGeneratedContent">): Promise<string | WavedashResponse<UpsertedLeaderboardEntry>> {
@@ -417,42 +288,11 @@ class WavedashSDK {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-
-    if(this.config?.debug) {
+    if (this.config?.debug) {
       console.log(`[WavedashJS] Uploading score ${score} to leaderboard: ${leaderboardId}`);
     }
-
-    const args = { leaderboardId, score, keepBest, ugcId }
-    
-    try {
-      const result = await this.convexClient.mutation(
-        api.leaderboards.upsertLeaderboardEntry,
-        args
-      );
-      if (result && result.totalEntries) {
-        const totalEntries = result.totalEntries;
-        this.updateLeaderboardCache(leaderboardId, totalEntries);
-      }
-      const entry = {
-        ...result.entry,
-        userId: this.wavedashUser.id,
-        username: this.wavedashUser.username
-      }
-
-      return this.formatResponse({
-        success: true,
-        data: entry,
-        args: args
-      });
-    } catch (error) {
-      console.error(`[WavedashJS] Error upserting leaderboard entry: ${error}`);
-      return this.formatResponse({
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      });
-    }
+    const result = await this.leaderboards.uploadLeaderboardScore(leaderboardId, score, keepBest, ugcId);
+    return this.formatResponse(result);
   }
 
   // USER GENERATED CONTENT
@@ -636,7 +476,7 @@ class WavedashSDK {
       }
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
+      const dataArray = new Uint8Array(arrayBuffer);
 
       if (this.config?.debug) {
         console.log(`[WavedashJS] Writing UGC item to filesystem: ${args.filePath}`);
@@ -645,11 +485,11 @@ class WavedashSDK {
       try {
         if (this.engineInstance?.FS) {
           // Save to engine filesystem
-          this.engineInstance.FS.writeFile(args.filePath, uint8Array);
+          this.engineInstance.FS.writeFile(args.filePath, dataArray);
         } else {
           // Save directly to IndexedDB for non-engine contexts
           // TODO: Just copying the Godot convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
-          await this.writeToIndexedDB('/userfs', 'FILE_DATA', args.filePath, uint8Array);
+          await this.writeToIndexedDB('/userfs', 'FILE_DATA', args.filePath, dataArray);
         }
         if (this.config?.debug) {
           console.log(`[WavedashJS] Successfully saved to: ${args.filePath}`);
