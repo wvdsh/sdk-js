@@ -2,6 +2,7 @@ import { ConvexClient } from "convex/browser";
 import { api } from "./convex_api";
 import * as Constants from "./constants";
 import { LeaderboardService } from "./services/leaderboard";
+import { FileSystemService } from "./services/fileSystem";
 import { WavedashLogger } from "./utils/logger";
 import type {
   Id,
@@ -29,6 +30,7 @@ class WavedashSDK {
   private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
 
   private leaderboards: LeaderboardService;
+  private fileSystem: FileSystemService;
   private logger: WavedashLogger;
 
   Constants = Constants;
@@ -38,6 +40,7 @@ class WavedashSDK {
     this.wavedashUser = wavedashUser;
     this.logger = new WavedashLogger();
     this.leaderboards = new LeaderboardService(convexClient, wavedashUser, this.logger);
+    this.fileSystem = new FileSystemService(convexClient, wavedashUser, this.logger);
   }
 
   // Helper to determine if we're in a game engine context
