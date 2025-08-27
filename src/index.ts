@@ -4,7 +4,7 @@ import * as Constants from "./constants";
 import type {
   Id,
   LobbyType,
-  LeaderboardSortMethod,
+  LeaderboardSortOrder,
   LeaderboardDisplayType,
   WavedashConfig,
   WavedashUser,
@@ -54,47 +54,46 @@ class WavedashSDK {
     }
   }
 
-  private async getRecordFromIndexedDB(dbName: string, storeName: string, key: string, maxRetries: number = 5): Promise<Record<string, any> | null> {
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        const result = await new Promise<Record<string, any> | null>((resolve, reject) => {
-          const openReq = indexedDB.open(dbName);
-          openReq.onerror = () => reject(openReq.error);
-          openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
-          openReq.onsuccess = () => {
-            const db = openReq.result;
-            const tx = db.transaction(storeName, "readonly");
-            const store = tx.objectStore(storeName);
-            const getReq = store.get(key);
-            getReq.onsuccess = () => resolve(getReq.result);
-            getReq.onerror = () => reject(getReq.error);
-            tx.oncomplete = () => db.close();
-          };
-        });
+  private async writeToIndexedDB(dbName: string, storeName: string, key: string, data: ArrayBuffer): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const openReq = indexedDB.open(dbName);
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(storeName, "readwrite");
+        const store = tx.objectStore(storeName);
         
-        if (result !== null && result !== undefined) {
-          return result;
-        }
+        // Store raw data as a file with timestamp and file "mode"
+        const value = {
+          contents: new Uint8Array(data),
+          timestamp: Date.now(),
+          mode: 33206  // Standard file permissions (rw-rw-rw-)
+        };
         
-        // File not found, wait before retry (exponential backoff)
-        if (attempt < maxRetries) {
-          const delay = Math.min(50 * Math.pow(2, attempt), 1000); // 50ms, 100ms, 200ms, 400ms, 800ms, max 1s
-          if (this.config?.debug) {
-            console.log(`[WavedashJS] File not found in IndexedDB, retrying in ${delay}ms (attempt ${attempt + 1}/${maxRetries + 1}): ${key}`);
-          }
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      } catch (error) {
-        if (attempt === maxRetries) {
-          throw error;
-        }
-        // Wait before retry on error too
-        const delay = Math.min(50 * Math.pow(2, attempt), 1000);
-        await new Promise(resolve => setTimeout(resolve, delay));
-      }
-    }
-    
-    return null;
+        const putReq = store.put(value, key);
+        putReq.onsuccess = () => resolve();
+        putReq.onerror = () => reject(putReq.error);
+        tx.oncomplete = () => db.close();
+      };
+    });
+  }
+
+  private async getRecordFromIndexedDB(dbName: string, storeName: string, key: string): Promise<Record<string, any> | null> {
+    return new Promise((resolve, reject) => {
+      const openReq = indexedDB.open(dbName);
+      openReq.onerror = () => reject(openReq.error);
+      openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+      openReq.onsuccess = () => {
+        const db = openReq.result;
+        const tx = db.transaction(storeName, "readonly");
+        const store = tx.objectStore(storeName);
+        const getReq = store.get(key);
+        getReq.onsuccess = () => resolve(getReq.result || null);
+        getReq.onerror = () => reject(getReq.error);
+        tx.oncomplete = () => db.close();
+      };
+    });
   }
 
   private toBlobFromIndexedDBValue(value: any): Blob {
@@ -119,12 +118,11 @@ class WavedashSDK {
   }
 
   private async uploadFromIndexedDb(uploadUrl: string, indexedDBKey: string): Promise<boolean> {
-    // TODO: The DB name '/userfs' and Object Store name 'FILE_DATA' might be Godot specific
-    // see where Unity saves files to IndexedDB
     if (this.config?.debug) {
       console.log(`[WavedashJS] Uploading ${indexedDBKey} to: ${uploadUrl}`);
     }
     try {
+      // TODO: Copying Godot's convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
       const record = await this.getRecordFromIndexedDB('/userfs', 'FILE_DATA', indexedDBKey);
       if (!record){
         console.error(`[WavedashJS] File not found in IndexedDB: ${indexedDBKey}`);
@@ -227,21 +225,17 @@ class WavedashSDK {
     }
   }
 
-  async getOrCreateLeaderboard(leaderboardName: string, sortMethod: LeaderboardSortMethod, displayType: LeaderboardDisplayType): Promise<string | WavedashResponse<Leaderboard>> {
+  async getOrCreateLeaderboard(name: string, sortOrder: LeaderboardSortOrder, displayType: LeaderboardDisplayType): Promise<string | WavedashResponse<Leaderboard>> {
     if (!this.isReady()) {
       console.warn('[WavedashJS] SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
 
     if(this.config?.debug) {
-      console.log('[WavedashJS] Getting or creating leaderboard:', leaderboardName);
+      console.log('[WavedashJS] Getting or creating leaderboard:', name);
     }
 
-    const args = {
-      name: leaderboardName,
-      sortOrder: sortMethod,
-      displayType: displayType
-    };
+    const args = { name, sortOrder, displayType };
 
     try {
       const leaderboard = await this.convexClient.mutation(
@@ -594,6 +588,9 @@ class WavedashSDK {
     const args = { ugcId, filePath }
 
     try {
+      if (this.engineInstance && !this.engineInstance.FS) {
+        throw new Error('Engine instance is missing the Emscripten FS API');
+      }
       const downloadUrl = await this.convexClient.query(
         api.userGeneratedContent.getUGCItemDownloadUrl,
         { ugcId: args.ugcId }
@@ -605,30 +602,25 @@ class WavedashSDK {
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
 
-      // TODO: copyToFS is a Godot specific method, we'll need to implement something similar for Unity
-      // copyToFS is used to load the Godot .pck file, so it should be safe to use for relatively large files
-      if(this.engineInstance?.copyToFS) {
-        const fileSizeMB = arrayBuffer.byteLength / (1024 * 1024);
+      if (this.config?.debug) {
+        console.log(`[WavedashJS] Writing UGC item to filesystem: ${args.filePath}`);
+      }
+      
+      try {
+        if (this.engineInstance?.FS) {
+          // Save to engine filesystem
+          this.engineInstance.FS.writeFile(args.filePath, new Uint8Array(arrayBuffer));
+        } else {
+          // Save directly to IndexedDB for non-engine contexts
+          // TODO: Just copying the Godot convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
+          await this.writeToIndexedDB('/userfs', 'FILE_DATA', args.filePath, arrayBuffer);
+        }
         if (this.config?.debug) {
-          console.log(`[WavedashJS] Copying UGC item to filesystem: ${args.filePath} (${fileSizeMB.toFixed(2)}MB)`);
+          console.log(`[WavedashJS] Successfully saved to: ${args.filePath}`);
         }
-        
-        // Warn about large files that might cause issues
-        if (fileSizeMB > 100) {
-          console.warn(`[WavedashJS] Large UGC file detected (${fileSizeMB.toFixed(2)}MB). This may cause memory issues or slow performance.`);
-        }
-        
-        try {
-          this.engineInstance.copyToFS(args.filePath, arrayBuffer);
-          if (this.config?.debug) {
-            console.log(`[WavedashJS] Successfully copied ${fileSizeMB.toFixed(2)}MB to filesystem`);
-          }
-        } catch (error) {
-          console.error(`[WavedashJS] Failed to copy file to filesystem: ${error}`);
-          throw new Error(`Failed to save file to filesystem: ${error instanceof Error ? error.message : String(error)}`);
-        }
-      } else {
-        throw new Error('Engine instance does not support copyToFS. UGC item will not be saved to filesystem.');
+      } catch (error) {
+        console.error(`[WavedashJS] Failed to save file: ${error}`);
+        throw new Error(`Failed to save file: ${error instanceof Error ? error.message : String(error)}`);
       }
 
       return this.formatResponse({
