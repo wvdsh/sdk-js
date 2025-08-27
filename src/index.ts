@@ -1,7 +1,7 @@
 import { ConvexClient } from "convex/browser";
 import { api } from "./convex_api";
 import * as Constants from "./constants";
-import { LeaderboardService } from "./services/LeaderboardService";
+import { LeaderboardService } from "./services/leaderboard";
 import { WavedashLogger } from "./utils/logger";
 import type {
   Id,
@@ -32,12 +32,12 @@ class WavedashSDK {
   private log: WavedashLogger;
 
   Constants = Constants;
-  
+
   constructor(convexClient: ConvexClient, wavedashUser: WavedashUser) {
     this.convexClient = convexClient;
     this.wavedashUser = wavedashUser;
-    this.leaderboards = new LeaderboardService(convexClient, wavedashUser);
     this.log = new WavedashLogger();
+    this.leaderboards = new LeaderboardService(convexClient, wavedashUser, this.log);
   }
 
   // Helper to determine if we're in a game engine context
@@ -68,14 +68,14 @@ class WavedashSDK {
         const db = openReq.result;
         const tx = db.transaction(storeName, "readwrite");
         const store = tx.objectStore(storeName);
-        
+
         // Store raw data as a file with timestamp and file "mode"
         const value = {
           contents: data,
           timestamp: Date.now(),
           mode: 33206  // Standard file permissions (rw-rw-rw-)
         };
-        
+
         const putReq = store.put(value, key);
         putReq.onsuccess = () => resolve();
         putReq.onerror = () => reject(putReq.error);
@@ -108,8 +108,8 @@ class WavedashSDK {
     // - Blob
     // - ArrayBuffer / Uint8Array / Int8Array
     if (value.contents != null) {
-      const buf = (value.contents instanceof Uint8Array || value.contents instanceof Int8Array) 
-        ? value.contents 
+      const buf = (value.contents instanceof Uint8Array || value.contents instanceof Int8Array)
+        ? value.contents
         : new Uint8Array(value.contents);
       return new Blob([buf], { type: "application/octet-stream" });
     }
@@ -127,7 +127,7 @@ class WavedashSDK {
     try {
       // TODO: Copying Godot's convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
       const record = await this.getRecordFromIndexedDB('/userfs', 'FILE_DATA', indexedDBKey);
-      if (!record){
+      if (!record) {
         this.log.error(`File not found in IndexedDB: ${indexedDBKey}`);
         return false;
       }
@@ -186,10 +186,10 @@ class WavedashSDK {
         return false;
       }
     }
-  
+
     this.config = config;
     this.initialized = true;
-    
+
     // Update logger debug mode based on config
     this.log.updateDebugMode(!!this.config.debug);
     this.log.debug('Initialized with config:', this.config);
@@ -340,7 +340,7 @@ class WavedashSDK {
    */
   async updateUGCItem(ugcId: Id<"userGeneratedContent">, title?: string, description?: string, visibility?: UGCVisibility, filePath?: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     this.ensureReady();
-    
+
     const args = { ugcId, title, description, visibility, filePath }
 
     try {
@@ -431,7 +431,7 @@ class WavedashSDK {
         api.userGeneratedContent.getUGCItemDownloadUrl,
         { ugcId: args.ugcId }
       );
-      const response = await fetch(downloadUrl, {credentials: 'include'});
+      const response = await fetch(downloadUrl, { credentials: 'include' });
       if (!response.ok) {
         throw new Error(`Failed to download UGC item: ${downloadUrl}`);
       }
@@ -440,7 +440,7 @@ class WavedashSDK {
       const dataArray = new Uint8Array(arrayBuffer);
 
       this.log.debug(`Writing UGC item to filesystem: ${args.filePath}`);
-      
+
       try {
         if (this.engineInstance?.FS) {
           // Save to engine filesystem
@@ -471,7 +471,7 @@ class WavedashSDK {
         message: error instanceof Error ? error.message : String(error)
       });
     }
-    
+
   }
 
   unsubscribeFromLobbyMessages(): void {
@@ -485,13 +485,13 @@ class WavedashSDK {
   subscribeToLobbyMessages(lobbyId: string): void {
     // Unsubscribe from previous lobby if any
     this.unsubscribeFromLobbyMessages();
-    
+
     // Subscribe to new lobby
     const { unsubscribe } = this.convexClient.onUpdate(
-      api.gameLobby.lobbyMessages, 
+      api.gameLobby.lobbyMessages,
       {
         lobbyId: lobbyId as Id<"lobbies">
-      }, 
+      },
       (messages: any) => {
         this.log.info('Lobby messages updated:', messages);
         // Notify the game about new messages
@@ -503,10 +503,10 @@ class WavedashSDK {
         }
       }
     );
-    
+
     // Store the unsubscribe function
     this.lobbyMessagesUnsubscribeFn = unsubscribe;
-    
+
     this.log.debug('Subscribed to lobby messages for:', lobbyId);
   }
 
@@ -528,7 +528,7 @@ class WavedashSDK {
       this.log.debug('Lobby created:', lobbyId);
       // Subscribe to lobby messages
       this.subscribeToLobbyMessages(lobbyId);
-      
+
       return this.formatResponse({
         success: true,
         data: lobbyId,
@@ -547,7 +547,7 @@ class WavedashSDK {
 
   async joinLobby(lobbyId: string): Promise<string | WavedashResponse<Id<"lobbies">>> {
     this.ensureReady();
-    
+
     const args = {
       lobbyId: lobbyId as Id<"lobbies">
     };
@@ -557,15 +557,15 @@ class WavedashSDK {
         api.gameLobby.joinLobby,
         args
       );
-      
+
       if (!success) {
         this.log.debug('Failed to join lobby:', lobbyId);
         throw new Error(`Failed to join lobby: ${lobbyId}`);
       }
-      
+
       // Subscribe to lobby messages
       this.subscribeToLobbyMessages(lobbyId);
-      
+
       return this.formatResponse({
         success: true,
         data: lobbyId as Id<"lobbies">,
@@ -584,7 +584,7 @@ class WavedashSDK {
 
   async leaveLobby(lobbyId: string): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
-    
+
     const args = {
       lobbyId: lobbyId as Id<"lobbies">
     };
@@ -594,12 +594,12 @@ class WavedashSDK {
         api.gameLobby.leaveLobby,
         args
       );
-      
+
       // Clean up subscription
       this.unsubscribeFromLobbyMessages();
-      
+
       this.log.debug('Left lobby:', lobbyId);
-      
+
       return this.formatResponse({
         success: true,
         data: true,
@@ -618,7 +618,7 @@ class WavedashSDK {
 
   async sendLobbyMessage(lobbyId: string, message: string): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
-    
+
     const args = {
       lobbyId: lobbyId as Id<"lobbies">,
       message: message
@@ -629,7 +629,7 @@ class WavedashSDK {
         api.gameLobby.sendMessage,
         args
       );
-      
+
       return this.formatResponse({
         success: true,
         data: true,
@@ -695,13 +695,13 @@ export function setupWavedashSDK(
   wavedashUser: WavedashUser,
 ): WavedashSDK {
   const sdk = new WavedashSDK(convexClient, wavedashUser);
-  
+
   if (typeof window !== 'undefined') {
     (window as any).WavedashJS = sdk;
     // Note: Can't use sdk.log here since it may not be initialized yet
     console.log('[WavedashJS] SDK attached to window.WavedashJS');
   }
 
-  
+
   return sdk;
 }

@@ -1,23 +1,25 @@
-import type { 
-  Id, 
-  LeaderboardSortOrder, 
-  LeaderboardDisplayType, 
-  Leaderboard, 
+import type {
+  Id,
+  LeaderboardSortOrder,
+  LeaderboardDisplayType,
+  Leaderboard,
   LeaderboardEntries,
-  WavedashResponse, 
+  WavedashResponse,
   UpsertedLeaderboardEntry,
   WavedashUser
 } from '../types';
 import { api } from '../convex_api';
 import type { ConvexClient } from 'convex/browser';
+import { WavedashLogger } from '../utils/logger';
 
 export class LeaderboardService {
   private cache: Map<Id<"leaderboards">, Leaderboard> = new Map();
 
   constructor(
     private convexClient: ConvexClient,
-    private wavedashUser: WavedashUser
-  ) {}
+    private wavedashUser: WavedashUser,
+    private log: WavedashLogger
+  ) { }
 
   // Helper to update the leaderboard cache with the latest totalEntries value
   private updateCache(leaderboardId: Id<"leaderboards">, totalEntries: number): void {
@@ -28,7 +30,7 @@ export class LeaderboardService {
   }
 
   async getLeaderboard(name: string): Promise<WavedashResponse<Leaderboard>> {
-    const args = { name }
+    const args = { name };
 
     try {
       const leaderboard = await this.convexClient.query(
@@ -42,7 +44,6 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-
       return {
         success: false,
         data: null,
@@ -67,7 +68,6 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-
       return {
         success: false,
         data: null,
@@ -78,7 +78,7 @@ export class LeaderboardService {
   }
 
   async getMyLeaderboardEntries(leaderboardId: Id<"leaderboards">): Promise<WavedashResponse<LeaderboardEntries>> {
-    const args = { leaderboardId }
+    const args = { leaderboardId };
 
     try {
       const result = await this.convexClient.query(
@@ -105,7 +105,6 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-
       return {
         success: false,
         data: null,
@@ -121,7 +120,7 @@ export class LeaderboardService {
   }
 
   async listLeaderboardEntriesAroundUser(leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<WavedashResponse<LeaderboardEntries>> {
-    const args = { leaderboardId, countAhead, countBehind }
+    const args = { leaderboardId, countAhead, countBehind };
 
     try {
       const result = await this.convexClient.query(
@@ -138,7 +137,6 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-
       return {
         success: false,
         data: null,
@@ -149,7 +147,7 @@ export class LeaderboardService {
   }
 
   async listLeaderboardEntries(leaderboardId: Id<"leaderboards">, offset: number, limit: number): Promise<WavedashResponse<LeaderboardEntries>> {
-    const args = { leaderboardId, offset, limit }
+    const args = { leaderboardId, offset, limit };
 
     try {
       const result = await this.convexClient.query(
@@ -166,7 +164,6 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-
       return {
         success: false,
         data: null,
@@ -177,8 +174,8 @@ export class LeaderboardService {
   }
 
   async uploadLeaderboardScore(leaderboardId: Id<"leaderboards">, score: number, keepBest: boolean, ugcId?: Id<"userGeneratedContent">): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
-    const args = { leaderboardId, score, keepBest, ugcId }
-    
+    const args = { leaderboardId, score, keepBest, ugcId };
+
     try {
       const result = await this.convexClient.mutation(
         api.leaderboards.upsertLeaderboardEntry,
@@ -192,7 +189,7 @@ export class LeaderboardService {
         ...result.entry,
         userId: this.wavedashUser.id,
         username: this.wavedashUser.username
-      }
+      };
 
       return {
         success: true,
@@ -200,7 +197,6 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-
       return {
         success: false,
         data: null,
