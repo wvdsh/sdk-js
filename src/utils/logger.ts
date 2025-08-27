@@ -6,27 +6,39 @@ export interface Logger {
 }
 
 export class WavedashLogger implements Logger {
-  constructor(private debugEnabled: boolean = false) {}
+  private logLevels = {
+    debug: 0,
+    info: 1,
+    warn: 2,
+    error: 3
+  }
+  constructor(private logLevel = this.logLevels.warn) {}
 
-  updateDebugMode(enabled: boolean): void {
-    this.debugEnabled = enabled;
+  setLogLevel(level: "debug" | "info" | "warn" | "error"): void {
+    this.logLevel = this.logLevels[level];
   }
 
   debug(message: string, ...args: any[]): void {
-    if (this.debugEnabled) {
+    if (this.logLevel <= this.logLevels.debug) {
       console.log(`[WavedashJS] ${message}`, ...args);
     }
   }
 
   info(message: string, ...args: any[]): void {
-    console.log(`[WavedashJS] ${message}`, ...args);
+    if (this.logLevel <= this.logLevels.info) {
+      console.log(`[WavedashJS] ${message}`, ...args);
+    }
   }
 
   warn(message: string, ...args: any[]): void {
-    console.warn(`[WavedashJS] ${message}`, ...args);
+    if (this.logLevel <= this.logLevels.warn) {
+      console.warn(`[WavedashJS] ${message}`, ...args);
+    }
   }
 
   error(message: string, ...args: any[]): void {
-    console.error(`[WavedashJS] ${message}`, ...args);
+    if (this.logLevel <= this.logLevels.error) {
+      console.error(`[WavedashJS] ${message}`, ...args);
+    }
   }
 }

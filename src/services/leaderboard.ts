@@ -18,7 +18,7 @@ export class LeaderboardService {
   constructor(
     private convexClient: ConvexClient,
     private wavedashUser: WavedashUser,
-    private log: WavedashLogger
+    private logger: WavedashLogger
   ) { }
 
   // Helper to update the leaderboard cache with the latest totalEntries value
