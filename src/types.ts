@@ -48,6 +48,7 @@ export interface WavedashResponse<T> {
   success: boolean;
   data: T | null;
   // Return the original args that were passed to the JS SDK so caller can reference them
+  // TODO: Caller shouldn't rely on this, remove this field
   args: Record<string, any>;
   // Error message if success is false
   message?: string;

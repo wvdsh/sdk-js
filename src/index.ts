@@ -1,9 +1,8 @@
 import { ConvexClient } from "convex/browser";
 import { api } from "./convex_api";
 import * as Constants from "./constants";
-import { LeaderboardService } from "./services/leaderboard";
-import { FileSystemService } from "./services/fileSystem";
-import { WavedashLogger } from "./utils/logger";
+import * as leaderboards from "./services/leaderboards";
+import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import type {
   Id,
   LobbyType,
@@ -23,15 +22,13 @@ import type {
 class WavedashSDK {
   private initialized: boolean = false;
   private config: WavedashConfig | null = null;
-  private engineInstance: EngineInstance | null = null;
   private engineCallbackReceiver: string = "WavedashCallbackReceiver";
-  private wavedashUser: WavedashUser;
-  private convexClient: ConvexClient;
   private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
-
-  private leaderboards: LeaderboardService;
-  private fileSystem: FileSystemService;
-  private logger: WavedashLogger;
+  
+  protected engineInstance: EngineInstance | null = null;
+  protected wavedashUser: WavedashUser;
+  protected convexClient: ConvexClient;
+  protected logger: WavedashLogger;
 
   Constants = Constants;
 
@@ -39,8 +36,6 @@ class WavedashSDK {
     this.convexClient = convexClient;
     this.wavedashUser = wavedashUser;
     this.logger = new WavedashLogger();
-    this.leaderboards = new LeaderboardService(convexClient, wavedashUser, this.logger);
-    this.fileSystem = new FileSystemService(convexClient, wavedashUser, this.logger);
   }
 
   // Helper to determine if we're in a game engine context
@@ -194,7 +189,7 @@ class WavedashSDK {
     this.initialized = true;
 
     // Update logger debug mode based on config
-    this.logger.setLogLevel(this.config.debug ? "debug" : "warn");
+    this.logger.setLogLevel(this.config.debug ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
     this.logger.debug('Initialized with config:', this.config);
     return true;
   }
@@ -209,11 +204,7 @@ class WavedashSDK {
   }
 
   getUser(): string | WavedashUser | null {
-    if (!this.initialized) {
-      this.logger.warn('SDK not initialized. Call init() first.');
-      return null;
-    }
-
+    this.ensureReady();
     return this.formatResponse(this.wavedashUser);
   }
 
@@ -224,15 +215,22 @@ class WavedashSDK {
   async getLeaderboard(name: string): Promise<string | WavedashResponse<Leaderboard>> {
     this.ensureReady();
     this.logger.debug(`Getting leaderboard: ${name}`);
-    const result = await this.leaderboards.getLeaderboard(name);
+    const result = await leaderboards.getLeaderboard.call(this, name);
     return this.formatResponse(result);
   }
 
   async getOrCreateLeaderboard(name: string, sortOrder: LeaderboardSortOrder, displayType: LeaderboardDisplayType): Promise<string | WavedashResponse<Leaderboard>> {
     this.ensureReady();
     this.logger.debug(`Getting or creating leaderboard: ${name}`);
-    const result = await this.leaderboards.getOrCreateLeaderboard(name, sortOrder, displayType);
+    const result = await leaderboards.getOrCreateLeaderboard.call(this, name, sortOrder, displayType);
     return this.formatResponse(result);
+  }
+
+  // Synchronously get leaderboard entry count from cache
+  getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
+    this.ensureReady();
+    this.logger.debug(`Getting leaderboard entry count for leaderboard: ${leaderboardId}`);
+    return leaderboards.getLeaderboardEntryCount.call(this, leaderboardId);
   }
 
   // This is called get my "entries" but under the hood we enforce one entry per user
@@ -240,34 +238,28 @@ class WavedashSDK {
   async getMyLeaderboardEntries(leaderboardId: Id<"leaderboards">): Promise<string | WavedashResponse<LeaderboardEntries>> {
     this.ensureReady();
     this.logger.debug(`Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`);
-    const result = await this.leaderboards.getMyLeaderboardEntries(leaderboardId);
+    const result = await leaderboards.getMyLeaderboardEntries.call(this, leaderboardId);
     return this.formatResponse(result);
-  }
-
-  // Synchronously get leaderboard entry count from cache
-  getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
-    this.ensureReady();
-    return this.leaderboards.getLeaderboardEntryCount(leaderboardId);
   }
 
   async listLeaderboardEntriesAroundUser(leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
     this.ensureReady();
     this.logger.debug(`Listing entries around user for leaderboard: ${leaderboardId}`);
-    const result = await this.leaderboards.listLeaderboardEntriesAroundUser(leaderboardId, countAhead, countBehind);
+    const result = await leaderboards.listLeaderboardEntriesAroundUser.call(this, leaderboardId, countAhead, countBehind);
     return this.formatResponse(result);
   }
 
   async listLeaderboardEntries(leaderboardId: Id<"leaderboards">, offset: number, limit: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
     this.ensureReady();
     this.logger.debug(`Listing entries for leaderboard: ${leaderboardId}`);
-    const result = await this.leaderboards.listLeaderboardEntries(leaderboardId, offset, limit);
+    const result = await leaderboards.listLeaderboardEntries.call(this, leaderboardId, offset, limit);
     return this.formatResponse(result);
   }
 
   async uploadLeaderboardScore(leaderboardId: Id<"leaderboards">, score: number, keepBest: boolean, ugcId?: Id<"userGeneratedContent">): Promise<string | WavedashResponse<UpsertedLeaderboardEntry>> {
     this.ensureReady();
     this.logger.debug(`Uploading score ${score} to leaderboard: ${leaderboardId}`);
-    const result = await this.leaderboards.uploadLeaderboardScore(leaderboardId, score, keepBest, ugcId);
+    const result = await leaderboards.uploadLeaderboardScore.call(this, leaderboardId, score, keepBest, ugcId);
     return this.formatResponse(result);
   }
 
@@ -681,18 +673,12 @@ class WavedashSDK {
   }
 }
 
-// Add to window
-// if (typeof window !== 'undefined') {
-//   (window as any).WavedashJS = new WavedashSDK();
-// }
-
-// Export for the website to use
 export { WavedashSDK };
 
 // Re-export all types
 export type * from "./types";
 
-// Type-safe initialization helper for the website
+// Type-safe initialization helper
 export function setupWavedashSDK(
   convexClient: ConvexClient,
   wavedashUser: WavedashUser,
@@ -701,8 +687,7 @@ export function setupWavedashSDK(
 
   if (typeof window !== 'undefined') {
     (window as any).WavedashJS = sdk;
-    // Note: Can't use sdk.log here since it may not be initialized yet
-    console.log('[WavedashJS] SDK attached to window.WavedashJS');
+    console.log('[WavedashJS] SDK attached to window');
   }
 
 
