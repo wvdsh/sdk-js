@@ -54,7 +54,7 @@ class WavedashSDK {
     }
   }
 
-  private async writeToIndexedDB(dbName: string, storeName: string, key: string, data: ArrayBuffer): Promise<void> {
+  private async writeToIndexedDB(dbName: string, storeName: string, key: string, data: Uint8Array): Promise<void> {
     return new Promise((resolve, reject) => {
       const openReq = indexedDB.open(dbName);
       openReq.onerror = () => reject(openReq.error);
@@ -66,7 +66,7 @@ class WavedashSDK {
         
         // Store raw data as a file with timestamp and file "mode"
         const value = {
-          contents: new Uint8Array(data),
+          contents: data,
           timestamp: Date.now(),
           mode: 33206  // Standard file permissions (rw-rw-rw-)
         };
@@ -636,6 +636,7 @@ class WavedashSDK {
       }
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
 
       if (this.config?.debug) {
         console.log(`[WavedashJS] Writing UGC item to filesystem: ${args.filePath}`);
@@ -644,11 +645,11 @@ class WavedashSDK {
       try {
         if (this.engineInstance?.FS) {
           // Save to engine filesystem
-          this.engineInstance.FS.writeFile(args.filePath, new Uint8Array(arrayBuffer));
+          this.engineInstance.FS.writeFile(args.filePath, uint8Array);
         } else {
           // Save directly to IndexedDB for non-engine contexts
           // TODO: Just copying the Godot convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
-          await this.writeToIndexedDB('/userfs', 'FILE_DATA', args.filePath, arrayBuffer);
+          await this.writeToIndexedDB('/userfs', 'FILE_DATA', args.filePath, uint8Array);
         }
         if (this.config?.debug) {
           console.log(`[WavedashJS] Successfully saved to: ${args.filePath}`);
