@@ -12,6 +12,7 @@ import type {
 import { api } from '../_generated/convex_api';
 import type { WavedashSDK } from '../index';
 
+// Assuming we only have one WavedashSDK instance at a time, we can use a global variable to store the unsubscribe function
 let unsubscribeFn: (() => void) | null = null;
 
 export async function createLobby(this: WavedashSDK, lobbyType: LobbyType, maxPlayers?: number): Promise<WavedashResponse<Id<"lobbies">>> {

@@ -38,6 +38,7 @@ class LeaderboardCache {
   }
 }
 
+// Assuming we only have one WavedashSDK instance at a time, we can use a global variable to store the leaderboard cache
 const leaderboardCache = new LeaderboardCache();
 
 export async function getLeaderboard(this: WavedashSDK, name: string): Promise<WavedashResponse<Leaderboard>> {
