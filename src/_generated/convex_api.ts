@@ -24,7 +24,12 @@ export type PublicApiType = {
       },
       any
     >;
-    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
+    getBySubdomain: FunctionReference<
+      "query",
+      "public",
+      { subdomain: string },
+      any
+    >;
     getGameOrgAndAccess: FunctionReference<
       "query",
       "public",
@@ -64,8 +69,14 @@ export type PublicApiType = {
       {
         gameBranchId?: Id<"gameBranches">;
         gameBuildId?: Id<"gameBuilds">;
-        gameId: Id<"games">;
+        gameDomain: string;
       },
+      any
+    >;
+    consumePlayKey: FunctionReference<
+      "mutation",
+      "public",
+      { playKeyId: Id<"playKeys"> },
       any
     >;
   };
@@ -444,24 +455,15 @@ export type PublicApiType = {
     };
   };
   gameBuilds: {
-    get: FunctionReference<"query", "public", Record<string, never>, any>;
+    getBuildAndBranchFromJwt: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      any
+    >;
   };
-  test: {
-    leaderboards: {
-      testAggregateInclusiveBounds: FunctionReference<
-        "query",
-        "public",
-        { leaderboardId: Id<"leaderboards"> },
-        {
-          countWithInclusiveFalse: number;
-          countWithInclusiveTrue: number;
-          iteratorCountWithInclusiveFalse: number;
-          iteratorCountWithInclusiveTrue: number;
-          scoreToExclude: number;
-          totalCount: number;
-        }
-      >;
-    };
+  organizations: {
+    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
   };
 };
 export type InternalApiType = {};
