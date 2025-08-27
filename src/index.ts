@@ -141,6 +141,32 @@ class WavedashSDK {
     }
   }
 
+  private async uploadFromFS(uploadUrl: string, filePath: string): Promise<boolean> {
+    if (this.config?.debug) {
+      console.log(`[WavedashJS] Uploading ${filePath} to: ${uploadUrl}`);
+    }
+    try {
+      if (!this.engineInstance?.FS) {
+        throw new Error('Engine instance is missing the Emscripten FS API');
+      }
+      const exists = this.engineInstance.FS.analyzePath(filePath).exists;
+      if (!exists) {
+        throw new Error(`File not found in FS: ${filePath}`);
+      }
+      const blob = this.engineInstance.FS.readFile(filePath) as Uint8Array;
+      const response = await fetch(uploadUrl, {
+        method: 'PUT',
+        body: blob
+        // credentials not needed for presigned upload URL
+      });
+      return response.ok;
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      console.error(`[WavedashJS] Error uploading from FS: ${msg}`);
+      return false;
+    }
+  }
+
   // ====================
   // Game -> JS functions
   // ====================
@@ -448,6 +474,9 @@ class WavedashSDK {
     const args = { ugcType, title, description, visibility, filePath }
 
     try {
+      if (filePath && this.engineInstance && !this.engineInstance.FS) {
+        throw new Error('Engine instance is missing the Emscripten FS API');
+      }
       const { ugcId, uploadUrl } = await this.convexClient.mutation(
         api.userGeneratedContent.createUGCItem,
         { ugcType, title, description, visibility, createPresignedUploadUrl: !!filePath }
@@ -456,7 +485,13 @@ class WavedashSDK {
         throw new Error(`Failed to create a presigned upload URL for UGC item: ${filePath}`);
       }
       else if (filePath && uploadUrl) {
-        const success = await this.uploadFromIndexedDb(uploadUrl, filePath);
+        let success = false;
+        if (this.engineInstance?.FS) {
+          success = await this.uploadFromFS(uploadUrl, filePath);
+        }
+        else {
+          success = await this.uploadFromIndexedDb(uploadUrl, filePath);
+        }
         // TODO: This should be handled on the backend using R2 event notifications
         await this.convexClient.mutation(
           api.userGeneratedContent.finishUGCUpload,

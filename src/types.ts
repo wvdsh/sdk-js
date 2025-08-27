@@ -35,6 +35,7 @@ export interface EngineInstance {
     readFile(path: string, opts?: Record<string, any>): string | Uint8Array;
     writeFile(path: string, data: string | ArrayBufferView, opts?: Record<string, any>): void;
     syncfs(populate: boolean, callback?: (err: any) => void): void;
+    analyzePath(path: string): { exists: boolean };
     // ... other functions
   }
   // ... other internal properties and methods
