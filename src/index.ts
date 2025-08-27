@@ -1,6 +1,6 @@
 import { ConvexClient } from "convex/browser";
-import { api } from "./convex_api";
-import * as Constants from "./constants";
+import { api } from "./_generated/convex_api";
+import * as Constants from "./_generated/constants";
 import * as leaderboards from "./services/leaderboards";
 import * as ugc from "./services/ugc";
 import * as lobby from "./services/lobby";

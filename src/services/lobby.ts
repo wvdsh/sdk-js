@@ -9,7 +9,7 @@ import type {
   WavedashResponse,
   LobbyType,
 } from '../types';
-import { api } from '../convex_api';
+import { api } from '../_generated/convex_api';
 import type { WavedashSDK } from '../index';
 
 let unsubscribeFn: (() => void) | null = null;

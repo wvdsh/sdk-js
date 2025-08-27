@@ -13,7 +13,7 @@ import type {
   WavedashResponse,
   UpsertedLeaderboardEntry
 } from '../types';
-import { api } from '../convex_api';
+import { api } from '../_generated/convex_api';
 import type { WavedashSDK } from '../index';
 
 // Once a leaderboard is fetched, we cache it here

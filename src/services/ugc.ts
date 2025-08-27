@@ -10,7 +10,7 @@ import type {
   UGCType,
   UGCVisibility
 } from '../types';
-import { api } from '../convex_api';
+import { api } from '../_generated/convex_api';
 import * as indexedDBUtils from '../utils/indexedDB';
 import type { WavedashSDK } from '../index';
 

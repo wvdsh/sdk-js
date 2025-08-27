@@ -1,6 +1,6 @@
 import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
-import { api, PublicApiType } from "./convex_api";
+import { api, PublicApiType } from "./_generated/convex_api";
 
 // Extract types from the API
 export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
