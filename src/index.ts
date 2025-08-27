@@ -2,6 +2,7 @@ import { ConvexClient } from "convex/browser";
 import { api } from "./convex_api";
 import * as Constants from "./constants";
 import { LeaderboardService } from "./services/LeaderboardService";
+import { WavedashLogger } from "./utils/logger";
 import type {
   Id,
   LobbyType,
@@ -19,15 +20,16 @@ import type {
 } from "./types";
 
 class WavedashSDK {
-  protected initialized: boolean = false;
-  config: WavedashConfig | null = null;
+  private initialized: boolean = false;
+  private config: WavedashConfig | null = null;
   private engineInstance: EngineInstance | null = null;
   private engineCallbackReceiver: string = "WavedashCallbackReceiver";
-  protected wavedashUser: WavedashUser;
-  protected convexClient: ConvexClient;
+  private wavedashUser: WavedashUser;
+  private convexClient: ConvexClient;
   private lobbyMessagesUnsubscribeFn: (() => void) | null = null;
 
   private leaderboards: LeaderboardService;
+  private log: WavedashLogger;
 
   Constants = Constants;
   
@@ -35,6 +37,7 @@ class WavedashSDK {
     this.convexClient = convexClient;
     this.wavedashUser = wavedashUser;
     this.leaderboards = new LeaderboardService(convexClient, wavedashUser);
+    this.log = new WavedashLogger();
   }
 
   // Helper to determine if we're in a game engine context
@@ -112,14 +115,12 @@ class WavedashSDK {
   }
 
   private async uploadFromIndexedDb(uploadUrl: string, indexedDBKey: string): Promise<boolean> {
-    if (this.config?.debug) {
-      console.log(`[WavedashJS] Uploading ${indexedDBKey} to: ${uploadUrl}`);
-    }
+    this.log.debug(`Uploading ${indexedDBKey} to: ${uploadUrl}`);
     try {
       // TODO: Copying Godot's convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
       const record = await this.getRecordFromIndexedDB('/userfs', 'FILE_DATA', indexedDBKey);
       if (!record){
-        console.error(`[WavedashJS] File not found in IndexedDB: ${indexedDBKey}`);
+        this.log.error(`File not found in IndexedDB: ${indexedDBKey}`);
         return false;
       }
       const blob = this.toBlobFromIndexedDBValue(record);
@@ -130,15 +131,13 @@ class WavedashSDK {
       });
       return response.ok;
     } catch (error) {
-      console.error(`[WavedashJS] Error uploading from IndexedDB: ${error}`);
+      this.log.error(`Error uploading from IndexedDB: ${error}`);
       return false;
     }
   }
 
   private async uploadFromFS(uploadUrl: string, filePath: string): Promise<boolean> {
-    if (this.config?.debug) {
-      console.log(`[WavedashJS] Uploading ${filePath} to: ${uploadUrl}`);
-    }
+    this.log.debug(`Uploading ${filePath} to: ${uploadUrl}`);
     try {
       if (!this.engineInstance?.FS) {
         throw new Error('Engine instance is missing the Emscripten FS API');
@@ -156,7 +155,7 @@ class WavedashSDK {
       return response.ok;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      console.error(`[WavedashJS] Error uploading from FS: ${msg}`);
+      this.log.error(`Error uploading from FS: ${msg}`);
       return false;
     }
   }
@@ -167,7 +166,7 @@ class WavedashSDK {
 
   init(config: WavedashConfig): boolean {
     if (!config) {
-      console.error('[WavedashJS] Initialized with empty config');
+      this.log.error('Initialized with empty config');
       return false;
     }
     if (typeof config === 'string') {
@@ -175,7 +174,7 @@ class WavedashSDK {
         config = JSON.parse(config);
       }
       catch (error) {
-        console.error('[WavedashJS] Initialized with invalid config:', error);
+        this.log.error('Initialized with invalid config:', error);
         return false;
       }
     }
@@ -183,10 +182,10 @@ class WavedashSDK {
     this.config = config;
     this.initialized = true;
     
-    if (this.config.debug) {
-      // TODO: Set up proper logging with log levels set by config
-      console.log('[WavedashJS] Initialized with config:', this.config);
-    }
+    // Update logger debug mode based on config
+    this.log.updateDebugMode(!!this.config.debug);
+    
+    this.log.debug('Initialized with config:', this.config);
     return true;
   }
 
@@ -201,7 +200,7 @@ class WavedashSDK {
 
   getUser(): string | WavedashUser | null {
     if (!this.initialized) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       return null;
     }
 
@@ -214,24 +213,20 @@ class WavedashSDK {
 
   async getLeaderboard(name: string): Promise<string | WavedashResponse<Leaderboard>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if (this.config?.debug) {
-      console.log(`[WavedashJS] Getting leaderboard: ${name}`);
-    }
+    this.log.debug(`Getting leaderboard: ${name}`);
     const result = await this.leaderboards.getLeaderboard(name);
     return this.formatResponse(result);
   }
 
   async getOrCreateLeaderboard(name: string, sortOrder: LeaderboardSortOrder, displayType: LeaderboardDisplayType): Promise<string | WavedashResponse<Leaderboard>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if (this.config?.debug) {
-      console.log(`[WavedashJS] Getting or creating leaderboard: ${name}`);
-    }
+    this.log.debug(`Getting or creating leaderboard: ${name}`);
     const result = await this.leaderboards.getOrCreateLeaderboard(name, sortOrder, displayType);
     return this.formatResponse(result);
   }
@@ -240,12 +235,10 @@ class WavedashSDK {
   // The engine SDK expects a list of entries, so we return a list with 0 or 1 entries
   async getMyLeaderboardEntries(leaderboardId: Id<"leaderboards">): Promise<string | WavedashResponse<LeaderboardEntries>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if (this.config?.debug) {
-      console.log(`[WavedashJS] Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`);
-    }
+    this.log.debug(`Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`);
     const result = await this.leaderboards.getMyLeaderboardEntries(leaderboardId);
     return this.formatResponse(result);
   }
@@ -253,7 +246,7 @@ class WavedashSDK {
   // Synchronously get leaderboard entry count from cache
   getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       return -1;
     }
     return this.leaderboards.getLeaderboardEntryCount(leaderboardId);
@@ -261,36 +254,30 @@ class WavedashSDK {
 
   async listLeaderboardEntriesAroundUser(leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if (this.config?.debug) {
-      console.log(`[WavedashJS] Listing entries around user for leaderboard: ${leaderboardId}`);
-    }
+    this.log.debug(`Listing entries around user for leaderboard: ${leaderboardId}`);
     const result = await this.leaderboards.listLeaderboardEntriesAroundUser(leaderboardId, countAhead, countBehind);
     return this.formatResponse(result);
   }
 
   async listLeaderboardEntries(leaderboardId: Id<"leaderboards">, offset: number, limit: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if (this.config?.debug) {
-      console.log(`[WavedashJS] Listing entries for leaderboard: ${leaderboardId}`);
-    }
+    this.log.debug(`Listing entries for leaderboard: ${leaderboardId}`);
     const result = await this.leaderboards.listLeaderboardEntries(leaderboardId, offset, limit);
     return this.formatResponse(result);
   }
 
   async uploadLeaderboardScore(leaderboardId: Id<"leaderboards">, score: number, keepBest: boolean, ugcId?: Id<"userGeneratedContent">): Promise<string | WavedashResponse<UpsertedLeaderboardEntry>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if (this.config?.debug) {
-      console.log(`[WavedashJS] Uploading score ${score} to leaderboard: ${leaderboardId}`);
-    }
+    this.log.debug(`Uploading score ${score} to leaderboard: ${leaderboardId}`);
     const result = await this.leaderboards.uploadLeaderboardScore(leaderboardId, score, keepBest, ugcId);
     return this.formatResponse(result);
   }
@@ -307,7 +294,7 @@ class WavedashSDK {
    */
   async createUGCItem(ugcType: UGCType, title?: string, description?: string, visibility?: UGCVisibility, filePath?: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
 
@@ -348,7 +335,7 @@ class WavedashSDK {
       });
     }
     catch (error) {
-      console.error(`[WavedashJS] Error creating UGC item: ${error}`);
+      this.log.error(`Error creating UGC item: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,
@@ -370,7 +357,7 @@ class WavedashSDK {
    */
   async updateUGCItem(ugcId: Id<"userGeneratedContent">, title?: string, description?: string, visibility?: UGCVisibility, filePath?: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
     
@@ -401,7 +388,7 @@ class WavedashSDK {
         args: args
       });
     } catch (error) {
-      console.error(`[WavedashJS] Error updating UGC item: ${error}`);
+      this.log.error(`Error updating UGC item: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,
@@ -413,7 +400,7 @@ class WavedashSDK {
 
   async uploadUGCItem(ugcId: Id<"userGeneratedContent">, filePath: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
 
@@ -439,7 +426,7 @@ class WavedashSDK {
       });
     }
     catch (error) {
-      console.error(`[WavedashJS] Error uploading UGC item: ${error}`);
+      this.log.error(`Error uploading UGC item: ${error}`);
       // TODO: This should be handled on the backend using R2 event notifications
       await this.convexClient.mutation(
         api.userGeneratedContent.finishUGCUpload,
@@ -456,7 +443,7 @@ class WavedashSDK {
 
   async downloadUGCItem(ugcId: Id<"userGeneratedContent">, filePath: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
 
@@ -478,9 +465,7 @@ class WavedashSDK {
       const arrayBuffer = await blob.arrayBuffer();
       const dataArray = new Uint8Array(arrayBuffer);
 
-      if (this.config?.debug) {
-        console.log(`[WavedashJS] Writing UGC item to filesystem: ${args.filePath}`);
-      }
+      this.log.debug(`Writing UGC item to filesystem: ${args.filePath}`);
       
       try {
         if (this.engineInstance?.FS) {
@@ -491,11 +476,9 @@ class WavedashSDK {
           // TODO: Just copying the Godot convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
           await this.writeToIndexedDB('/userfs', 'FILE_DATA', args.filePath, dataArray);
         }
-        if (this.config?.debug) {
-          console.log(`[WavedashJS] Successfully saved to: ${args.filePath}`);
-        }
+        this.log.debug(`Successfully saved to: ${args.filePath}`);
       } catch (error) {
-        console.error(`[WavedashJS] Failed to save file: ${error}`);
+        this.log.error(`Failed to save file: ${error}`);
         throw new Error(`Failed to save file: ${error instanceof Error ? error.message : String(error)}`);
       }
 
@@ -506,7 +489,7 @@ class WavedashSDK {
       });
     }
     catch (error) {
-      console.error(`[WavedashJS] Error downloading UGC item: ${error}`);
+      this.log.error(`Error downloading UGC item: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,
@@ -521,9 +504,7 @@ class WavedashSDK {
     if (this.lobbyMessagesUnsubscribeFn) {
       this.lobbyMessagesUnsubscribeFn();
       this.lobbyMessagesUnsubscribeFn = null;
-      if (this.config?.debug) {
-        console.log('[WavedashJS] Unsubscribed from lobby messages');
-      }
+      this.log.debug('Unsubscribed from lobby messages');
     }
   }
 
@@ -538,7 +519,7 @@ class WavedashSDK {
         lobbyId: lobbyId as Id<"lobbies">
       }, 
       (messages: any) => {
-        console.log('[WavedashJS] Lobby messages updated:', messages);
+        this.log.info('Lobby messages updated:', messages);
         // Notify the game about new messages
         if (messages && messages.length > 0) {
           this.notifyLobbyMessage({
@@ -552,19 +533,15 @@ class WavedashSDK {
     // Store the unsubscribe function
     this.lobbyMessagesUnsubscribeFn = unsubscribe;
     
-    if (this.config?.debug) {
-      console.log('[WavedashJS] Subscribed to lobby messages for:', lobbyId);
-    }
+    this.log.debug('Subscribed to lobby messages for:', lobbyId);
   }
 
   async createLobby(lobbyType: number, maxPlayers?: number): Promise<string | WavedashResponse<Id<"lobbies">>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-    if (this.config?.debug){
-      console.log('[WavedashJS] Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
-    }
+    this.log.debug('Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
 
     const args = {
       lobbyType: lobbyType as LobbyType,
@@ -577,9 +554,7 @@ class WavedashSDK {
         args
       );
 
-      if (this.config?.debug) {
-        console.log('[WavedashJS] Lobby created:', lobbyId);
-      }
+      this.log.debug('Lobby created:', lobbyId);
       // Subscribe to lobby messages
       this.subscribeToLobbyMessages(lobbyId);
       
@@ -589,7 +564,7 @@ class WavedashSDK {
         args: args
       });
     } catch (error) {
-      console.error(`[WavedashJS] Error creating lobby: ${error}`);
+      this.log.error(`Error creating lobby: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,
@@ -601,7 +576,7 @@ class WavedashSDK {
 
   async joinLobby(lobbyId: string): Promise<string | WavedashResponse<Id<"lobbies">>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
     
@@ -616,9 +591,7 @@ class WavedashSDK {
       );
       
       if (!success) {
-        if (this.config?.debug) {
-          console.log('[WavedashJS] Failed to join lobby:', lobbyId);
-        }
+        this.log.debug('Failed to join lobby:', lobbyId);
         throw new Error(`Failed to join lobby: ${lobbyId}`);
       }
       
@@ -631,7 +604,7 @@ class WavedashSDK {
         args: args
       });
     } catch (error) {
-      console.error(`[WavedashJS] Error joining lobby: ${error}`);
+      this.log.error(`Error joining lobby: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,
@@ -643,7 +616,7 @@ class WavedashSDK {
 
   async leaveLobby(lobbyId: string): Promise<string | WavedashResponse<boolean>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
     
@@ -660,9 +633,7 @@ class WavedashSDK {
       // Clean up subscription
       this.unsubscribeFromLobbyMessages();
       
-      if (this.config?.debug) {
-        console.log('[WavedashJS] Left lobby:', lobbyId);
-      }
+      this.log.debug('Left lobby:', lobbyId);
       
       return this.formatResponse({
         success: true,
@@ -670,7 +641,7 @@ class WavedashSDK {
         args: args
       });
     } catch (error) {
-      console.error(`[WavedashJS] Error leaving lobby: ${error}`);
+      this.log.error(`Error leaving lobby: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,
@@ -682,7 +653,7 @@ class WavedashSDK {
 
   async sendLobbyMessage(lobbyId: string, message: string): Promise<string | WavedashResponse<boolean>> {
     if (!this.isReady()) {
-      console.warn('[WavedashJS] SDK not initialized. Call init() first.');
+      this.log.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
     
@@ -703,7 +674,7 @@ class WavedashSDK {
         args: args
       });
     } catch (error) {
-      console.error(`[WavedashJS] Error sending lobby message: ${error}`);
+      this.log.error(`Error sending lobby message: ${error}`);
       return this.formatResponse({
         success: false,
         data: null,
@@ -724,8 +695,8 @@ class WavedashSDK {
         'LobbyJoined',
         JSON.stringify(lobbyData)
       );
-    } else if (this.config?.debug) {
-      console.warn('[WavedashJS] Engine instance not set. Call setEngineInstance() before calling notifyLobbyJoined().');
+    } else {
+      this.log.warn('Engine instance not set. Call setEngineInstance() before calling notifyLobbyJoined().');
     }
   }
 
@@ -736,8 +707,8 @@ class WavedashSDK {
         'LobbyLeft',
         JSON.stringify(lobbyData)
       );
-    } else if (this.config?.debug) {
-      console.warn('[WavedashJS] Engine instance not set. Call setEngineInstance() before calling notifyLobbyLeft().');
+    } else {
+      this.log.warn('Engine instance not set. Call setEngineInstance() before calling notifyLobbyLeft().');
     }
   }
 
@@ -748,8 +719,8 @@ class WavedashSDK {
         'LobbyMessage',
         JSON.stringify(payload)
       );
-    } else if (this.config?.debug) {
-      console.warn('[WavedashJS] Engine instance not set. Call setEngineInstance() before calling notifyLobbyMessage().');
+    } else {
+      this.log.warn('Engine instance not set. Call setEngineInstance() before calling notifyLobbyMessage().');
     }
   }
 }
@@ -774,6 +745,7 @@ export function setupWavedashSDK(
   
   if (typeof window !== 'undefined') {
     (window as any).WavedashJS = sdk;
+    // Note: Can't use sdk.log here since it may not be initialized yet
     console.log('[WavedashJS] SDK attached to window.WavedashJS');
   }
 

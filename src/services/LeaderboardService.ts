@@ -42,7 +42,7 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-      console.error(`[WavedashJS] Error getting leaderboard: ${error}`);
+
       return {
         success: false,
         data: null,
@@ -67,7 +67,7 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-      console.error(`[WavedashJS] Error getting or creating leaderboard: ${error}`);
+
       return {
         success: false,
         data: null,
@@ -105,7 +105,7 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-      console.error(`[WavedashJS] Error getting my leaderboard entry: ${error}`);
+
       return {
         success: false,
         data: null,
@@ -138,7 +138,7 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-      console.error(`[WavedashJS] Error listing entries around user: ${error}`);
+
       return {
         success: false,
         data: null,
@@ -166,7 +166,7 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-      console.error(`[WavedashJS] Error listing entries: ${error}`);
+
       return {
         success: false,
         data: null,
@@ -200,7 +200,7 @@ export class LeaderboardService {
         args: args
       };
     } catch (error) {
-      console.error(`[WavedashJS] Error upserting leaderboard entry: ${error}`);
+
       return {
         success: false,
         data: null,
