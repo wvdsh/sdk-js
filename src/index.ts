@@ -41,14 +41,22 @@ class WavedashSDK {
   }
 
   // Helper to determine if we're in a game engine context
-  private isGameEngine(): boolean {
-    return this.engineInstance !== null;
+  private isGodot(): boolean {
+    return this.engineInstance !== null && this.engineInstance.type === "GODOT";
   }
 
   // Helper to format response based on context
-  // Game engines expect a string, so we need to format the response accordingly
+  // Godot callbacks expect a string, so we need to format the response accordingly
   protected formatResponse<T>(data: T): T | string {
-    return this.isGameEngine() ? JSON.stringify(data) : data;
+    return this.isGodot() ? JSON.stringify(data) : data;
+  }
+
+  // Helper to ensure SDK is ready, throws if not
+  private ensureReady(): void {
+    if (!this.isReady()) {
+      this.log.warn('SDK not initialized. Call init() first.');
+      throw new Error('SDK not initialized');
+    }
   }
 
   private async writeToIndexedDB(dbName: string, storeName: string, key: string, data: Uint8Array): Promise<void> {
@@ -184,7 +192,6 @@ class WavedashSDK {
     
     // Update logger debug mode based on config
     this.log.updateDebugMode(!!this.config.debug);
-    
     this.log.debug('Initialized with config:', this.config);
     return true;
   }
@@ -212,20 +219,14 @@ class WavedashSDK {
   }
 
   async getLeaderboard(name: string): Promise<string | WavedashResponse<Leaderboard>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     this.log.debug(`Getting leaderboard: ${name}`);
     const result = await this.leaderboards.getLeaderboard(name);
     return this.formatResponse(result);
   }
 
   async getOrCreateLeaderboard(name: string, sortOrder: LeaderboardSortOrder, displayType: LeaderboardDisplayType): Promise<string | WavedashResponse<Leaderboard>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     this.log.debug(`Getting or creating leaderboard: ${name}`);
     const result = await this.leaderboards.getOrCreateLeaderboard(name, sortOrder, displayType);
     return this.formatResponse(result);
@@ -234,10 +235,7 @@ class WavedashSDK {
   // This is called get my "entries" but under the hood we enforce one entry per user
   // The engine SDK expects a list of entries, so we return a list with 0 or 1 entries
   async getMyLeaderboardEntries(leaderboardId: Id<"leaderboards">): Promise<string | WavedashResponse<LeaderboardEntries>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     this.log.debug(`Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`);
     const result = await this.leaderboards.getMyLeaderboardEntries(leaderboardId);
     return this.formatResponse(result);
@@ -245,38 +243,26 @@ class WavedashSDK {
 
   // Synchronously get leaderboard entry count from cache
   getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      return -1;
-    }
+    this.ensureReady();
     return this.leaderboards.getLeaderboardEntryCount(leaderboardId);
   }
 
   async listLeaderboardEntriesAroundUser(leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     this.log.debug(`Listing entries around user for leaderboard: ${leaderboardId}`);
     const result = await this.leaderboards.listLeaderboardEntriesAroundUser(leaderboardId, countAhead, countBehind);
     return this.formatResponse(result);
   }
 
   async listLeaderboardEntries(leaderboardId: Id<"leaderboards">, offset: number, limit: number): Promise<string | WavedashResponse<LeaderboardEntries>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     this.log.debug(`Listing entries for leaderboard: ${leaderboardId}`);
     const result = await this.leaderboards.listLeaderboardEntries(leaderboardId, offset, limit);
     return this.formatResponse(result);
   }
 
   async uploadLeaderboardScore(leaderboardId: Id<"leaderboards">, score: number, keepBest: boolean, ugcId?: Id<"userGeneratedContent">): Promise<string | WavedashResponse<UpsertedLeaderboardEntry>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     this.log.debug(`Uploading score ${score} to leaderboard: ${leaderboardId}`);
     const result = await this.leaderboards.uploadLeaderboardScore(leaderboardId, score, keepBest, ugcId);
     return this.formatResponse(result);
@@ -293,10 +279,7 @@ class WavedashSDK {
    * @returns ugcId
    */
   async createUGCItem(ugcType: UGCType, title?: string, description?: string, visibility?: UGCVisibility, filePath?: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
 
     const args = { ugcType, title, description, visibility, filePath }
 
@@ -356,10 +339,7 @@ class WavedashSDK {
    * @returns ugcId
    */
   async updateUGCItem(ugcId: Id<"userGeneratedContent">, title?: string, description?: string, visibility?: UGCVisibility, filePath?: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     
     const args = { ugcId, title, description, visibility, filePath }
 
@@ -399,10 +379,7 @@ class WavedashSDK {
   }
 
   async uploadUGCItem(ugcId: Id<"userGeneratedContent">, filePath: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
 
     const args = { ugcId, filePath }
 
@@ -442,10 +419,7 @@ class WavedashSDK {
   }
 
   async downloadUGCItem(ugcId: Id<"userGeneratedContent">, filePath: string): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
 
     const args = { ugcId, filePath }
 
@@ -537,10 +511,7 @@ class WavedashSDK {
   }
 
   async createLobby(lobbyType: number, maxPlayers?: number): Promise<string | WavedashResponse<Id<"lobbies">>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     this.log.debug('Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
 
     const args = {
@@ -575,10 +546,7 @@ class WavedashSDK {
   }
 
   async joinLobby(lobbyId: string): Promise<string | WavedashResponse<Id<"lobbies">>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     
     const args = {
       lobbyId: lobbyId as Id<"lobbies">
@@ -615,10 +583,7 @@ class WavedashSDK {
   }
 
   async leaveLobby(lobbyId: string): Promise<string | WavedashResponse<boolean>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     
     const args = {
       lobbyId: lobbyId as Id<"lobbies">
@@ -652,10 +617,7 @@ class WavedashSDK {
   }
 
   async sendLobbyMessage(lobbyId: string, message: string): Promise<string | WavedashResponse<boolean>> {
-    if (!this.isReady()) {
-      this.log.warn('SDK not initialized. Call init() first.');
-      throw new Error('SDK not initialized');
-    }
+    this.ensureReady();
     
     const args = {
       lobbyId: lobbyId as Id<"lobbies">,
@@ -689,39 +651,30 @@ class WavedashSDK {
   // =============================
 
   notifyLobbyJoined(lobbyData: object): void {
-    if (this.isReady()) {
-      this.engineInstance!.SendMessage(
-        this.engineCallbackReceiver,
-        'LobbyJoined',
-        JSON.stringify(lobbyData)
-      );
-    } else {
-      this.log.warn('Engine instance not set. Call setEngineInstance() before calling notifyLobbyJoined().');
-    }
+    this.ensureReady();
+    this.engineInstance?.SendMessage(
+      this.engineCallbackReceiver,
+      'LobbyJoined',
+      JSON.stringify(lobbyData)
+    );
   }
 
   notifyLobbyLeft(lobbyData: object): void {
-    if (this.isReady()) {
-      this.engineInstance!.SendMessage(
-        this.engineCallbackReceiver,
-        'LobbyLeft',
-        JSON.stringify(lobbyData)
-      );
-    } else {
-      this.log.warn('Engine instance not set. Call setEngineInstance() before calling notifyLobbyLeft().');
-    }
+    this.ensureReady();
+    this.engineInstance?.SendMessage(
+      this.engineCallbackReceiver,
+      'LobbyLeft',
+      JSON.stringify(lobbyData)
+    );
   }
 
   notifyLobbyMessage(payload: object): void {
-    if (this.isReady()) {
-      this.engineInstance!.SendMessage(
-        this.engineCallbackReceiver,
-        'LobbyMessage',
-        JSON.stringify(payload)
-      );
-    } else {
-      this.log.warn('Engine instance not set. Call setEngineInstance() before calling notifyLobbyMessage().');
-    }
+    this.ensureReady();
+    this.engineInstance?.SendMessage(
+      this.engineCallbackReceiver,
+      'LobbyMessage',
+      JSON.stringify(payload)
+    );
   }
 }
 

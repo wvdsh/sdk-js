@@ -27,6 +27,8 @@ export interface WavedashUser {
 }
 
 export interface EngineInstance {
+  // Add more as we support more engines
+  type: "GODOT" | "UNITY";
   // Broadcasts a message to the engine instance
   // Exposed natively by Unity's engine instance, added manually by Wavedash Godot SDK
   SendMessage(objectName: string, methodName: string, value?: string | number): void;
