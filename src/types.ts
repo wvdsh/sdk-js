@@ -19,6 +19,7 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<typeof api.leaderboard
 export interface WavedashConfig {
   gameId: Id<"games">;
   debug?: boolean;
+  remoteStorageOrigin?: string;
 }
 
 export interface WavedashUser {

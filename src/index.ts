@@ -1,5 +1,5 @@
 import { ConvexClient } from "convex/browser";
-import { api } from "./_generated/convex_api";
+import * as remoteStorage from "./services/remoteStorage";
 import * as Constants from "./_generated/constants";
 import * as leaderboards from "./services/leaderboards";
 import * as ugc from "./services/ugc";
@@ -23,7 +23,7 @@ import type {
 
 class WavedashSDK {
   private initialized: boolean = false;
-  private config: WavedashConfig | null = null;
+  protected config: WavedashConfig | null = null;
   
   protected engineCallbackReceiver: string = "WavedashCallbackReceiver";
   protected engineInstance: EngineInstance | null = null;
@@ -84,9 +84,19 @@ class WavedashSDK {
   // User methods
   // ============
 
-  getUser(): string | WavedashUser | null {
+  getUser(): string | WavedashUser {
     this.ensureReady();
     return this.formatResponse(this.wavedashUser);
+  }
+
+  getUsername(): string {
+    this.ensureReady();
+    return this.wavedashUser.username;
+  }
+
+  getUserId(): Id<"users"> {
+    this.ensureReady();
+    return this.wavedashUser.id;
   }
 
   // ============
@@ -189,6 +199,31 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  // ================================
+  // Save state / Remote File Storage
+  // ================================
+
+  async remoteFileExists(filePath: string): Promise<string | WavedashResponse<boolean>> {
+    this.ensureReady();
+    this.logger.debug(`Checking if remote file exists: ${filePath}`);
+    const result = await remoteStorage.remoteFileExists.call(this, filePath);
+    return this.formatResponse(result);
+  }
+
+  async downloadRemoteFile(filePath: string): Promise<string | WavedashResponse<string>> {
+    this.ensureReady();
+    this.logger.debug(`Downloading remote file: ${filePath}`);
+    const result = await remoteStorage.downloadRemoteFile.call(this, filePath);
+    return this.formatResponse(result);
+  }
+
+  async uploadRemoteFile(filePath: string): Promise<string | WavedashResponse<string>> {
+    this.ensureReady();
+    this.logger.debug(`Uploading remote file: ${filePath}`);
+    const result = await remoteStorage.uploadRemoteFile.call(this, filePath);
+    return this.formatResponse(result);
+  }
+
   // ============
   // Game Lobbies
   // ============
@@ -232,7 +267,7 @@ class WavedashSDK {
 
   // Helper to format response based on context
   // Godot callbacks expect a string, so we need to format the response accordingly
-  protected formatResponse<T>(data: T): T | string {
+  private formatResponse<T>(data: T): T | string {
     return this.isGodot() ? JSON.stringify(data) : data;
   }
 
