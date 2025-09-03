@@ -41,7 +41,8 @@ function getRemoteStorageOrigin(this: WavedashSDK): string {
 
 function getRemoteStorageUrl(this: WavedashSDK, filePath: string): string {
   const ORIGIN = getRemoteStorageOrigin.call(this);
-  return `${ORIGIN}/${REMOTE_STORAGE_FOLDER}/${this.wavedashUser.id}/${filePath}`;
+  const relativePath = filePath.startsWith('/') ? filePath.slice(1) : filePath;
+  return `${ORIGIN}/${REMOTE_STORAGE_FOLDER}/${this.wavedashUser.id}/${relativePath}`;
 }
 
 async function uploadFromIndexedDb(this: WavedashSDK, presignedUploadUrl: string, indexedDBKey: string): Promise<boolean> {
@@ -67,10 +68,10 @@ async function uploadFromIndexedDb(this: WavedashSDK, presignedUploadUrl: string
 
 async function uploadFromFS(this: WavedashSDK, presignedUploadUrl: string, filePath: string): Promise<boolean> {
   try {
-    // const exists = this.engineInstance!.FS.analyzePath(filePath).exists;
-    // if (!exists) {
-    //   throw new Error(`File not found in FS: ${filePath}`);
-    // }
+    const exists = this.engineInstance!.FS.analyzePath(filePath).exists;
+    if (!exists) {
+      throw new Error(`File not found in FS: ${filePath}`);
+    }
     const blob = this.engineInstance!.FS.readFile(filePath) as Uint8Array;
     const response = await fetch(presignedUploadUrl, {
       method: 'PUT',
