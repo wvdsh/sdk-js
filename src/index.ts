@@ -217,7 +217,7 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
-  async uploadRemoteFile(filePath: string): Promise<string | WavedashResponse<boolean>> {
+  async uploadRemoteFile(filePath: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Uploading remote file: ${filePath}`);
     const result = await remoteStorage.uploadRemoteFile.call(this, filePath);

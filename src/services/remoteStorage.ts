@@ -168,9 +168,11 @@ export async function uploadRemoteFile(this: WavedashSDK, filePath: string): Pro
   const args = { filePath };
 
   try {
-    const url = getRemoteStorageUrl.call(this, args.filePath);
-    // TODO: This should come from Convex
-    const success = await upload.call(this, url, args.filePath);
+    const uploadUrl = await this.convexClient.mutation(
+      api.remoteFileStorage.getUploadUrl,
+      { path: args.filePath }
+    );
+    const success = await upload.call(this, uploadUrl, args.filePath);
     return {
       success: success,
       data: filePath,
