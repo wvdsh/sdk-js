@@ -465,5 +465,13 @@ export type PublicApiType = {
   organizations: {
     getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
   };
+  remoteFileStorage: {
+    getUploadUrl: FunctionReference<
+      "mutation",
+      "public",
+      { path: string },
+      string
+    >;
+  };
 };
 export type InternalApiType = {};
