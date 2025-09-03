@@ -1,5 +1,5 @@
 import { ConvexClient } from "convex/browser";
-import { api } from "./_generated/convex_api";
+import * as remoteStorage from "./services/remoteStorage";
 import * as Constants from "./_generated/constants";
 import * as leaderboards from "./services/leaderboards";
 import * as ugc from "./services/ugc";
@@ -23,7 +23,7 @@ import type {
 
 class WavedashSDK {
   private initialized: boolean = false;
-  private config: WavedashConfig | null = null;
+  protected config: WavedashConfig | null = null;
   
   protected engineCallbackReceiver: string = "WavedashCallbackReceiver";
   protected engineInstance: EngineInstance | null = null;
@@ -206,8 +206,8 @@ class WavedashSDK {
   async remoteFileExists(filePath: string): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
     this.logger.debug(`Checking if remote file exists: ${filePath}`);
-    // const result = await remoteFile.exists.call(this, filePath);
-    return this.formatResponse(false);
+    const result = await remoteStorage.fileExists.call(this, filePath);
+    return this.formatResponse(result);
   }
 
   // ============
