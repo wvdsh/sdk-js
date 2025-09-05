@@ -18,7 +18,8 @@ import type {
   WavedashResponse,
   UpsertedLeaderboardEntry,
   UGCType,
-  UGCVisibility
+  UGCVisibility,
+  RemoteFileMetadata
 } from "./types";
 
 class WavedashSDK {
@@ -203,31 +204,24 @@ class WavedashSDK {
   // Save state / Remote File Storage
   // ================================
 
-  async remoteFileExists(filePath: string): Promise<string | WavedashResponse<boolean>> {
+  async getRemoteFileMetadata(filePath: string): Promise<string | WavedashResponse<RemoteFileMetadata>> {
     this.ensureReady();
     this.logger.debug(`Checking if remote file exists: ${filePath}`);
-    const result = await remoteStorage.remoteFileExists.call(this, filePath);
+    const result = await remoteStorage.remoteFileMetadata.call(this, filePath);
     return this.formatResponse(result);
   }
 
-  async downloadRemoteFile(filePath: string): Promise<string | WavedashResponse<string>> {
+  async downloadRemoteFile(filePath: string, downloadToLocation?: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote file: ${filePath}`);
-    const result = await remoteStorage.downloadRemoteFile.call(this, filePath);
+    const result = await remoteStorage.downloadRemoteFile.call(this, filePath, downloadToLocation);
     return this.formatResponse(result);
   }
 
-  async uploadRemoteFile(filePath: string): Promise<string | WavedashResponse<string>> {
+  async uploadRemoteFile(filePath: string, uploadToLocation?: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Uploading remote file: ${filePath}`);
-    const result = await remoteStorage.uploadRemoteFile.call(this, filePath);
-    return this.formatResponse(result);
-  }
-
-  async remoteFileLastUpdatedAt(filePath: string): Promise<string | WavedashResponse<number>> {
-    this.ensureReady();
-    this.logger.debug(`Getting last updated at for remote file: ${filePath}`);
-    const result = await remoteStorage.remoteFileLastUpdatedAt.call(this, filePath);
+    const result = await remoteStorage.uploadRemoteFile.call(this, filePath, uploadToLocation);
     return this.formatResponse(result);
   }
 

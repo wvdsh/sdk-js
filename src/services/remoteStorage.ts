@@ -6,7 +6,8 @@
  */
 
 import type {
-  WavedashResponse
+  WavedashResponse,
+  RemoteFileMetadata
 } from '../types';
 import { api } from '../_generated/convex_api';
 import type { WavedashSDK } from '../index';
@@ -140,7 +141,7 @@ export async function download(this: WavedashSDK, url: string, filePath: string)
   return true;
 }
 
-export async function remoteFileExists(this: WavedashSDK, filePath: string): Promise<WavedashResponse<boolean>> {
+export async function remoteFileMetadata(this: WavedashSDK, filePath: string): Promise<WavedashResponse<RemoteFileMetadata>> {
   const args = { filePath };
 
   try {
@@ -149,42 +150,15 @@ export async function remoteFileExists(this: WavedashSDK, filePath: string): Pro
       credentials: 'include',
       method: 'HEAD',
     });
+    const lastModifiedHeader = response.headers.has('Last-Modified')
+      ? new Date(response.headers.get('Last-Modified')!).getTime()
+      : 0;
     return {
       success: true,
-      data: response.ok,
-      args: args
-    };
-  } catch (error) {
-    this.logger.error(`Failed to check if remote file exists: ${error}`);
-    return {
-      success: false,
-      data: false,
-      args: args,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
-export async function remoteFileLastUpdatedAt(this: WavedashSDK, filePath: string): Promise<WavedashResponse<number>> {
-  const args = { filePath };
-
-  try {
-    const url = getRemoteStorageUrl.call(this, args.filePath);
-    const response = await fetch(url, { 
-      credentials: 'include',
-      method: 'HEAD',
-    });
-    if (!response.ok) {
-      throw new Error(`Failed to fetch remote file: ${filePath}`);
-    }
-    const lastUpdatedAt = response.headers.get('Last-Modified');
-    if (!lastUpdatedAt) {
-      throw new Error(`Missing Last-Modified timestamp for remote file: ${filePath}`);
-    }
-    const unixTimestamp = new Date(lastUpdatedAt).getTime();
-    return {
-      success: true,
-      data: unixTimestamp,
+      data: {
+        exists: response.ok,
+        lastUpdatedAt: lastModifiedHeader
+      },
       args: args
     };
   } catch (error) {
@@ -198,18 +172,26 @@ export async function remoteFileLastUpdatedAt(this: WavedashSDK, filePath: strin
   }
 }
 
-export async function uploadRemoteFile(this: WavedashSDK, filePath: string): Promise<WavedashResponse<string>> {
-  const args = { filePath };
+/**
+ * Uploads a local file to remote storage
+ * @param this - WavedashSDK instance
+ * @param filePath - The path of the local file to upload
+ * @param uploadTo - Optionally provide a path to upload the file to, defaults to the same path as the local file
+ * @returns The path of the remote file that the local file was uploaded to
+ */
+export async function uploadRemoteFile(this: WavedashSDK, filePath: string, uploadTo?: string): Promise<WavedashResponse<string>> {
+  const args = { filePath, uploadTo };
+  const remoteDestination = uploadTo || args.filePath;
 
   try {
     const uploadUrl = await this.convexClient.mutation(
       api.remoteFileStorage.getUploadUrl,
-      { path: args.filePath }
+      { path: remoteDestination }
     );
     const success = await upload.call(this, uploadUrl, args.filePath);
     return {
       success: success,
-      data: filePath,
+      data: remoteDestination,
       args: args
     };
   } catch (error) {
@@ -223,15 +205,23 @@ export async function uploadRemoteFile(this: WavedashSDK, filePath: string): Pro
   }
 }
 
-export async function downloadRemoteFile(this: WavedashSDK, filePath: string): Promise<WavedashResponse<string>> {
-  const args = { filePath };
+/**
+ * Downloads a remote file to a local location
+ * @param this - WavedashSDK instance
+ * @param filePath - The path of the remote file to download
+ * @param downloadTo - Optionally provide a path to download the file to, defaults to the same path as the remote file
+ * @returns The path of the local file that the remote file was downloaded to
+ */
+export async function downloadRemoteFile(this: WavedashSDK, filePath: string, downloadTo?: string): Promise<WavedashResponse<string>> {
+  const args = { filePath, downloadTo };
 
   try {
     const url = getRemoteStorageUrl.call(this, args.filePath);
-    const success = await download.call(this, url, args.filePath);
+    const localDestination = downloadTo || args.filePath;
+    const success = await download.call(this, url, localDestination);
     return {
       success: success,
-      data: filePath,
+      data: localDestination,
       args: args
     };
   } catch (error) {
