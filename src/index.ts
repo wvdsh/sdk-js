@@ -224,6 +224,13 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  async remoteFileLastUpdatedAt(filePath: string): Promise<string | WavedashResponse<number>> {
+    this.ensureReady();
+    this.logger.debug(`Getting last updated at for remote file: ${filePath}`);
+    const result = await remoteStorage.remoteFileLastUpdatedAt.call(this, filePath);
+    return this.formatResponse(result);
+  }
+
   // ============
   // Game Lobbies
   // ============

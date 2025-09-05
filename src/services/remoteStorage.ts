@@ -165,6 +165,39 @@ export async function remoteFileExists(this: WavedashSDK, filePath: string): Pro
   }
 }
 
+export async function remoteFileLastUpdatedAt(this: WavedashSDK, filePath: string): Promise<WavedashResponse<number>> {
+  const args = { filePath };
+
+  try {
+    const url = getRemoteStorageUrl.call(this, args.filePath);
+    const response = await fetch(url, { 
+      credentials: 'include',
+      method: 'HEAD',
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch remote file: ${filePath}`);
+    }
+    const lastUpdatedAt = response.headers.get('Last-Modified');
+    if (!lastUpdatedAt) {
+      throw new Error(`Missing Last-Modified timestamp for remote file: ${filePath}`);
+    }
+    const unixTimestamp = new Date(lastUpdatedAt).getTime();
+    return {
+      success: true,
+      data: unixTimestamp,
+      args: args
+    };
+  } catch (error) {
+    this.logger.error(`Failed to check if remote file exists: ${error}`);
+    return {
+      success: false,
+      data: null,
+      args: args,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
 export async function uploadRemoteFile(this: WavedashSDK, filePath: string): Promise<WavedashResponse<string>> {
   const args = { filePath };
 
