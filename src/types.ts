@@ -27,6 +27,11 @@ export interface WavedashUser {
   username: string;
 }
 
+export interface RemoteFileMetadata {
+  exists: boolean;
+  lastUpdatedAt: number;
+}
+
 export interface EngineInstance {
   // Add more as we support more engines
   type: "GODOT" | "UNITY";
