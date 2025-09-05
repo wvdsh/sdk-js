@@ -206,7 +206,7 @@ class WavedashSDK {
 
   async getRemoteFileMetadata(filePath: string): Promise<string | WavedashResponse<RemoteFileMetadata>> {
     this.ensureReady();
-    this.logger.debug(`Checking if remote file exists: ${filePath}`);
+    this.logger.debug(`Getting remote file metadata: ${filePath}`);
     const result = await remoteStorage.remoteFileMetadata.call(this, filePath);
     return this.formatResponse(result);
   }
