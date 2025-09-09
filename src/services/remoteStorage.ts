@@ -116,7 +116,7 @@ export async function download(this: WavedashSDK, url: string, filePath: string)
     method: 'GET',
   });
   if (!response.ok) {
-    throw new Error(`Failed to download remote file. Status: ${response.status} (${response.statusText})`);
+    throw new Error(`Failed to download remote file: ${response.status} (${response.statusText})`);
   }
   
   const blob = await response.blob();
@@ -213,6 +213,9 @@ export async function listRemoteDirectory(this: WavedashSDK, path: string): Prom
       credentials: 'include',
       method: 'GET',
     });
+    if (!response.ok) {
+      throw new Error(`${response.status} (${response.statusText})`);
+    }
     const responseJson = await response.json();
     return {
       success: true,
