@@ -28,8 +28,12 @@ export interface WavedashUser {
 }
 
 export interface RemoteFileMetadata {
-  exists: boolean;
-  lastUpdatedAt: number;
+  exists: boolean;  // Whether the entry exists
+  key: string;  // R2 Key of the entry
+  name: string;  // Name of the entry relative to the requested directory path
+  lastModified: number;  // Last modified timestamp of the entry (ISO format)
+  size: number;  // Size of the entry in bytes
+  etag: string;  // ETag of the entry
 }
 
 export interface EngineInstance {

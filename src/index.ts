@@ -225,6 +225,20 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  async listRemoteDirectory(path: string): Promise<string | WavedashResponse<RemoteFileMetadata[]>> {
+    this.ensureReady();
+    this.logger.debug(`Listing remote directory: ${path}`);
+    const result = await remoteStorage.listRemoteDirectory.call(this, path);
+    return this.formatResponse(result);
+  }
+
+  async downloadRemoteDirectory(path: string): Promise<string | WavedashResponse<boolean>> {
+    this.ensureReady();
+    this.logger.debug(`Downloading remote directory: ${path}`);
+    const result = await remoteStorage.downloadRemoteDirectory.call(this, path);
+    return this.formatResponse(result);
+  }
+
   // ============
   // Game Lobbies
   // ============
