@@ -116,7 +116,7 @@ export async function download(this: WavedashSDK, url: string, filePath: string)
     method: 'GET',
   });
   if (!response.ok) {
-    throw new Error(`Failed to download remote file: ${url}`);
+    throw new Error(`Failed to download remote file: ${response.status} (${response.statusText})`);
   }
   
   const blob = await response.blob();
@@ -139,37 +139,6 @@ export async function download(this: WavedashSDK, url: string, filePath: string)
   }
   
   return true;
-}
-
-export async function remoteFileMetadata(this: WavedashSDK, filePath: string): Promise<WavedashResponse<RemoteFileMetadata>> {
-  const args = { filePath };
-
-  try {
-    const url = getRemoteStorageUrl.call(this, args.filePath);
-    const response = await fetch(url, { 
-      credentials: 'include',
-      method: 'HEAD',
-    });
-    const lastModifiedHeader = response.headers.has('Last-Modified')
-      ? new Date(response.headers.get('Last-Modified')!).getTime()
-      : 0;
-    return {
-      success: true,
-      data: {
-        exists: response.ok,
-        lastUpdatedAt: lastModifiedHeader
-      },
-      args: args
-    };
-  } catch (error) {
-    this.logger.error(`Failed to check if remote file exists: ${error}`);
-    return {
-      success: false,
-      data: null,
-      args: args,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
 }
 
 /**
@@ -226,6 +195,77 @@ export async function downloadRemoteFile(this: WavedashSDK, filePath: string, do
     };
   } catch (error) {
     this.logger.error(`Failed to download remote file: ${error}`);
+    return {
+      success: false,
+      data: null,
+      args: args,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+export async function listRemoteDirectory(this: WavedashSDK, path: string): Promise<WavedashResponse<RemoteFileMetadata[]>> {
+  const args = { path };
+
+  try {
+    const url = getRemoteStorageUrl.call(this, path) + '?list=true';
+    const response = await fetch(url, { 
+      credentials: 'include',
+      method: 'GET',
+    });
+    if (!response.ok) {
+      throw new Error(`${response.status} (${response.statusText})`);
+    }
+    const responseJson = await response.json();
+    return {
+      success: true,
+      data: responseJson.files,
+      args: args
+    };
+  } catch (error) {
+    this.logger.error(`Failed to list directory: ${error}`);
+    return {
+      success: false,
+      data: null,
+      args: args,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+
+export async function downloadRemoteDirectory(this: WavedashSDK, path: string): Promise<WavedashResponse<boolean>> {
+  const args = { path };
+
+  try {
+    const normalizedPath = path.endsWith('/') ? path : path + '/';
+    const response = await listRemoteDirectory.call(this, args.path);
+    if (!response.success) {
+      throw new Error(response.message);
+    }
+    const files = response.data as RemoteFileMetadata[];
+    // Download all files in parallel since thread support is enabled
+    const downloadPromises = files.map(async (file) => {
+      const url = getRemoteStorageUrl.call(this, normalizedPath + file.name);
+      const success = await download.call(this, url, normalizedPath + file.name);
+      return { fileName: file.name, success };
+    });
+    
+    const downloadResults = await Promise.all(downloadPromises);
+    
+    // Check if any downloads failed
+    const failedDownloads = downloadResults.filter(result => !result.success);
+    if (failedDownloads.length > 0) {
+      throw new Error(`Failed to download ${failedDownloads.length} files: ${failedDownloads.map(f => f.fileName).join(', ')}`);
+    }
+    return {
+      success: true,
+      data: true,
+      args: args
+    };
+  }
+  catch (error) {
+    this.logger.error(`Failed to download user directory: ${error}`);
     return {
       success: false,
       data: null,
