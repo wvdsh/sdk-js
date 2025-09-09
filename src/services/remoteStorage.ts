@@ -234,7 +234,7 @@ export async function listRemoteDirectory(this: WavedashSDK, path: string): Prom
 }
 
 
-export async function downloadRemoteDirectory(this: WavedashSDK, path: string): Promise<WavedashResponse<boolean>> {
+export async function downloadRemoteDirectory(this: WavedashSDK, path: string): Promise<WavedashResponse<string>> {
   const args = { path };
 
   try {
@@ -260,7 +260,7 @@ export async function downloadRemoteDirectory(this: WavedashSDK, path: string): 
     }
     return {
       success: true,
-      data: true,
+      data: normalizedPath,
       args: args
     };
   }

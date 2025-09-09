@@ -204,6 +204,12 @@ class WavedashSDK {
   // Save state / Remote File Storage
   // ================================
 
+  /**
+   * Downloads a remote file to a local location
+   * @param filePath - The path of the remote file to download
+   * @param downloadTo - Optionally provide a path to download the file to, defaults to the same path as the remote file
+   * @returns The path of the local file that the remote file was downloaded to
+   */
   async downloadRemoteFile(filePath: string, downloadToLocation?: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote file: ${filePath}`);
@@ -211,6 +217,12 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  /**
+   * Uploads a local file to remote storage
+   * @param filePath - The path of the local file to upload
+   * @param uploadTo - Optionally provide a path to upload the file to, defaults to the same path as the local file
+   * @returns The path of the remote file that the local file was uploaded to
+   */
   async uploadRemoteFile(filePath: string, uploadToLocation?: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Uploading remote file: ${filePath}`);
@@ -218,6 +230,11 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  /**
+   * Lists a remote directory
+   * @param path - The path of the remote directory to list
+   * @returns A list of metadata for each file in the remote directory
+   */
   async listRemoteDirectory(path: string): Promise<string | WavedashResponse<RemoteFileMetadata[]>> {
     this.ensureReady();
     this.logger.debug(`Listing remote directory: ${path}`);
@@ -225,7 +242,12 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
-  async downloadRemoteDirectory(path: string): Promise<string | WavedashResponse<boolean>> {
+  /**
+   * Downloads a remote directory to a local location
+   * @param path - The path of the remote directory to download
+   * @returns The path of the local directory that the remote directory was downloaded to
+   */
+  async downloadRemoteDirectory(path: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote directory: ${path}`);
     const result = await remoteStorage.downloadRemoteDirectory.call(this, path);
