@@ -141,32 +141,6 @@ export async function download(this: WavedashSDK, url: string, filePath: string)
   return true;
 }
 
-export async function remoteFileMetadata(this: WavedashSDK, filePath: string): Promise<WavedashResponse<RemoteFileMetadata>> {
-  const args = { filePath };
-
-  try {
-    const url = getRemoteStorageUrl.call(this, args.filePath);
-    const response = await fetch(url, { 
-      credentials: 'include',
-      method: 'HEAD',
-    });
-    const responseJson = await response.json() as RemoteFileMetadata;
-    return {
-      success: true,
-      data: responseJson,
-      args: args
-    };
-  } catch (error) {
-    this.logger.error(`Failed to check if remote file exists: ${error}`);
-    return {
-      success: false,
-      data: null,
-      args: args,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
 /**
  * Uploads a local file to remote storage
  * @param this - WavedashSDK instance

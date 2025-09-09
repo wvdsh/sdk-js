@@ -204,13 +204,6 @@ class WavedashSDK {
   // Save state / Remote File Storage
   // ================================
 
-  async getRemoteFileMetadata(filePath: string): Promise<string | WavedashResponse<RemoteFileMetadata>> {
-    this.ensureReady();
-    this.logger.debug(`Getting remote file metadata: ${filePath}`);
-    const result = await remoteStorage.remoteFileMetadata.call(this, filePath);
-    return this.formatResponse(result);
-  }
-
   async downloadRemoteFile(filePath: string, downloadToLocation?: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote file: ${filePath}`);
