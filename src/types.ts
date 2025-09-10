@@ -1,6 +1,7 @@
 import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 import { api, PublicApiType } from "./_generated/convex_api";
+import { P2P_SIGNALING_MESSAGE_TYPE } from "./_generated/constants";
 
 // Extract types from the API
 export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
@@ -20,6 +21,7 @@ export interface WavedashConfig {
   gameId: Id<"games">;
   debug?: boolean;
   remoteStorageOrigin?: string;
+  p2p?: Partial<P2PConfig>;
 }
 
 export interface WavedashUser {
@@ -63,6 +65,50 @@ export interface WavedashResponse<T> {
   // Error message if success is false
   message?: string;
   // TODO: errorCode?
+}
+
+// P2P Connection types
+export interface P2PPeer {
+  handle: number;           // Integer handle for networking performance
+  userId: Id<"users">;      // Links to persistent user
+  username: string;
+  isHost: boolean;
+}
+
+export interface P2PConnection {
+  lobbyId: Id<"lobbies">;
+  localHandle: number;
+  peers: Map<number, P2PPeer>;  // handle -> peer info
+  state: P2PConnectionState;
+}
+
+export type P2PConnectionState = 
+  | "connecting" 
+  | "connected" 
+  | "disconnected" 
+  | "failed";
+
+export interface P2PMessage {
+  fromHandle: number;
+  toHandle?: number;        // undefined = broadcast
+  channel: number;          // Channel for message routing
+  data: any;
+  timestamp: number;
+}
+
+export interface P2PSignalingMessage {  
+  type: typeof P2P_SIGNALING_MESSAGE_TYPE[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
+  fromHandle?: number;
+  toHandle?: number;
+  data: any;
+}
+
+// P2P Configuration
+export interface P2PConfig {
+  iceServers: RTCIceServer[];
+  maxPeers: number;
+  enableReliableChannel: boolean;
+  enableUnreliableChannel: boolean;
 }
 
 // Re-export Id for convenience

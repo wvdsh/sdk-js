@@ -64,3 +64,12 @@ export const REMOTE_STORAGE = {
 	UPLOADS_PER_MINUTE: 30,     // Max uploads per minute (burst protection)
 	UPLOADS_PER_HOUR: 300,      // Max uploads per hour (sustained usage)
 } as const;
+
+export const P2P_SIGNALING_MESSAGE_TYPE = {
+	OFFER: 'offer',
+	ANSWER: 'answer',
+	ICE_CANDIDATE: 'ice-candidate',
+	PEER_ASSIGNMENTS: 'peer-assignments',
+	PEER_JOINED: 'peer-joined',
+	PEER_LEFT: 'peer-left'
+} as const;
