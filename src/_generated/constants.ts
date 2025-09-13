@@ -61,6 +61,14 @@ export const REMOTE_STORAGE = {
 	DEFAULT_LIMIT_BYTES: 1024 * 1024 * 1024, // 1GB default limit
 	
 	// Rate limiting configuration
-	UPLOADS_PER_MINUTE: 10,     // Max uploads per minute (burst protection)
-	UPLOADS_PER_HOUR: 100,      // Max uploads per hour (sustained usage)
+	UPLOADS_PER_MINUTE: 30,     // Max uploads per minute (burst protection)
+	UPLOADS_PER_HOUR: 300,      // Max uploads per hour (sustained usage)
+} as const;
+
+export const P2P_SIGNALING_MESSAGE_TYPE = {
+	OFFER: 'offer',
+	ANSWER: 'answer',
+	ICE_CANDIDATE: 'ice-candidate',
+	PEER_JOINED: 'peer-joined',
+	PEER_LEFT: 'peer-left'
 } as const;

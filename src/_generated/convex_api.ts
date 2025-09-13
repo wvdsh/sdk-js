@@ -85,7 +85,12 @@ export type PublicApiType = {
       "query",
       "public",
       { lobbyId: Id<"lobbies"> },
-      any
+      Array<{
+        isCurrentUser: boolean;
+        lobbyId: Id<"lobbies">;
+        userId: Id<"users">;
+        username: string;
+      }>
     >;
     createAndJoinLobby: FunctionReference<
       "mutation",
@@ -471,6 +476,42 @@ export type PublicApiType = {
       "public",
       { path: string },
       string
+    >;
+  };
+  p2pSignaling: {
+    sendSignalingMessage: FunctionReference<
+      "mutation",
+      "public",
+      {
+        data: any;
+        lobbyId: Id<"lobbies">;
+        messageType:
+          | "offer"
+          | "answer"
+          | "ice-candidate"
+          | "peer-joined"
+          | "peer-left";
+        toUserId?: Id<"users">;
+      },
+      any
+    >;
+    getSignalingMessages: FunctionReference<
+      "query",
+      "public",
+      { lobbyId: Id<"lobbies"> },
+      any
+    >;
+    markSignalingMessagesProcessed: FunctionReference<
+      "mutation",
+      "public",
+      { messageIds: Array<Id<"p2pSignalingMessages">> },
+      any
+    >;
+    cleanupExpiredSignalingMessages: FunctionReference<
+      "mutation",
+      "public",
+      Record<string, never>,
+      any
     >;
   };
 };

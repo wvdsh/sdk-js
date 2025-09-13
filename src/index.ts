@@ -4,6 +4,7 @@ import * as Constants from "./_generated/constants";
 import * as leaderboards from "./services/leaderboards";
 import * as ugc from "./services/ugc";
 import * as lobby from "./services/lobby";
+import { P2PManager } from "./services/p2p";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import type {
   Id,
@@ -19,18 +20,24 @@ import type {
   UpsertedLeaderboardEntry,
   UGCType,
   UGCVisibility,
-  RemoteFileMetadata
+  RemoteFileMetadata,
+  P2PPeer,
+  P2PConnection,
+  P2PMessage,
+  LobbyUsers
 } from "./types";
 
 class WavedashSDK {
   private initialized: boolean = false;
+
   protected config: WavedashConfig | null = null;
-  
-  protected engineCallbackReceiver: string = "WavedashCallbackReceiver";
-  protected engineInstance: EngineInstance | null = null;
   protected wavedashUser: WavedashUser;
-  protected convexClient: ConvexClient;
-  protected logger: WavedashLogger;
+  protected p2pManager: P2PManager;
+  
+  convexClient: ConvexClient;
+  engineCallbackReceiver: string = "WavedashCallbackReceiver";
+  engineInstance: EngineInstance | null = null;
+  logger: WavedashLogger;
 
   Constants = Constants;
 
@@ -38,6 +45,7 @@ class WavedashSDK {
     this.convexClient = convexClient;
     this.wavedashUser = wavedashUser;
     this.logger = new WavedashLogger();
+    this.p2pManager = new P2PManager(this);
   }
 
   // =============
@@ -64,6 +72,12 @@ class WavedashSDK {
 
     // Update logger debug mode based on config
     this.logger.setLogLevel(this.config.debug ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
+    
+    // Update P2P manager configuration if provided
+    if (this.config.p2p) {
+      this.p2pManager.updateConfig(this.config.p2p);
+    }
+    
     this.logger.debug('Initialized with config:', this.config);
     return true;
   }
@@ -255,6 +269,112 @@ class WavedashSDK {
   }
 
   // ============
+  // P2P Networking
+  // ============
+
+  /**
+   * Enable P2P networking for the current lobby
+   * @param lobbyId - The lobby to enable P2P for
+   * @param members - All lobby members for consistent peer handle generation
+   * @returns P2P connection information
+   */
+  async enableP2P(lobbyId: Id<"lobbies">, members: WavedashUser[]): Promise<string | WavedashResponse<P2PConnection>> {
+    this.ensureReady();
+    this.logger.debug(`Enabling P2P for current lobby: ${lobbyId}`);
+    const result = await this.p2pManager.initializeP2PForCurrentLobby(lobbyId, members);
+    return this.formatResponse(result);
+  }
+
+  /**
+   * Send a message through P2P to a specific peer using their handle
+   * @param toHandle - Peer handle to send to (undefined = broadcast)
+   * @param channel - Channel number for message routing
+   * @param message - Message data
+   * @param reliable - Use reliable channel (default: true)
+   */
+  async sendP2PMessage(toHandle: number | undefined, channel: number, message: any, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
+    this.ensureReady();
+    this.logger.debug(`Sending P2P message to peer ${toHandle} on channel ${channel}`);
+    const result = await this.p2pManager.sendP2PMessage(toHandle, channel, message, reliable);
+    return this.formatResponse(result);
+  }
+
+  /**
+   * Send high-frequency game data through P2P (uses unreliable channel)
+   * @param toHandle - Peer handle to send to (undefined = broadcast)
+   * @param channel - Channel number for message routing
+   * @param data - Binary game data
+   */
+  async sendGameData(toHandle: number | undefined, channel: number, data: ArrayBuffer): Promise<string | WavedashResponse<boolean>> {
+    this.ensureReady();
+    this.logger.debug(`Sending game data to peer ${toHandle} on channel ${channel}`);
+    const result = await this.p2pManager.sendGameData(toHandle, channel, data);
+    return this.formatResponse(result);
+  }
+
+  /**
+   * Get peer information by handle
+   * @param handle - The peer handle
+   */
+  getPeerByHandle(handle: number): P2PPeer | null {
+    this.ensureReady();
+    return this.p2pManager.getPeerByHandle(handle);
+  }
+
+  /**
+   * Get the peer handle for a specific user
+   * @param userId - The user ID to look up
+   */
+  getUserHandle(userId: Id<"users">): number | null {
+    this.ensureReady();
+    return this.p2pManager.getUserHandle(userId);
+  }
+
+  /**
+   * Get the current P2P connection state
+   */
+  getCurrentP2PConnection(): P2PConnection | null {
+    this.ensureReady();
+    return this.p2pManager.getCurrentP2PConnection();
+  }
+
+  /**
+   * Disconnect P2P for the current lobby
+   */
+  async disconnectP2P(): Promise<string | WavedashResponse<boolean>> {
+    this.ensureReady();
+    this.logger.debug('Disconnecting P2P for current lobby');
+    const result = await this.p2pManager.disconnectP2P();
+    return this.formatResponse(result);
+  }
+
+  /**
+   * Set callback for receiving P2P messages (for web applications)
+   * @param callback - Function to call when P2P messages are received
+   */
+  setP2PMessageCallback(callback: ((message: P2PMessage) => void) | null): void {
+    this.ensureReady();
+    this.p2pManager.setMessageCallback(callback);
+  }
+
+  /**
+   * Check if a specific peer is ready for messaging
+   * @param handle - The peer handle to check
+   */
+  isPeerReady(handle: number): boolean {
+    this.ensureReady();
+    return this.p2pManager.isPeerReady(handle);
+  }
+
+  /**
+   * Get the connection status of all peers
+   */
+  getPeerStatuses(): Record<number, { reliable?: string; unreliable?: string; ready: boolean }> {
+    this.ensureReady();
+    return this.p2pManager.getPeerStatuses();
+  }
+
+  // ============
   // Game Lobbies
   // ============
 
@@ -269,6 +389,13 @@ class WavedashSDK {
     this.ensureReady();
     this.logger.debug(`Joining lobby: ${lobbyId}`);
     const result = await lobby.joinLobby.call(this, lobbyId);
+    return this.formatResponse(result);
+  }
+
+  async getLobbyUsers(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<LobbyUsers>> {
+    this.ensureReady();
+    this.logger.debug(`Getting lobby users: ${lobbyId}`);
+    const result = await lobby.getLobbyUsers.call(this, lobbyId);
     return this.formatResponse(result);
   }
 
