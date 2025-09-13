@@ -69,7 +69,6 @@ export const P2P_SIGNALING_MESSAGE_TYPE = {
 	OFFER: 'offer',
 	ANSWER: 'answer',
 	ICE_CANDIDATE: 'ice-candidate',
-	PEER_ASSIGNMENTS: 'peer-assignments',
 	PEER_JOINED: 'peer-joined',
 	PEER_LEFT: 'peer-left'
 } as const;

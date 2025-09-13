@@ -85,7 +85,12 @@ export type PublicApiType = {
       "query",
       "public",
       { lobbyId: Id<"lobbies"> },
-      any
+      Array<{
+        isCurrentUser: boolean;
+        lobbyId: Id<"lobbies">;
+        userId: Id<"users">;
+        username: string;
+      }>
     >;
     createAndJoinLobby: FunctionReference<
       "mutation",
@@ -484,7 +489,6 @@ export type PublicApiType = {
           | "offer"
           | "answer"
           | "ice-candidate"
-          | "peer-assignments"
           | "peer-joined"
           | "peer-left";
         toUserId?: Id<"users">;

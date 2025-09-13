@@ -5,6 +5,7 @@ import { P2P_SIGNALING_MESSAGE_TYPE } from "./_generated/constants";
 
 // Extract types from the API
 export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
+export type LobbyUsers = FunctionReturnType<typeof api.gameLobby.lobbyUsers>;
 export type UGCType = PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
 export type UGCVisibility = PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
 export type LeaderboardSortOrder = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
@@ -78,7 +79,7 @@ export interface P2PPeer {
 export interface P2PConnection {
   lobbyId: Id<"lobbies">;
   localHandle: number;
-  peers: Map<number, P2PPeer>;  // handle -> peer info
+  peers: Record<number, P2PPeer>;  // handle -> peer info (JSON serializable)
   state: P2PConnectionState;
 }
 

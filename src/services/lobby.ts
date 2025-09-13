@@ -8,6 +8,7 @@ import type {
   Id,
   WavedashResponse,
   LobbyType,
+  LobbyUsers,
 } from '../types';
 import { api } from '../_generated/convex_api';
 import type { WavedashSDK } from '../index';
@@ -68,6 +69,29 @@ export async function joinLobby(this: WavedashSDK, lobbyId: Id<"lobbies">): Prom
     };
   } catch (error) {
     this.logger.error(`Error joining lobby: ${error}`);
+    return {
+      success: false,
+      data: null,
+      args: args,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+export async function getLobbyUsers(this: WavedashSDK, lobbyId: Id<"lobbies">): Promise<WavedashResponse<LobbyUsers>> {
+  const args = { lobbyId };
+  try{
+    const users = await this.convexClient.query(
+      api.gameLobby.lobbyUsers,
+      args
+    );
+    return {
+      success: true,
+      data: users,
+      args: args
+    };
+  } catch (error) {
+    this.logger.error(`Error getting lobby users: ${error}`);
     return {
       success: false,
       data: null,

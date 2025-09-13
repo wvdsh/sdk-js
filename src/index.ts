@@ -22,7 +22,9 @@ import type {
   UGCVisibility,
   RemoteFileMetadata,
   P2PPeer,
-  P2PConnection
+  P2PConnection,
+  P2PMessage,
+  LobbyUsers
 } from "./types";
 
 class WavedashSDK {
@@ -346,6 +348,32 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  /**
+   * Set callback for receiving P2P messages (for web applications)
+   * @param callback - Function to call when P2P messages are received
+   */
+  setP2PMessageCallback(callback: ((message: P2PMessage) => void) | null): void {
+    this.ensureReady();
+    this.p2pManager.setMessageCallback(callback);
+  }
+
+  /**
+   * Check if a specific peer is ready for messaging
+   * @param handle - The peer handle to check
+   */
+  isPeerReady(handle: number): boolean {
+    this.ensureReady();
+    return this.p2pManager.isPeerReady(handle);
+  }
+
+  /**
+   * Get the connection status of all peers
+   */
+  getPeerStatuses(): Record<number, { reliable?: string; unreliable?: string; ready: boolean }> {
+    this.ensureReady();
+    return this.p2pManager.getPeerStatuses();
+  }
+
   // ============
   // Game Lobbies
   // ============
@@ -361,6 +389,13 @@ class WavedashSDK {
     this.ensureReady();
     this.logger.debug(`Joining lobby: ${lobbyId}`);
     const result = await lobby.joinLobby.call(this, lobbyId);
+    return this.formatResponse(result);
+  }
+
+  async getLobbyUsers(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<LobbyUsers>> {
+    this.ensureReady();
+    this.logger.debug(`Getting lobby users: ${lobbyId}`);
+    const result = await lobby.getLobbyUsers.call(this, lobbyId);
     return this.formatResponse(result);
   }
 
