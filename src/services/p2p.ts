@@ -24,8 +24,12 @@ const DEFAULT_P2P_CONFIG: P2PConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    // TODO: Add production TURN servers when needed for NAT traversal
-    // Most P2P connections work with STUN alone
+    // v1 basic coturn server running on EC2
+    {
+      urls: "turn:turn.wavedash.gg:3478",
+      username: "webrtc",
+      credential: "wavedashturnsecret123"
+    }
   ],
   maxPeers: 8,
   enableReliableChannel: true,
@@ -68,10 +72,10 @@ export class P2PManager {
         state: "connecting"
       };
 
-      // Populate peers object
+      // Populate peers object (excluding local peer)
       peerAssignments.forEach((handle, userId) => {
         const member = members.find(m => m.id === userId);
-        if (member) {
+        if (member && userId !== this.sdk.getUserId()) {
           connection.peers[handle] = {
             handle,
             userId: member.id,
@@ -487,7 +491,7 @@ export class P2PManager {
   // Message Sending
   // ================
 
-  async sendP2PMessage(toHandle: number | undefined, channel: number, data: any, reliable: boolean = true): Promise<WavedashResponse<boolean>> {
+  async sendP2PMessage(toHandle: number | undefined, data: any, reliable: boolean = true): Promise<WavedashResponse<boolean>> {
     try {
       if (!this.currentConnection) {
         throw new Error('No active P2P connection');
@@ -496,7 +500,7 @@ export class P2PManager {
       const message: P2PMessage = {
         fromHandle: this.currentConnection.localHandle,
         toHandle,
-        channel,
+        channel: 0, // Default channel for now, can add app-level channels later
         data,
         timestamp: Date.now()
       };
@@ -525,20 +529,20 @@ export class P2PManager {
       return {
         success: true,
         data: true,
-        args: { toHandle, channel, reliable }
+        args: { toHandle, reliable }
       };
     } catch (error) {
       this.sdk.logger.error(`Error sending P2P message:`, error);
       return {
         success: false,
         data: false,
-        args: { toHandle, channel, reliable },
+        args: { toHandle, reliable },
         message: error instanceof Error ? error.message : String(error)
       };
     }
   }
 
-  async sendGameData(toHandle: number | undefined, channel: number, data: ArrayBuffer): Promise<WavedashResponse<boolean>> {
+  async sendGameData(toHandle: number | undefined, data: ArrayBuffer): Promise<WavedashResponse<boolean>> {
     try {
       if (!this.currentConnection) {
         throw new Error('No active P2P connection');
@@ -567,14 +571,14 @@ export class P2PManager {
       return {
         success: true,
         data: true,
-        args: { toHandle, channel }
+        args: { toHandle }
       };
     } catch (error) {
       this.sdk.logger.error(`Error sending game data:`, error);
       return {
         success: false,
         data: false,
-        args: { toHandle, channel },
+        args: { toHandle },
         message: error instanceof Error ? error.message : String(error)
       };
     }

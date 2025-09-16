@@ -288,27 +288,25 @@ class WavedashSDK {
   /**
    * Send a message through P2P to a specific peer using their handle
    * @param toHandle - Peer handle to send to (undefined = broadcast)
-   * @param channel - Channel number for message routing
    * @param message - Message data
    * @param reliable - Use reliable channel (default: true)
    */
-  async sendP2PMessage(toHandle: number | undefined, channel: number, message: any, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
+  async sendP2PMessage(toHandle: number | undefined, message: any, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
-    this.logger.debug(`Sending P2P message to peer ${toHandle} on channel ${channel}`);
-    const result = await this.p2pManager.sendP2PMessage(toHandle, channel, message, reliable);
+    this.logger.debug(`Sending P2P message to peer ${toHandle}, reliable: ${reliable}`);
+    const result = await this.p2pManager.sendP2PMessage(toHandle, message, reliable);
     return this.formatResponse(result);
   }
 
   /**
    * Send high-frequency game data through P2P (uses unreliable channel)
    * @param toHandle - Peer handle to send to (undefined = broadcast)
-   * @param channel - Channel number for message routing
    * @param data - Binary game data
    */
-  async sendGameData(toHandle: number | undefined, channel: number, data: ArrayBuffer): Promise<string | WavedashResponse<boolean>> {
+  async sendGameData(toHandle: number | undefined, data: ArrayBuffer): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
-    this.logger.debug(`Sending game data to peer ${toHandle} on channel ${channel}`);
-    const result = await this.p2pManager.sendGameData(toHandle, channel, data);
+    this.logger.debug(`Sending game data to peer ${toHandle}`);
+    const result = await this.p2pManager.sendGameData(toHandle, data);
     return this.formatResponse(result);
   }
 

@@ -154,7 +154,7 @@ window.p2pTest = {
     },
     
     // Step 5: Send P2P message to specific peer
-    async sendMessage(toHandle, message = 'Hello from P2P!', channel = 1) {
+    async sendMessage(toHandle, message = 'Hello from P2P!', reliable = true) {
         if (!this.connection) {
             console.error('❌ P2P not enabled. Run p2pTest.enableP2P() first.');
             return;
@@ -169,11 +169,11 @@ window.p2pTest = {
         
         console.log(`📤 Sending P2P message:`);
         console.log(`   To handle: ${toHandle}`);
-        console.log(`   Channel: ${channel}`);
+        console.log(`   Reliable: ${reliable}`);
         console.log(`   Message: "${message}"`);
         
         try {
-            const result = await window.WavedashJS.sendP2PMessage(toHandle, channel, message);
+            const result = await window.WavedashJS.sendP2PMessage(toHandle, message, reliable);
             
             const success = result.success !== undefined ? result.success : JSON.parse(result).success;
             
@@ -191,18 +191,18 @@ window.p2pTest = {
     },
     
     // Step 6: Broadcast message to all peers
-    async broadcast(message = 'Broadcast message from handle ' + (this.connection?.localHandle || '?'), channel = 1) {
+    async broadcast(message = 'Broadcast message from handle ' + (this.connection?.localHandle || '?'), reliable = true) {
         if (!this.connection) {
             console.error('❌ P2P not enabled. Run p2pTest.enableP2P() first.');
             return;
         }
         
         console.log(`📡 Broadcasting P2P message:`);
-        console.log(`   Channel: ${channel}`);
+        console.log(`   Reliable: ${reliable}`);
         console.log(`   Message: "${message}"`);
         
         try {
-            const result = await window.WavedashJS.sendP2PMessage(undefined, channel, message);
+            const result = await window.WavedashJS.sendP2PMessage(undefined, message, reliable);
             
             const success = result.success !== undefined ? result.success : JSON.parse(result).success;
             
@@ -220,7 +220,7 @@ window.p2pTest = {
     },
     
     // Step 7: Send binary game data (simulates high-frequency updates)
-    async sendGameData(toHandle, channel = 10) {
+    async sendGameData(toHandle) {
         if (!this.connection) {
             console.error('❌ P2P not enabled. Run p2pTest.enableP2P() first.');
             return;
@@ -236,11 +236,11 @@ window.p2pTest = {
         
         console.log(`🎮 Sending binary game data:`);
         console.log(`   To handle: ${toHandle || 'all'}`);
-        console.log(`   Channel: ${channel}`);
         console.log(`   Size: ${mockCarData.byteLength} bytes`);
+        console.log(`   Channel: unreliable (binary data)`);
         
         try {
-            const result = await window.WavedashJS.sendGameData(toHandle, channel, mockCarData);
+            const result = await window.WavedashJS.sendGameData(toHandle, mockCarData);
             
             const success = result.success !== undefined ? result.success : JSON.parse(result).success;
             
@@ -429,9 +429,9 @@ window.p2pTest = {
   p2pTest.enableP2P()                - Enable P2P (both browsers)
 
 💬 Messaging:
-  p2pTest.sendMessage(handle, msg, channel)  - Send to specific peer
-  p2pTest.broadcast(msg, channel)            - Send to all peers
-  p2pTest.sendGameData(handle, channel)      - Send binary data
+  p2pTest.sendMessage(handle, msg, reliable) - Send to specific peer  
+  p2pTest.broadcast(msg, reliable)           - Send to all peers
+  p2pTest.sendGameData(handle)               - Send binary data (unreliable)
 
 ℹ️ Info & Control:
   p2pTest.status()                   - Show current state
@@ -452,7 +452,7 @@ window.p2pTest = {
   Browser A: p2pTest.createLobby()
   Browser B: p2pTest.joinLobby('lobby-id-from-A')
   Both: p2pTest.enableP2P()
-  Both: p2pTest.sendMessage(targetHandle, 'Hello!')
+  Both: p2pTest.sendMessage(targetHandle, 'Hello!', true)
 
 📊 Check status anytime: p2pTest.status()
         `);
