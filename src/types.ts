@@ -106,7 +106,7 @@ export interface P2PMessage {
 export interface P2PSignalingMessage {  
   type: typeof P2P_SIGNALING_MESSAGE_TYPE[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
   fromHandle?: number;
-  toHandle?: number;
+  toHandle: number;
   data: any;
 }
 

@@ -24,7 +24,8 @@ const DEFAULT_P2P_CONFIG: P2PConfig = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
-    // v1 basic coturn server running on EC2
+    // v1 basic coturn server running on a t2.micro for development
+    // TODO: production should scale this to more global edge TURN servers or use a TURN server provider
     {
       urls: "turn:turn.wavedash.gg:3478",
       username: "webrtc",
@@ -510,20 +511,18 @@ export class P2PManager {
 
       if (toHandle === undefined) {
         // Broadcast to all peers
-        const sendPromises: Promise<void>[] = [];
-        channelMap.forEach((channel, handle) => {
+        channelMap.forEach((channel) => {
           if (channel.readyState === 'open') {
-            sendPromises.push(this.sendToChannel(channel, messageData));
+            channel.send(messageData);
           }
         });
-        await Promise.all(sendPromises);
       } else {
         // Send to specific peer
         const channel = channelMap.get(toHandle);
         if (!channel || channel.readyState !== 'open') {
           throw new Error(`No open channel to peer ${toHandle}`);
         }
-        await this.sendToChannel(channel, messageData);
+        channel.send(messageData);
       }
 
       return {
@@ -552,20 +551,18 @@ export class P2PManager {
 
       if (toHandle === undefined) {
         // Broadcast to all peers
-        const sendPromises: Promise<void>[] = [];
-        channelMap.forEach((channel, handle) => {
+        channelMap.forEach((channel) => {
           if (channel.readyState === 'open') {
-            sendPromises.push(this.sendToChannel(channel, data));
+            channel.send(data);
           }
         });
-        await Promise.all(sendPromises);
       } else {
         // Send to specific peer
         const channel = channelMap.get(toHandle);
         if (!channel || channel.readyState !== 'open') {
           throw new Error(`No open channel to peer ${toHandle}`);
         }
-        await this.sendToChannel(channel, data);
+        channel.send(data);
       }
 
       return {
@@ -582,17 +579,6 @@ export class P2PManager {
         message: error instanceof Error ? error.message : String(error)
       };
     }
-  }
-
-  private async sendToChannel(channel: RTCDataChannel, data: string | ArrayBuffer): Promise<void> {
-    return new Promise((resolve, reject) => {
-      try {
-        channel.send(data as any); // RTCDataChannel.send accepts string | ArrayBuffer
-        resolve();
-      } catch (error) {
-        reject(error);
-      }
-    });
   }
 
   // ==================
@@ -625,11 +611,12 @@ export class P2PManager {
     }
 
     try {
+      const toUserId = this.currentConnection.peers[message.toHandle].userId;
       await this.sdk.convexClient.mutation(
         api.p2pSignaling.sendSignalingMessage,
         {
           lobbyId: this.currentConnection.lobbyId,
-          toUserId: message.toHandle ? this.getPeerUserId(message.toHandle) : undefined,
+          toUserId: toUserId,
           messageType: message.type,
           data: message.data
         }
@@ -639,12 +626,6 @@ export class P2PManager {
       this.sdk.logger.error('Failed to send signaling message:', error);
       throw error;
     }
-  }
-
-  private getPeerUserId(handle: number): Id<"users"> | undefined {
-    if (!this.currentConnection) return undefined;
-    const peer = this.currentConnection.peers[handle];
-    return peer?.userId;
   }
 
   // ===============

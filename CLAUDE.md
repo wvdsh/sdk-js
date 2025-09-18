@@ -69,6 +69,15 @@ The SDK integrates with a Convex backend through:
 - Attach UGC to leaderboard entries
 - Control visibility and access permissions
 
+### P2P Networking
+- WebRTC-based peer-to-peer connections between lobby members
+- Convex backend handles initial WebRTC signaling (offer/answer/ICE exchange)
+- Integer peer handles for performance-optimized messaging
+- Reliable and unreliable data channels for different message types
+- Deterministic peer handle assignment based on sorted user IDs
+- TURN server fallback for NAT traversal when direct connections fail
+- API: `enableP2P()`, `sendP2PMessage(toHandle, data, reliable)`, `sendGameData(toHandle, data)`
+
 ### Dual Platform Support
 - **Web**: Direct JavaScript object returns
 - **Game Engines**: JSON string communication via `SendMessage` interface

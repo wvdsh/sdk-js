@@ -489,7 +489,7 @@ export type PublicApiType = {
           | "ice-candidate"
           | "peer-joined"
           | "peer-left";
-        toUserId?: Id<"users">;
+        toUserId: Id<"users">;
       },
       any
     >;
@@ -503,12 +503,6 @@ export type PublicApiType = {
       "mutation",
       "public",
       { messageIds: Array<Id<"p2pSignalingMessages">> },
-      any
-    >;
-    cleanupExpiredSignalingMessages: FunctionReference<
-      "mutation",
-      "public",
-      Record<string, never>,
       any
     >;
   };
