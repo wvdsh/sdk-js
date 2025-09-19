@@ -224,10 +224,10 @@ class WavedashSDK {
    * @param downloadTo - Optionally provide a path to download the file to, defaults to the same path as the remote file
    * @returns The path of the local file that the remote file was downloaded to
    */
-  async downloadRemoteFile(filePath: string, downloadToLocation?: string): Promise<string | WavedashResponse<string>> {
+  async downloadRemoteFile(filePath: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote file: ${filePath}`);
-    const result = await remoteStorage.downloadRemoteFile.call(this, filePath, downloadToLocation);
+    const result = await remoteStorage.downloadRemoteFile.call(this, filePath);
     return this.formatResponse(result);
   }
 
@@ -237,10 +237,10 @@ class WavedashSDK {
    * @param uploadTo - Optionally provide a path to upload the file to, defaults to the same path as the local file
    * @returns The path of the remote file that the local file was uploaded to
    */
-  async uploadRemoteFile(filePath: string, uploadToLocation?: string): Promise<string | WavedashResponse<string>> {
+  async uploadRemoteFile(filePath: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Uploading remote file: ${filePath}`);
-    const result = await remoteStorage.uploadRemoteFile.call(this, filePath, uploadToLocation);
+    const result = await remoteStorage.uploadRemoteFile.call(this, filePath);
     return this.formatResponse(result);
   }
 
