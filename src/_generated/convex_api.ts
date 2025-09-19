@@ -86,7 +86,7 @@ export type PublicApiType = {
       "public",
       { lobbyId: Id<"lobbies"> },
       Array<{
-        isCurrentUser: boolean;
+        isHost: boolean;
         lobbyId: Id<"lobbies">;
         userId: Id<"users">;
         username: string;
@@ -96,7 +96,7 @@ export type PublicApiType = {
       "mutation",
       "public",
       { lobbyType: 0 | 1 | 2; maxPlayers?: number },
-      any
+      Id<"lobbies">
     >;
     joinLobby: FunctionReference<
       "mutation",
@@ -108,19 +108,24 @@ export type PublicApiType = {
       "mutation",
       "public",
       { lobbyId: Id<"lobbies"> },
-      any
+      boolean
     >;
     sendMessage: FunctionReference<
       "mutation",
       "public",
       { lobbyId: Id<"lobbies">; message: string },
-      any
+      boolean
     >;
     lobbyMessages: FunctionReference<
       "query",
       "public",
       { lobbyId: Id<"lobbies"> },
-      any
+      Array<{
+        lobbyId: Id<"lobbies">;
+        message: string;
+        userId: Id<"users">;
+        username: string;
+      }>
     >;
   };
   auth: {
@@ -483,12 +488,7 @@ export type PublicApiType = {
       {
         data: any;
         lobbyId: Id<"lobbies">;
-        messageType:
-          | "offer"
-          | "answer"
-          | "ice-candidate"
-          | "peer-joined"
-          | "peer-left";
+        messageType: "offer" | "answer" | "ice-candidate";
         toUserId: Id<"users">;
       },
       any
@@ -497,7 +497,13 @@ export type PublicApiType = {
       "query",
       "public",
       { lobbyId: Id<"lobbies"> },
-      any
+      Array<{
+        data: any;
+        fromUserId: Id<"users">;
+        lobbyId: Id<"lobbies">;
+        messageType: "offer" | "answer" | "ice-candidate";
+        toUserId: Id<"users">;
+      }>
     >;
     markSignalingMessagesProcessed: FunctionReference<
       "mutation",

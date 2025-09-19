@@ -122,42 +122,39 @@ export class P2PManager {
   }
 
   private async establishWebRTCConnections(connection: P2PConnection): Promise<void> {
-    // Start polling for signaling messages
-    this.startSignalingMessagePolling(connection);
+    // Subscribe to real-time signaling message updates
+    this.subscribeToSignalingMessages(connection);
 
     // Establish WebRTC connections immediately (no need to wait for assignments)
     await this.establishPeerConnections(connection);
-    
+
     connection.state = "connecting";
   }
 
 
-  private signalingInterval: number | null = null;
+  private unsubscribeFromSignalingMessages: (() => void) | null = null;
 
-  private startSignalingMessagePolling(connection: P2PConnection): void {
-    // Poll for signaling messages every 1 second
-    this.signalingInterval = window.setInterval(async () => {
-      try {
-        await this.pollSignalingMessages(connection);
-      } catch (error) {
-        this.sdk.logger.error('Error polling signaling messages:', error);
+  private subscribeToSignalingMessages(connection: P2PConnection): void {
+    // Subscribe to real-time signaling message updates
+    this.unsubscribeFromSignalingMessages = this.sdk.convexClient.onUpdate(
+      api.p2pSignaling.getSignalingMessages,
+      { lobbyId: connection.lobbyId },
+      (messages) => {
+        if (messages) {
+          this.processSignalingMessages(messages, connection);
+        }
       }
-    }, 1000);
+    );
   }
 
-  private stopSignalingMessagePolling(): void {
-    if (this.signalingInterval !== null) {
-      window.clearInterval(this.signalingInterval);
-      this.signalingInterval = null;
+  private stopSignalingMessageSubscription(): void {
+    if (this.unsubscribeFromSignalingMessages !== null) {
+      this.unsubscribeFromSignalingMessages();
+      this.unsubscribeFromSignalingMessages = null;
     }
   }
 
-  private async pollSignalingMessages(connection: P2PConnection): Promise<void> {
-    const messages = await this.sdk.convexClient.query(
-      api.p2pSignaling.getSignalingMessages,
-      { lobbyId: connection.lobbyId }
-    );
-
+  private async processSignalingMessages(messages: any[], connection: P2PConnection): Promise<void> {
     if (messages.length === 0) return;
 
     const messageIds: Id<"p2pSignalingMessages">[] = [];
@@ -232,16 +229,15 @@ export class P2PManager {
         await pc.addIceCandidate(new RTCIceCandidate(message.data));
         break;
 
+      // case P2P_SIGNALING_MESSAGE_TYPE.PEER_JOINED:
+      //   // Handle new peer joining mid-game
+      //   await this.handlePeerJoined(message.data, connection);
+      //   break;
 
-      case P2P_SIGNALING_MESSAGE_TYPE.PEER_JOINED:
-        // Handle new peer joining mid-game
-        await this.handlePeerJoined(message.data, connection);
-        break;
-
-      case P2P_SIGNALING_MESSAGE_TYPE.PEER_LEFT:
-        // Handle peer leaving mid-game
-        await this.handlePeerLeft(message.data, connection);
-        break;
+      // case P2P_SIGNALING_MESSAGE_TYPE.PEER_LEFT:
+      //   // Handle peer leaving mid-game
+      //   await this.handlePeerLeft(message.data, connection);
+      //   break;
 
       default:
         this.sdk.logger.warn('Unknown signaling message type:', message.messageType);
@@ -378,7 +374,7 @@ export class P2PManager {
       if (this.config.enableReliableChannel) {
         const reliableChannel = pc.createDataChannel('reliable', {
           ordered: true,
-          maxRetransmits: 3
+          maxRetransmits: undefined // Full reliability, will retransmit until received
         });
         this.reliableChannels.set(remoteHandle, reliableChannel);
         this.setupDataChannelHandlers(reliableChannel, remoteHandle, 'reliable');
@@ -387,7 +383,7 @@ export class P2PManager {
       if (this.config.enableUnreliableChannel) {
         const unreliableChannel = pc.createDataChannel('unreliable', {
           ordered: false,
-          maxRetransmits: 0
+          maxRetransmits: 0, // No retransmits, will drop if not received
         });
         this.unreliableChannels.set(remoteHandle, unreliableChannel);
         this.setupDataChannelHandlers(unreliableChannel, remoteHandle, 'unreliable');
@@ -643,7 +639,7 @@ export class P2PManager {
       }
 
       // Stop signaling message polling
-      this.stopSignalingMessagePolling();
+      this.stopSignalingMessageSubscription();
 
       // Close all peer connections
       Object.entries(this.currentConnection.peers).forEach(([handleStr, _]) => {

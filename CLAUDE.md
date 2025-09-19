@@ -78,6 +78,22 @@ The SDK integrates with a Convex backend through:
 - TURN server fallback for NAT traversal when direct connections fail
 - API: `enableP2P()`, `sendP2PMessage(toHandle, data, reliable)`, `sendGameData(toHandle, data)`
 
+Next steps:
+1. Lobby host + members + chat should all be handled via Convex in lobby.ts
+2. Autocreate P2P connections between all lobby members when lobby changes
+3. Use SharedArrayBuffer to queue up received P2P messages
+4. One SharedArrayBuffer for each channel so game can process them at different rates
+5. All channel comms still use the same P2P connection under the hood
+6. API surface can then simply be:
+* sendMessage(toUser, channel, data, reliable)
+* readMessagesOnChannel(channel, numMessages)
+
+Later:
+1. Timeout connections that are unused for long enough, the next sendMessage would trigger a new connection to be made
+2. Allow different P2P network topology (mesh, star, relay)
+3. Don't auto-connect every single lobby member, generate P2P connection on the fly when game first tries to send a packet to a user
+4. More customization on sending (no delay, buffering)
+
 ### Dual Platform Support
 - **Web**: Direct JavaScript object returns
 - **Game Engines**: JSON string communication via `SendMessage` interface

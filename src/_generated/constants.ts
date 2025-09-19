@@ -23,6 +23,8 @@ export const LOBBY_TYPE = {
 	PRIVATE: 2
 } as const;
 
+export const LOBBY_MESSAGE_MAX_LENGTH = 500;
+
 // ========== LEADERBOARDS ==========
 export const LEADERBOARD_SORT_ORDER = {
 	ASC: 0,
@@ -68,7 +70,5 @@ export const REMOTE_STORAGE = {
 export const P2P_SIGNALING_MESSAGE_TYPE = {
 	OFFER: 'offer',
 	ANSWER: 'answer',
-	ICE_CANDIDATE: 'ice-candidate',
-	PEER_JOINED: 'peer-joined',
-	PEER_LEFT: 'peer-left'
+	ICE_CANDIDATE: 'ice-candidate'
 } as const;

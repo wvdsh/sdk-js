@@ -14,7 +14,9 @@ import { api } from '../_generated/convex_api';
 import type { WavedashSDK } from '../index';
 
 // Assuming we only have one WavedashSDK instance at a time, we can use a global variable to store the unsubscribe function
-let unsubscribeFn: (() => void) | null = null;
+let unsubscribeLobbyMessages: (() => void) | null = null;
+let unsubscribeLobbyUsers: (() => void) | null = null;
+let unsubscribeLobbyData: (() => void) | null = null;
 
 export async function createLobby(this: WavedashSDK, lobbyType: LobbyType, maxPlayers?: number): Promise<WavedashResponse<Id<"lobbies">>> {
   const args = {
@@ -28,7 +30,7 @@ export async function createLobby(this: WavedashSDK, lobbyType: LobbyType, maxPl
       args
     );
 
-    subscribeToLobbyMessages.call(this, lobbyId);
+    subscribeToLobbyUpdates.call(this, lobbyId);
 
     return {
       success: true,
@@ -60,7 +62,7 @@ export async function joinLobby(this: WavedashSDK, lobbyId: Id<"lobbies">): Prom
     }
 
     // Subscribe to lobby messages
-    subscribeToLobbyMessages.call(this, lobbyId);
+    subscribeToLobbyUpdates.call(this, lobbyId);
 
     return {
       success: true,
@@ -111,7 +113,7 @@ export async function leaveLobby(this: WavedashSDK, lobbyId: Id<"lobbies">): Pro
     );
 
     // Clean up subscription
-    unsubscribeFromCurrentLobby();
+    unsubscribeFromCurrentLobbyUpdates();
 
     return {
       success: true,
@@ -182,12 +184,20 @@ function notifyLobbyMessage(this: WavedashSDK, payload: object): void {
   );
 }
 
-function subscribeToLobbyMessages(this: WavedashSDK, lobbyId: Id<"lobbies">): void {
-  // Unsubscribe from previous lobby if any
-  unsubscribeFromCurrentLobby();
+function notifyLobbyUserUpdate(this: WavedashSDK, payload: object): void {
+  this.engineInstance?.SendMessage(
+    this.engineCallbackReceiver,
+    'LobbyUserUpdate',
+    JSON.stringify(payload)
+  );
+}
 
-  // Subscribe to new lobby
-  const { unsubscribe } = this.convexClient.onUpdate(
+function subscribeToLobbyUpdates(this: WavedashSDK, lobbyId: Id<"lobbies">): void {
+  // Unsubscribe from previous lobby if any
+  unsubscribeFromCurrentLobbyUpdates();
+
+  // Subscribe to lobby messages
+  const unsubscribeMessages = this.convexClient.onUpdate(
     api.gameLobby.lobbyMessages,
     {
       lobbyId: lobbyId
@@ -204,15 +214,41 @@ function subscribeToLobbyMessages(this: WavedashSDK, lobbyId: Id<"lobbies">): vo
     }
   );
 
+  // Subscribe to lobby users
+  const unsubscribeUsers = this.convexClient.onUpdate(
+    api.gameLobby.lobbyUsers,
+    {
+      lobbyId: lobbyId
+    },
+    (users: any) => {
+      this.logger.info('Lobby users updated:', users);
+      // Notify the game about new users
+      if (users && users.length > 0) {
+        notifyLobbyUserUpdate.call(this, {
+          id: lobbyId,
+          users: users
+        });
+      }
+    }
+  );
+
   // Store the unsubscribe function
-  unsubscribeFn = unsubscribe;
+  unsubscribeLobbyMessages = unsubscribeMessages;
 
   this.logger.debug('Subscribed to lobby messages for:', lobbyId);
 }
 
-function unsubscribeFromCurrentLobby(): void {
-  if (unsubscribeFn) {
-    unsubscribeFn();
-    unsubscribeFn = null;
+function unsubscribeFromCurrentLobbyUpdates(): void {
+  if (unsubscribeLobbyMessages) {
+    unsubscribeLobbyMessages();
+    unsubscribeLobbyMessages = null;
+  }
+  if (unsubscribeLobbyUsers) {
+    unsubscribeLobbyUsers();
+    unsubscribeLobbyUsers = null;
+  }
+  if (unsubscribeLobbyData) {
+    unsubscribeLobbyData();
+    unsubscribeLobbyData = null;
   }
 }
