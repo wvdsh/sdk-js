@@ -114,7 +114,7 @@ export type PublicApiType = {
       "mutation",
       "public",
       { lobbyId: Id<"lobbies">; message: string },
-      boolean
+      string
     >;
     lobbyMessages: FunctionReference<
       "query",
@@ -126,6 +126,18 @@ export type PublicApiType = {
         userId: Id<"users">;
         username: string;
       }>
+    >;
+    setLobbyData: FunctionReference<
+      "mutation",
+      "public",
+      { key: string; lobbyId: Id<"lobbies">; value: any },
+      boolean
+    >;
+    getLobbyData: FunctionReference<
+      "query",
+      "public",
+      { key: string; lobbyId: Id<"lobbies"> },
+      any
     >;
   };
   auth: {

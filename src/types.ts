@@ -2,6 +2,7 @@ import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 import { api, PublicApiType } from "./_generated/convex_api";
 import { P2P_SIGNALING_MESSAGE_TYPE } from "./_generated/constants";
+import { Signals } from "./signals";
 
 // Extract types from the API
 export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
@@ -16,6 +17,9 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<typeof api.leaderboard
   userId: Id<"users">;
   username: string;
 };
+
+// Type helper to get signal values as a union type
+export type Signal = typeof Signals[keyof typeof Signals];
 
 // Configuration and user types
 export interface WavedashConfig {
@@ -50,7 +54,7 @@ export interface EngineInstance {
   type: GameEngine;
   // Broadcasts a message to the engine instance
   // Exposed natively by Unity's engine instance, added manually by Wavedash Godot SDK
-  SendMessage(objectName: string, methodName: string, value?: string | number): void;
+  SendMessage(objectName: string, methodName: Signal, value?: string | number | boolean): void;
   // Standard Emscripten filesystem API: https://emscripten.org/docs/api_reference/Filesystem-API.html
   FS: {
     readFile(path: string, opts?: Record<string, any>): string | Uint8Array;

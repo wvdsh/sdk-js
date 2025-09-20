@@ -37,6 +37,8 @@ const DEFAULT_P2P_CONFIG: P2PConfig = {
   enableUnreliableChannel: true,
 };
 
+import { Signals } from '../signals';
+
 export class P2PManager {
   private sdk: WavedashSDK;
   private currentConnection: P2PConnection | null = null;
@@ -583,13 +585,7 @@ export class P2PManager {
 
   private handleIncomingP2PMessage(message: P2PMessage): void {
     // Notify the game through engine callbacks if available
-    if (this.sdk.engineInstance) {
-      this.sdk.engineInstance.SendMessage(
-        this.sdk.engineCallbackReceiver,
-        'P2PMessageReceived',
-        JSON.stringify(message)
-      );
-    }
+    this.sdk.notifyGame(Signals.P2P_MESSAGE, message);
 
     // Notify web applications through callback
     if (this.messageCallback) {

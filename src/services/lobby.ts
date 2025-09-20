@@ -1,6 +1,6 @@
 /**
  * Lobby service
- * 
+ *
  * Implements each of the lobby methods of the Wavedash SDK
  */
 
@@ -9,246 +9,221 @@ import type {
   WavedashResponse,
   LobbyType,
   LobbyUsers,
+  Signal
 } from '../types';
+import { Signals } from '../signals';
 import { api } from '../_generated/convex_api';
 import type { WavedashSDK } from '../index';
 
-// Assuming we only have one WavedashSDK instance at a time, we can use a global variable to store the unsubscribe function
-let unsubscribeLobbyMessages: (() => void) | null = null;
-let unsubscribeLobbyUsers: (() => void) | null = null;
-let unsubscribeLobbyData: (() => void) | null = null;
+export class LobbyManager {
+  private sdk: WavedashSDK;
 
-export async function createLobby(this: WavedashSDK, lobbyType: LobbyType, maxPlayers?: number): Promise<WavedashResponse<Id<"lobbies">>> {
-  const args = {
-    lobbyType: lobbyType,
-    maxPlayers: maxPlayers
-  };
+  private unsubscribeLobbyMessages: (() => void) | null = null;
+  private unsubscribeLobbyUsers: (() => void) | null = null;
+  private unsubscribeLobbyData: (() => void) | null = null;
+  private currentLobbyId: Id<"lobbies"> | null = null;
 
-  try {
-    const lobbyId = await this.convexClient.mutation(
-      api.gameLobby.createAndJoinLobby,
-      args
-    );
-
-    subscribeToLobbyUpdates.call(this, lobbyId);
-
-    return {
-      success: true,
-      data: lobbyId,
-      args: args
-    };
-  } catch (error) {
-    this.logger.error(`Error creating lobby: ${error}`);
-    return {
-      success: false,
-      data: null,
-      args: args,
-      message: error instanceof Error ? error.message : String(error)
-    };
+  constructor(sdk: WavedashSDK) {
+    this.sdk = sdk;
   }
-}
 
-export async function joinLobby(this: WavedashSDK, lobbyId: Id<"lobbies">): Promise<WavedashResponse<Id<"lobbies">>> {
-  const args = { lobbyId };
+  // ================
+  // Public Methods
+  // ================
 
-  try {
-    const success = await this.convexClient.mutation(
-      api.gameLobby.joinLobby,
-      args
-    );
+  async createLobby(lobbyType: LobbyType, maxPlayers?: number): Promise<WavedashResponse<Id<"lobbies">>> {
+    const args = {
+      lobbyType: lobbyType,
+      maxPlayers: maxPlayers
+    };
 
-    if (!success) {
-      throw new Error(`Failed to join lobby: ${lobbyId}`);
+    try {
+      const lobbyId = await this.sdk.convexClient.mutation(
+        api.gameLobby.createAndJoinLobby,
+        args
+      );
+
+      this.subscribeToLobby(lobbyId);
+
+      return {
+        success: true,
+        data: lobbyId,
+        args: args
+      };
+    } catch (error) {
+      this.sdk.logger.error(`Error creating lobby: ${error}`);
+      return {
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      };
     }
+  }
+
+  async joinLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<Id<"lobbies">>> {
+    const args = { lobbyId };
+
+    try {
+      await this.sdk.convexClient.mutation(
+        api.gameLobby.joinLobby,
+        args
+      );
+
+      this.subscribeToLobby(lobbyId);
+      // Do we need this? We already return the lobby id in the Promise
+      // Assuming a user can join a lobby from the Wavedash UI, in addition to game UI, so game needs a notification
+      this.sdk.notifyGame(Signals.LOBBY_JOINED, lobbyId);
+      return {
+        success: true,
+        data: lobbyId,
+        args: args
+      };
+    } catch (error) {
+      this.sdk.logger.error(`Error joining lobby: ${error}`);
+      return {
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  async getLobbyUsers(lobbyId: Id<"lobbies">): Promise<WavedashResponse<LobbyUsers>> {
+    const args = { lobbyId };
+    try {
+      const users = await this.sdk.convexClient.query(
+        api.gameLobby.lobbyUsers,
+        args
+      );
+      return {
+        success: true,
+        data: users,
+        args: args
+      };
+    } catch (error) {
+      this.sdk.logger.error(`Error getting lobby users: ${error}`);
+      return {
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  async leaveLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<Id<"lobbies">>> {
+    const args = { lobbyId };
+
+    try {
+      await this.sdk.convexClient.mutation(
+        api.gameLobby.leaveLobby,
+        args
+      );
+
+      this.unsubscribeFromCurrentLobby();
+
+      return {
+        success: true,
+        data: lobbyId,
+        args: args
+      };
+    } catch (error) {
+      this.sdk.logger.error(`Error leaving lobby: ${error}`);
+      return {
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
+    const args = { lobbyId, message };
+
+    try {
+      this.sdk.convexClient.mutation(
+        api.gameLobby.sendMessage,
+        args
+      );
+
+      return true;
+    } catch (error) {
+      this.sdk.logger.error(`Error sending lobby message: ${error}`);
+      return false;
+    }
+  }
+
+  // ================
+  // Private Methods
+  // ================
+
+  /**
+   * Sets up Convex subscriptions for all relevant lobby updates
+   * @precondition - The user has already joined the lobby
+   * @param lobbyId - The ID of the lobby to subscribe to
+   */
+  private subscribeToLobby(lobbyId: Id<"lobbies">): void {
+    // Unsubscribe from previous lobby if any
+    this.unsubscribeFromCurrentLobby();
+
+    this.currentLobbyId = lobbyId;
 
     // Subscribe to lobby messages
-    subscribeToLobbyUpdates.call(this, lobbyId);
+    this.unsubscribeLobbyMessages = this.sdk.convexClient.onUpdate(
+      api.gameLobby.lobbyMessages,
+      {
+        lobbyId: lobbyId
+      },
+      (messages: any) => {
+        this.sdk.logger.info('Lobby messages updated:', messages);
+        // Notify the game about new messages
+        if (messages && messages.length > 0) {
+          this.sdk.notifyGame(Signals.LOBBY_MESSAGE, {
+            id: lobbyId,
+            // TODO: Only send one message at a time
+            messages: messages
+          });
+        }
+      }
+    );
 
-    return {
-      success: true,
-      data: lobbyId,
-      args: args
-    };
-  } catch (error) {
-    this.logger.error(`Error joining lobby: ${error}`);
-    return {
-      success: false,
-      data: null,
-      args: args,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
-export async function getLobbyUsers(this: WavedashSDK, lobbyId: Id<"lobbies">): Promise<WavedashResponse<LobbyUsers>> {
-  const args = { lobbyId };
-  try{
-    const users = await this.convexClient.query(
+    // Subscribe to lobby users
+    this.unsubscribeLobbyUsers = this.sdk.convexClient.onUpdate(
       api.gameLobby.lobbyUsers,
-      args
-    );
-    return {
-      success: true,
-      data: users,
-      args: args
-    };
-  } catch (error) {
-    this.logger.error(`Error getting lobby users: ${error}`);
-    return {
-      success: false,
-      data: null,
-      args: args,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
-export async function leaveLobby(this: WavedashSDK, lobbyId: Id<"lobbies">): Promise<WavedashResponse<boolean>> {
-  const args = { lobbyId };
-
-  try {
-    await this.convexClient.mutation(
-      api.gameLobby.leaveLobby,
-      args
-    );
-
-    // Clean up subscription
-    unsubscribeFromCurrentLobbyUpdates();
-
-    return {
-      success: true,
-      data: true,
-      args: args
-    };
-  } catch (error) {
-    this.logger.error(`Error leaving lobby: ${error}`);
-    return {
-      success: false,
-      data: null,
-      args: args,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
-export async function sendLobbyMessage(this: WavedashSDK, lobbyId: Id<"lobbies">, message: string): Promise<WavedashResponse<boolean>> {
-  const args = { lobbyId, message };
-
-  try {
-    await this.convexClient.mutation(
-      api.gameLobby.sendMessage,
-      args
-    );
-
-    return {
-      success: true,
-      data: true,
-      args: args
-    };
-  } catch (error) {
-    this.logger.error(`Error sending lobby message: ${error}`);
-    return {
-      success: false,
-      data: null,
-      args: args,
-      message: error instanceof Error ? error.message : String(error)
-    };
-  }
-}
-
-// =============================
-// JS -> Game Event Broadcasting
-// =============================
-
-function notifyLobbyJoined(this: WavedashSDK, lobbyData: object): void {
-  this.engineInstance?.SendMessage(
-    this.engineCallbackReceiver,
-    'LobbyJoined',
-    JSON.stringify(lobbyData)
-  );
-}
-
-function notifyLobbyLeft(this: WavedashSDK, lobbyData: object): void {
-  this.engineInstance?.SendMessage(
-    this.engineCallbackReceiver,
-    'LobbyLeft',
-    JSON.stringify(lobbyData)
-  );
-}
-
-function notifyLobbyMessage(this: WavedashSDK, payload: object): void {
-  this.engineInstance?.SendMessage(
-    this.engineCallbackReceiver,
-    'LobbyMessage',
-    JSON.stringify(payload)
-  );
-}
-
-function notifyLobbyUserUpdate(this: WavedashSDK, payload: object): void {
-  this.engineInstance?.SendMessage(
-    this.engineCallbackReceiver,
-    'LobbyUserUpdate',
-    JSON.stringify(payload)
-  );
-}
-
-function subscribeToLobbyUpdates(this: WavedashSDK, lobbyId: Id<"lobbies">): void {
-  // Unsubscribe from previous lobby if any
-  unsubscribeFromCurrentLobbyUpdates();
-
-  // Subscribe to lobby messages
-  const unsubscribeMessages = this.convexClient.onUpdate(
-    api.gameLobby.lobbyMessages,
-    {
-      lobbyId: lobbyId
-    },
-    (messages: any) => {
-      this.logger.info('Lobby messages updated:', messages);
-      // Notify the game about new messages
-      if (messages && messages.length > 0) {
-        notifyLobbyMessage.call(this, {
-          id: lobbyId,
-          messages: messages
-        });
+      {
+        lobbyId: lobbyId
+      },
+      (users: any) => {
+        this.sdk.logger.info('Lobby users updated:', users);
+        // Notify the game about new users
+        if (users && users.length > 0) {
+          this.sdk.notifyGame(Signals.LOBBY_USERS_UPDATED, {
+            id: lobbyId,
+            users: users
+          });
+        }
       }
-    }
-  );
+    );
 
-  // Subscribe to lobby users
-  const unsubscribeUsers = this.convexClient.onUpdate(
-    api.gameLobby.lobbyUsers,
-    {
-      lobbyId: lobbyId
-    },
-    (users: any) => {
-      this.logger.info('Lobby users updated:', users);
-      // Notify the game about new users
-      if (users && users.length > 0) {
-        notifyLobbyUserUpdate.call(this, {
-          id: lobbyId,
-          users: users
-        });
-      }
-    }
-  );
-
-  // Store the unsubscribe function
-  unsubscribeLobbyMessages = unsubscribeMessages;
-
-  this.logger.debug('Subscribed to lobby messages for:', lobbyId);
-}
-
-function unsubscribeFromCurrentLobbyUpdates(): void {
-  if (unsubscribeLobbyMessages) {
-    unsubscribeLobbyMessages();
-    unsubscribeLobbyMessages = null;
+    this.sdk.logger.debug('Subscribed to lobby messages for:', lobbyId);
   }
-  if (unsubscribeLobbyUsers) {
-    unsubscribeLobbyUsers();
-    unsubscribeLobbyUsers = null;
-  }
-  if (unsubscribeLobbyData) {
-    unsubscribeLobbyData();
-    unsubscribeLobbyData = null;
+
+  private unsubscribeFromCurrentLobby(): void {
+    if (this.unsubscribeLobbyMessages) {
+      this.unsubscribeLobbyMessages();
+      this.unsubscribeLobbyMessages = null;
+    }
+    if (this.unsubscribeLobbyUsers) {
+      this.unsubscribeLobbyUsers();
+      this.unsubscribeLobbyUsers = null;
+    }
+    if (this.unsubscribeLobbyData) {
+      this.unsubscribeLobbyData();
+      this.unsubscribeLobbyData = null;
+    }
+    this.currentLobbyId = null;
   }
 }

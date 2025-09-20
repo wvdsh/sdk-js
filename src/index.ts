@@ -1,9 +1,10 @@
 import { ConvexClient } from "convex/browser";
-import * as remoteStorage from "./services/remoteStorage";
 import * as Constants from "./_generated/constants";
+import * as remoteStorage from "./services/remoteStorage";
 import * as leaderboards from "./services/leaderboards";
 import * as ugc from "./services/ugc";
-import * as lobby from "./services/lobby";
+// TODO: Refactor all the services above to use Manager pattern we have for lobby and p2p
+import { LobbyManager } from "./services/lobby";
 import { P2PManager } from "./services/p2p";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import type {
@@ -24,7 +25,8 @@ import type {
   P2PPeer,
   P2PConnection,
   P2PMessage,
-  LobbyUsers
+  LobbyUsers,
+  Signal
 } from "./types";
 
 class WavedashSDK {
@@ -33,6 +35,7 @@ class WavedashSDK {
   protected config: WavedashConfig | null = null;
   protected wavedashUser: WavedashUser;
   protected p2pManager: P2PManager;
+  protected lobbyManager: LobbyManager;
   
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
@@ -46,6 +49,7 @@ class WavedashSDK {
     this.wavedashUser = wavedashUser;
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
+    this.lobbyManager = new LobbyManager(this);
   }
 
   // =============
@@ -379,37 +383,49 @@ class WavedashSDK {
   async createLobby(lobbyType: LobbyType, maxPlayers?: number): Promise<string | WavedashResponse<Id<"lobbies">>> {
     this.ensureReady();
     this.logger.debug('Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
-    const result = await lobby.createLobby.call(this, lobbyType, maxPlayers);
+    const result = await this.lobbyManager.createLobby(lobbyType, maxPlayers);
     return this.formatResponse(result);
   }
 
   async joinLobby(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<Id<"lobbies">>> {
     this.ensureReady();
     this.logger.debug(`Joining lobby: ${lobbyId}`);
-    const result = await lobby.joinLobby.call(this, lobbyId);
+    const result = await this.lobbyManager.joinLobby(lobbyId);
     return this.formatResponse(result);
   }
 
   async getLobbyUsers(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<LobbyUsers>> {
     this.ensureReady();
     this.logger.debug(`Getting lobby users: ${lobbyId}`);
-    const result = await lobby.getLobbyUsers.call(this, lobbyId);
+    const result = await this.lobbyManager.getLobbyUsers(lobbyId);
     return this.formatResponse(result);
   }
 
-  async leaveLobby(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<boolean>> {
+  async leaveLobby(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<Id<"lobbies">>> {
     this.ensureReady();
     this.logger.debug(`Leaving lobby: ${lobbyId}`);
-    const result = await lobby.leaveLobby.call(this, lobbyId);
+    const result = await this.lobbyManager.leaveLobby(lobbyId);
     return this.formatResponse(result);
   }
 
-  // TODO: Consider returning the parsed message from the server rather than a boolean
-  async sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): Promise<string | WavedashResponse<boolean>> {
+  // Fire and forget, returns true if the message was sent out successfully
+  // Game can listen for the LobbyMessage signal to get the message that was posted
+  sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
     this.ensureReady();
     this.logger.debug(`Sending lobby message: ${message} to lobby: ${lobbyId}`);
-    const result = await lobby.sendLobbyMessage.call(this, lobbyId, message);
-    return this.formatResponse(result);
+    return this.lobbyManager.sendLobbyMessage(lobbyId, message);
+  }
+
+  // ==============================
+  // JS -> Game Event Broadcasting
+  // ==============================
+  notifyGame(signal: Signal, payload: string | number | boolean | object): void {
+    const toSend = typeof payload === 'object' ? JSON.stringify(payload) : payload;
+    this.engineInstance?.SendMessage(
+      this.engineCallbackReceiver,
+      signal,
+      toSend
+    );
   }
 
   // ================
