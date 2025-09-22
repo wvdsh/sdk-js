@@ -15,6 +15,7 @@ import type {
 import { Signals } from '../signals';
 import { api } from '../_generated/convex_api';
 import type { WavedashSDK } from '../index';
+import { LOBBY_MESSAGE_MAX_LENGTH } from '../_generated/constants';
 
 export class LobbyManager {
   private sdk: WavedashSDK;
@@ -25,6 +26,7 @@ export class LobbyManager {
   private unsubscribeLobbyData: (() => void) | null = null;
   private lobbyId: Id<"lobbies"> | null = null;
   private lobbyUsers: LobbyUser[] = [];
+  private lobbyHostId: Id<"users"> | null = null;
   private lobbyMetadata: Record<string, any> = {};
   private recentMessageIds: Id<"lobbyMessages">[] = [];
 
@@ -101,7 +103,7 @@ export class LobbyManager {
 
   getLobbyUsers(lobbyId: Id<"lobbies">): LobbyUser[] {
     if (this.lobbyId !== lobbyId) {
-      this.sdk.logger.error('Lobby ID does not match the current lobby');
+      this.sdk.logger.error('Must be a member of the lobby to access user list');
       return [];
     }
     return this.lobbyUsers;
@@ -109,10 +111,10 @@ export class LobbyManager {
 
   getHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
     if (this.lobbyId !== lobbyId) {
-      this.sdk.logger.error('Lobby ID does not match the current lobby');
+      this.sdk.logger.error('Must be a member of the lobby to access the host ID');
       return null;
     }
-    return this.lobbyUsers.find(user => user.isHost)?.userId || null;
+    return this.lobbyHostId;
   }
 
   getLobbyData(lobbyId: Id<"lobbies">, key: string): string {
@@ -135,6 +137,9 @@ export class LobbyManager {
   }
 
   getLobbyPlayerCount(lobbyId: Id<"lobbies">): number {
+    if (this.lobbyId === lobbyId) {
+      return this.lobbyUsers.length;
+    }
     if (!this.cachedLobbies[lobbyId]) {
       return 0;
     }
@@ -169,24 +174,42 @@ export class LobbyManager {
   }
 
   async listAvailableLobbies(): Promise<WavedashResponse<Lobby[]>> {
+    // TODO: Implement query filters
     const args = {};
-    const lobbies = await this.sdk.convexClient.query(
-      api.gameLobby.listAvailable,
-      args
-    );
-    for (const lobby of lobbies) {
-      this.cachedLobbies[lobby.lobbyId] = lobby;
+    try {
+      const lobbies = await this.sdk.convexClient.query(
+        api.gameLobby.listAvailable,
+        args
+      );  
+      for (const lobby of lobbies) {
+        this.cachedLobbies[lobby.lobbyId] = lobby;
+      }
+      return {
+        success: true,
+        data: lobbies,
+        args: args
+      };
+    } catch (error) {
+      this.sdk.logger.error(`Error listing available lobbies: ${error}`);
+      return {
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      };
     }
-
-    return {
-      success: true,
-      data: lobbies,
-      args: args
-    };
   }
 
   sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
     const args = { lobbyId, message };
+    if (message.length === 0) {
+      this.sdk.logger.error('Message cannot be empty');
+      return false;
+    }
+    if (message.length > LOBBY_MESSAGE_MAX_LENGTH) {
+      this.sdk.logger.error(`Message cannot be longer than ${LOBBY_MESSAGE_MAX_LENGTH} characters`);
+      return false;
+    }
     this.sdk.convexClient.mutation(
       api.gameLobby.sendMessage,
       args
@@ -216,9 +239,7 @@ export class LobbyManager {
     // Subscribe to lobby messages
     this.unsubscribeLobbyMessages = this.sdk.convexClient.onUpdate(
       api.gameLobby.lobbyMessages,
-      {
-        lobbyId: lobbyId
-      },
+      { lobbyId },
       this.processMessageUpdates,
     );
 
@@ -238,7 +259,7 @@ export class LobbyManager {
       this.processUserUpdates,
     );
 
-    this.sdk.logger.debug('Subscribed to lobby::', lobbyId);
+    this.sdk.logger.debug('Subscribed to lobby:', lobbyId);
   }
 
   private unsubscribeFromCurrentLobby(): void {
@@ -256,6 +277,7 @@ export class LobbyManager {
     }
     this.lobbyId = null;
     this.lobbyUsers = [];
+    this.lobbyHostId = null;
     this.lobbyMetadata = {};
     this.recentMessageIds = [];
   }
@@ -271,6 +293,9 @@ export class LobbyManager {
 
     // Find users who joined
     for (const user of newUsers) {
+      if (user.isHost) {
+        this.lobbyHostId = user.userId;
+      }
       if (!previousUserIds.has(user.userId)) {
         this.sdk.notifyGame(Signals.LOBBY_USERS_UPDATED, {
           ...user,
@@ -297,13 +322,9 @@ export class LobbyManager {
   private processMessageUpdates(newMessages: LobbyMessage[]): void {
     for (const message of newMessages) {
       if (!this.recentMessageIds.includes(message.messageId)) {
-        // Add new message ID and maintain sliding window of 10
-        this.recentMessageIds.push(message.messageId);
-        if (this.recentMessageIds.length > 10) {
-          this.recentMessageIds.shift(); // Remove oldest
-        }
         this.sdk.notifyGame(Signals.LOBBY_MESSAGE, message);
       }
     }
+    this.recentMessageIds = newMessages.map(message => message.messageId);
   }
 }
