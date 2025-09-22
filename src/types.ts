@@ -39,9 +39,15 @@ export interface RemoteFileMetadata {
   etag: string;  // ETag of the entry
 }
 
+export enum GameEngine {
+  Godot="GODOT",
+  Unity="UNITY",
+  Custom="CUSTOM",
+}
+
 export interface EngineInstance {
   // Add more as we support more engines
-  type: "GODOT" | "UNITY";
+  type: GameEngine;
   // Broadcasts a message to the engine instance
   // Exposed natively by Unity's engine instance, added manually by Wavedash Godot SDK
   SendMessage(objectName: string, methodName: string, value?: string | number): void;
