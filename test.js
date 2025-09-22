@@ -1,6 +1,7 @@
-// === Wavedash P2P Console Test ===
+// === Wavedash Lobby + P2P Console Test ===
 // Copy and paste this entire file into your browser console
 // Assumes window.WavedashJS is already initialized
+// NOTE: P2P connections are now automatically managed by lobbies!
 
 // Create a unique test user for this browser instance
 const testUser = { 
@@ -26,6 +27,7 @@ window.p2pTest = {
             this.lobbyId = result.success ? result.data : JSON.parse(result).data;
             
             console.log('✅ Lobby created:', this.lobbyId);
+            console.log('🔗 P2P connections will be automatically established as users join!');
             console.log('📋 Copy this lobby ID for Browser B:', this.lobbyId);
             console.log('📋 Next: Browser B should run: p2pTest.joinLobby("' + this.lobbyId + '")');
             
@@ -47,7 +49,9 @@ window.p2pTest = {
             
             if (success) {
                 console.log('✅ Successfully joined lobby:', lobbyId);
-                console.log('📋 Next: Both browsers should run: p2pTest.enableP2P()');
+                console.log('🔗 P2P connections automatically being established with existing lobby members!');
+                console.log('📋 Next: Wait a moment for P2P to connect, then try messaging!');
+                console.log('📋 Use: p2pTest.checkP2PReady() to see connection status');
             } else {
                 console.error('❌ Failed to join lobby');
             }
@@ -80,52 +84,36 @@ window.p2pTest = {
         }
     },
     
-    // Step 4: Enable P2P (run in both browsers after both have joined)
-    async enableP2P() {
+    // Step 3: Check P2P Ready Status (P2P is now automatically managed by lobbies)
+    async checkP2PReady() {
         if (!this.lobbyId) {
             console.error('❌ No lobby ID set. Create or join a lobby first.');
             return;
         }
         
-        console.log('🔗 Setting up P2P connection...');
+        console.log('🔍 Checking P2P connection status...');
         
-        // Set up message callback to receive P2P messages
-        window.WavedashJS.setP2PMessageCallback((message) => {
-            console.log('📨 P2P message received:', {
-                from: `Handle ${message.fromHandle}`,
-                to: message.toHandle ? `Handle ${message.toHandle}` : 'broadcast',
-                channel: message.channel,
-                data: message.data,
-                timestamp: new Date(message.timestamp).toLocaleTimeString()
+        // Set up message callback to receive P2P messages if not already set
+        if (!this._messageCallbackSet) {
+            window.WavedashJS.setP2PMessageCallback((message) => {
+                console.log('📨 P2P message received:', {
+                    from: `Handle ${message.fromHandle}`,
+                    to: message.toHandle ? `Handle ${message.toHandle}` : 'broadcast',
+                    channel: message.channel,
+                    data: message.data,
+                    timestamp: new Date(message.timestamp).toLocaleTimeString()
+                });
             });
-        });
+            this._messageCallbackSet = true;
+        }
         
         try {
-            // Get current lobby members
-            const members = await this.getLobbyMembers();
-            
-            if (members.length < 2) {
-                console.warn('⚠️ Need at least 2 lobby members for P2P testing. Current:', members.length);
-                console.log('💡 Make sure both browsers have joined the lobby first.');
-                return;
-            }
-            
-            console.log('🔗 Enabling P2P with', members.length, 'members...');
-            
-            // Convert lobby members to the format expected by enableP2P
-            const memberData = members.map(m => ({
-                id: m.userId,
-                username: m.username || 'Unknown'
-            }));
-            
-            const result = await window.WavedashJS.enableP2P(this.lobbyId, memberData);
-            
-            // Handle both browser mode and engine mode responses
-            const connection = result.success ? result.data : JSON.parse(result).data;
+            // Get current P2P connection info
+            const connection = window.WavedashJS.getCurrentP2PConnection();
             
             if (connection) {
                 this.connection = connection;
-                console.log('✅ P2P enabled successfully!');
+                console.log('✅ P2P connection found!');
                 console.log('🎯 Your local handle:', connection.localHandle);
                 console.log('🔢 Total peers:', Object.keys(connection.peers).length);
                 
@@ -135,20 +123,40 @@ window.p2pTest = {
                     .join(', ');
                 console.log('👥 Peer handles:', peerList);
                 
-                console.log('⏳ Waiting for WebRTC channels to establish...');
+                // Check channel readiness
+                const statuses = window.WavedashJS.getPeerStatuses();
+                const readyPeers = Object.values(statuses).filter(s => s.ready).length;
+                const totalPeers = Object.keys(statuses).length;
                 
-                // Wait for channels to be ready
-                await this.waitForChannelsReady();
+                console.log(`📊 Ready channels: ${readyPeers}/${totalPeers}`);
                 
-                console.log('📋 Try messaging: p2pTest.sendMessage(targetHandle, "Hello!")');
-                console.log('📋 Try broadcast: p2pTest.broadcast("Hello everyone!")');
+                if (readyPeers === totalPeers && totalPeers > 0) {
+                    console.log('✅ All P2P channels ready for messaging!');
+                    console.log('📋 Try messaging: p2pTest.sendMessage(targetHandle, "Hello!")');
+                    console.log('📋 Try broadcast: p2pTest.broadcast("Hello everyone!")');
+                } else {
+                    console.log('⏳ Some channels still connecting... Use p2pTest.waitForChannelsReady()');
+                }
+                
+                return connection;
             } else {
-                console.error('❌ P2P enablement returned null connection');
+                console.log('⚠️ No P2P connection found. This could mean:');
+                console.log('  - Only 1 user in lobby (P2P requires 2+)');
+                console.log('  - P2P still initializing');
+                console.log('  - Connection failed');
+                
+                // Get current lobby members
+                const members = await this.getLobbyMembers();
+                if (members.length < 2) {
+                    console.log(`💡 Current lobby has ${members.length} member(s). Need 2+ for P2P.`);
+                } else {
+                    console.log(`💡 Lobby has ${members.length} members. P2P should have initialized.`);
+                }
+                
+                return null;
             }
-            
-            return connection;
         } catch (error) {
-            console.error('❌ Failed to enable P2P:', error);
+            console.error('❌ Failed to check P2P status:', error);
             throw error;
         }
     },
@@ -156,7 +164,7 @@ window.p2pTest = {
     // Step 5: Send P2P message to specific peer
     async sendMessage(toHandle, message = 'Hello from P2P!', reliable = true) {
         if (!this.connection) {
-            console.error('❌ P2P not enabled. Run p2pTest.enableP2P() first.');
+            console.error('❌ P2P not ready. Run p2pTest.checkP2PReady() first.');
             return;
         }
         
@@ -193,7 +201,7 @@ window.p2pTest = {
     // Step 6: Broadcast message to all peers
     async broadcast(message = 'Broadcast message from handle ' + (this.connection?.localHandle || '?'), reliable = true) {
         if (!this.connection) {
-            console.error('❌ P2P not enabled. Run p2pTest.enableP2P() first.');
+            console.error('❌ P2P not ready. Run p2pTest.checkP2PReady() first.');
             return;
         }
         
@@ -222,7 +230,7 @@ window.p2pTest = {
     // Step 7: Send binary game data (simulates high-frequency updates)
     async sendGameData(toHandle) {
         if (!this.connection) {
-            console.error('❌ P2P not enabled. Run p2pTest.enableP2P() first.');
+            console.error('❌ P2P not ready. Run p2pTest.checkP2PReady() first.');
             return;
         }
         
@@ -424,9 +432,9 @@ window.p2pTest = {
 🔧 P2P Test Functions Available:
 
 📋 Setup (do in order):
-  p2pTest.createLobby()              - Create new lobby (Browser A first)
-  p2pTest.joinLobby('lobby-id')      - Join existing lobby (Browser B)  
-  p2pTest.enableP2P()                - Enable P2P (both browsers)
+  p2pTest.createLobby()              - Create new lobby (Browser A first) 
+  p2pTest.joinLobby('lobby-id')      - Join existing lobby (Browser B)
+  p2pTest.checkP2PReady()            - Check P2P auto-connection status
 
 💬 Messaging:
   p2pTest.sendMessage(handle, msg, reliable) - Send to specific peer  
@@ -450,8 +458,8 @@ window.p2pTest = {
 
 🧪 Quick Test Flow:
   Browser A: p2pTest.createLobby()
-  Browser B: p2pTest.joinLobby('lobby-id-from-A')
-  Both: p2pTest.enableP2P()
+  Browser B: p2pTest.joinLobby('lobby-id-from-A')  
+  Both: p2pTest.checkP2PReady()
   Both: p2pTest.sendMessage(targetHandle, 'Hello!', true)
 
 📊 Check status anytime: p2pTest.status()
@@ -501,4 +509,4 @@ window.p2pTest = {
 // Auto-show help and status
 console.log('🎮 P2P Test Suite Loaded!');
 p2pTest.help();
-console.log('🚀 Ready to test! Start with: p2pTest.createLobby() (Browser A) or p2pTest.joinLobby("id") (Browser B)');
+console.log('🚀 Ready to test! P2P is now automatic with lobbies!');

@@ -34,7 +34,7 @@ class WavedashSDK {
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: WavedashUser;
-  protected p2pManager: P2PManager;
+  p2pManager: P2PManager;
   protected lobbyManager: LobbyManager;
   
   convexClient: ConvexClient;

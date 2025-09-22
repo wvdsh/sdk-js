@@ -23,16 +23,6 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<typeof api.leaderboard
 // Type helper to get signal values as a union type
 export type Signal = typeof Signals[keyof typeof Signals];
 
-// Lobby user event types
-export type LobbyUserEventType = 'JOINED' | 'LEFT' | 'DISCONNECTED' | 'KICKED';
-
-export interface LobbyUserEvent {
-  lobbyId: Id<"lobbies">;
-  userId: Id<"users">;
-  username: string;
-  eventType: LobbyUserEventType;
-}
-
 // Configuration and user types
 export interface WavedashConfig {
   gameId: Id<"games">;

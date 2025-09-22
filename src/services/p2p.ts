@@ -464,6 +464,18 @@ export class P2PManager {
   private setupDataChannelHandlers(channel: RTCDataChannel, remoteHandle: number, type: 'reliable' | 'unreliable'): void {
     channel.onopen = () => {
       this.sdk.logger.debug(`${type} data channel opened with peer ${remoteHandle}`);
+      
+      // Check if this peer is now fully ready (both channels open if both are enabled)
+      if (this.isPeerReady(remoteHandle)) {
+        const peer = this.getPeerByHandle(remoteHandle);
+        if (peer) {
+          this.sdk.notifyGame(Signals.P2P_CONNECTION_ESTABLISHED, {
+            peerHandle: remoteHandle,
+            userId: peer.userId,
+            username: peer.username
+          });
+        }
+      }
     };
 
     channel.onmessage = (event) => {
@@ -483,6 +495,27 @@ export class P2PManager {
 
     channel.onerror = (error) => {
       this.sdk.logger.error(`Data channel error with peer ${remoteHandle}:`, error);
+      const peer = this.getPeerByHandle(remoteHandle);
+      if (peer) {
+        this.sdk.notifyGame(Signals.P2P_CONNECTION_FAILED, {
+          peerHandle: remoteHandle,
+          userId: peer.userId,
+          username: peer.username,
+          error: error.toString()
+        });
+      }
+    };
+
+    channel.onclose = () => {
+      this.sdk.logger.debug(`${type} data channel closed with peer ${remoteHandle}`);
+      const peer = this.getPeerByHandle(remoteHandle);
+      if (peer) {
+        this.sdk.notifyGame(Signals.P2P_PEER_DISCONNECTED, {
+          peerHandle: remoteHandle,
+          userId: peer.userId,
+          username: peer.username
+        });
+      }
     };
   }
 

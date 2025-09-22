@@ -17,9 +17,11 @@ export const Signals = {
   
   // P2P signals
   P2P_MESSAGE: 'P2PMessage',
+  P2P_CONNECTION_ESTABLISHED: 'P2PConnectionEstablished', // connection to peer is ready
+  P2P_CONNECTION_FAILED: 'P2PConnectionFailed', // connection to peer failed
+  P2P_PEER_DISCONNECTED: 'P2PPeerDisconnected', // peer disconnected
   
   // TODO: Future signals to implement
   // LOBBY_INVITE: 'LobbyInvite',
-  // P2P_CONNECTION_FAILED: 'P2PConnectionFailed',
   // P2P_CONNECTION_REQUESTED: 'P2PConnectionRequested', // for now we always connect all lobby members
 } as const;
