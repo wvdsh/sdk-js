@@ -520,41 +520,5 @@ export type PublicApiType = {
       string
     >;
   };
-  p2pSignaling: {
-    sendSignalingMessage: FunctionReference<
-      "mutation",
-      "public",
-      {
-        data: any;
-        lobbyId: Id<"lobbies">;
-        messageType:
-          | "offer"
-          | "answer"
-          | "ice-candidate"
-          | "peer-joined"
-          | "peer-left";
-        toUserId?: Id<"users">;
-      },
-      any
-    >;
-    getSignalingMessages: FunctionReference<
-      "query",
-      "public",
-      { lobbyId: Id<"lobbies"> },
-      any
-    >;
-    markSignalingMessagesProcessed: FunctionReference<
-      "mutation",
-      "public",
-      { messageIds: Array<Id<"p2pSignalingMessages">> },
-      any
-    >;
-    cleanupExpiredSignalingMessages: FunctionReference<
-      "mutation",
-      "public",
-      Record<string, never>,
-      any
-    >;
-  };
 };
 export type InternalApiType = {};
