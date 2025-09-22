@@ -5,8 +5,10 @@ import { P2P_SIGNALING_MESSAGE_TYPE } from "./_generated/constants";
 import { Signals } from "./signals";
 
 // Extract types from the API
-export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
-export type LobbyUsers = FunctionReturnType<typeof api.gameLobby.lobbyUsers>;
+export type LobbyVisibility = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["visibility"];
+export type LobbyUser = FunctionReturnType<typeof api.gameLobby.lobbyUsers>[0];
+export type LobbyMessage = FunctionReturnType<typeof api.gameLobby.lobbyMessages>[0];
+export type Lobby = FunctionReturnType<typeof api.gameLobby.listAvailable>[0];
 export type UGCType = PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
 export type UGCVisibility = PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
 export type LeaderboardSortOrder = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
@@ -20,6 +22,16 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<typeof api.leaderboard
 
 // Type helper to get signal values as a union type
 export type Signal = typeof Signals[keyof typeof Signals];
+
+// Lobby user event types
+export type LobbyUserEventType = 'JOINED' | 'LEFT' | 'DISCONNECTED' | 'KICKED';
+
+export interface LobbyUserEvent {
+  lobbyId: Id<"lobbies">;
+  userId: Id<"users">;
+  username: string;
+  eventType: LobbyUserEventType;
+}
 
 // Configuration and user types
 export interface WavedashConfig {

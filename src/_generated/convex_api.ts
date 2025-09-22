@@ -95,7 +95,7 @@ export type PublicApiType = {
     createAndJoinLobby: FunctionReference<
       "mutation",
       "public",
-      { lobbyType: 0 | 1 | 2; maxPlayers?: number },
+      { maxPlayers?: number; visibility: 0 | 1 | 2 },
       Id<"lobbies">
     >;
     joinLobby: FunctionReference<
@@ -116,6 +116,18 @@ export type PublicApiType = {
       { lobbyId: Id<"lobbies">; message: string },
       string
     >;
+    listAvailable: FunctionReference<
+      "query",
+      "public",
+      { filters?: Record<string, any> },
+      Array<{
+        lobbyId: Id<"lobbies">;
+        maxPlayers: number;
+        metadata: Record<string, any>;
+        playerCount: number;
+        visibility: 0 | 1 | 2;
+      }>
+    >;
     lobbyMessages: FunctionReference<
       "query",
       "public",
@@ -123,6 +135,8 @@ export type PublicApiType = {
       Array<{
         lobbyId: Id<"lobbies">;
         message: string;
+        messageId: Id<"lobbyMessages">;
+        timestamp: number;
         userId: Id<"users">;
         username: string;
       }>
@@ -133,11 +147,11 @@ export type PublicApiType = {
       { key: string; lobbyId: Id<"lobbies">; value: any },
       boolean
     >;
-    getLobbyData: FunctionReference<
+    getLobbyMetadata: FunctionReference<
       "query",
       "public",
-      { key: string; lobbyId: Id<"lobbies"> },
-      any
+      { lobbyId: Id<"lobbies"> },
+      Record<string, any>
     >;
   };
   auth: {

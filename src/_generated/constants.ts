@@ -17,7 +17,7 @@ export const LOBBY_DEFAULTS = {
 	EXPIRY_MS: LOBBY_EXPIRY_HOURS * 60 * 60 * 1000
 } as const;
 
-export const LOBBY_TYPE = {
+export const LOBBY_VISIBILITY = {
 	PUBLIC: 0,
 	FRIENDS_ONLY: 1,
 	PRIVATE: 2

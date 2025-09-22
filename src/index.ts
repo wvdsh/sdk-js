@@ -9,7 +9,7 @@ import { P2PManager } from "./services/p2p";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import type {
   Id,
-  LobbyType,
+  LobbyVisibility,
   LeaderboardSortOrder,
   LeaderboardDisplayType,
   WavedashConfig,
@@ -25,7 +25,7 @@ import type {
   P2PPeer,
   P2PConnection,
   P2PMessage,
-  LobbyUsers,
+  LobbyUser,
   Signal
 } from "./types";
 
@@ -380,10 +380,10 @@ class WavedashSDK {
   // Game Lobbies
   // ============
 
-  async createLobby(lobbyType: LobbyType, maxPlayers?: number): Promise<string | WavedashResponse<Id<"lobbies">>> {
+  async createLobby(visibility: LobbyVisibility, maxPlayers?: number): Promise<string | WavedashResponse<Id<"lobbies">>> {
     this.ensureReady();
-    this.logger.debug('Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
-    const result = await this.lobbyManager.createLobby(lobbyType, maxPlayers);
+    this.logger.debug('Creating lobby with visibility:', visibility, 'and max players:', maxPlayers);
+    const result = await this.lobbyManager.createLobby(visibility, maxPlayers);
     return this.formatResponse(result);
   }
 
@@ -394,10 +394,10 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
-  async getLobbyUsers(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<LobbyUsers>> {
+  getLobbyUsers(lobbyId: Id<"lobbies">): string | LobbyUser[] {
     this.ensureReady();
     this.logger.debug(`Getting lobby users: ${lobbyId}`);
-    const result = await this.lobbyManager.getLobbyUsers(lobbyId);
+    const result = this.lobbyManager.getLobbyUsers(lobbyId);
     return this.formatResponse(result);
   }
 
@@ -420,11 +420,11 @@ class WavedashSDK {
   // JS -> Game Event Broadcasting
   // ==============================
   notifyGame(signal: Signal, payload: string | number | boolean | object): void {
-    const toSend = typeof payload === 'object' ? JSON.stringify(payload) : payload;
+    const data = typeof payload === 'object' ? JSON.stringify(payload) : payload;
     this.engineInstance?.SendMessage(
       this.engineCallbackReceiver,
       signal,
-      toSend
+      data
     );
   }
 
