@@ -100,10 +100,10 @@ export type P2PConnectionState =
   | "failed";
 
 export interface P2PMessage {
-  fromUserId: Id<"users">; // Primary identifier for sender
+  fromUserId: Id<"users">; // Primary identifier for sender TODO: Make this a small int handle instead of a 32 byte string
   channel: number;          // Channel for message routing
   payload: ArrayBuffer;
-  timestamp: number;
+  // TODO: Assign an incrementing messsage ID to each message for ordering?
 }
 
 export interface P2PSignalingMessage {  

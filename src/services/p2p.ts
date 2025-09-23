@@ -64,12 +64,10 @@ export class P2PManager {
   // Binary message format offsets
   private readonly USERID_SIZE = 32;
   private readonly CHANNEL_SIZE = 4;
-  private readonly TIMESTAMP_SIZE = 8;
   private readonly DATALENGTH_SIZE = 4;
   private readonly CHANNEL_OFFSET = this.USERID_SIZE; // Channel comes after fromUserId
-  private readonly TIMESTAMP_OFFSET = this.USERID_SIZE + this.CHANNEL_SIZE;
-  private readonly DATALENGTH_OFFSET = this.USERID_SIZE + this.CHANNEL_SIZE + this.TIMESTAMP_SIZE;
-  private readonly PAYLOAD_OFFSET = this.USERID_SIZE + this.CHANNEL_SIZE + this.TIMESTAMP_SIZE + this.DATALENGTH_SIZE;
+  private readonly DATALENGTH_OFFSET = this.USERID_SIZE + this.CHANNEL_SIZE;
+  private readonly PAYLOAD_OFFSET = this.USERID_SIZE + this.CHANNEL_SIZE + this.DATALENGTH_SIZE;
 
   constructor(sdk: WavedashSDK, config?: Partial<P2PConfig>) {
     this.sdk = sdk;
@@ -593,8 +591,7 @@ export class P2PManager {
         const message: P2PMessage = {
           fromUserId: this.sdk.getUserId(),
           channel: appChannel,
-          payload: payload,
-          timestamp: Date.now()
+          payload: payload
         };
         messageData = this.encodeBinaryMessage(message);
       }
@@ -807,12 +804,12 @@ export class P2PManager {
     });
     
     // Expose to global scope for Godot access
-    if (typeof window !== 'undefined') {
-      if (!(window as any).WavedashP2PChannelQueues) {
-        (window as any).WavedashP2PChannelQueues = {};
-      }
-      (window as any).WavedashP2PChannelQueues[channel] = buffer;
-    }
+    // if (typeof window !== 'undefined') {
+    //   if (!(window as any).WavedashP2PChannelQueues) {
+    //     (window as any).WavedashP2PChannelQueues = {};
+    //   }
+    //   (window as any).WavedashP2PChannelQueues[channel] = buffer;
+    // }
   }
 
   // private enqueueMessage(message: P2PMessage): void {
@@ -993,7 +990,7 @@ export class P2PManager {
   // ================
 
   private encodeBinaryMessage(message: P2PMessage): Uint8Array {
-    // Binary format: [fromUserId(32)][channel(4)][timestamp(8)][dataLength(4)][payload(...)]
+    // Binary format: [fromUserId(32)][channel(4)][dataLength(4)][payload(...)]
     const fromUserIdBytes = new TextEncoder().encode(message.fromUserId).slice(0, this.USERID_SIZE);
     const payloadBytes = message.payload instanceof ArrayBuffer ? new Uint8Array(message.payload) : new Uint8Array(0);
     
@@ -1010,10 +1007,6 @@ export class P2PManager {
     // channel (4 bytes)
     view.setUint32(offset, message.channel, true);
     offset += this.CHANNEL_SIZE;
-    
-    // timestamp (8 bytes)
-    view.setBigUint64(offset, BigInt(message.timestamp), true);
-    offset += this.TIMESTAMP_SIZE;
     
     // data length (4 bytes)
     view.setUint32(offset, payloadBytes.length, true);
@@ -1046,10 +1039,6 @@ export class P2PManager {
     const channel = view.getUint32(offset, true);
     offset += this.CHANNEL_SIZE;
     
-    // timestamp (8 bytes)
-    const timestamp = Number(view.getBigUint64(offset, true));
-    offset += this.TIMESTAMP_SIZE;
-    
     // data length (4 bytes)
     const dataLength = view.getUint32(offset, true);
     offset += this.DATALENGTH_SIZE;
@@ -1060,8 +1049,7 @@ export class P2PManager {
     return {
       fromUserId,
       channel,
-      payload: payload,
-      timestamp
+      payload: payload
     };
   }
 }

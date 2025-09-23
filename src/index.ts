@@ -311,7 +311,7 @@ class WavedashSDK {
 
   /**
    * Get the SharedArrayBuffer for a specific P2P message channel
-   * @param channel - Channel number (0-7)
+   * @param channel - Channel number (0-3)
    * @returns SharedArrayBuffer for direct access from game engines, or null if not available
    */
   getP2PChannelQueue(channel: number): SharedArrayBuffer | null {
@@ -351,6 +351,12 @@ class WavedashSDK {
     this.logger.debug(`Getting lobby users: ${lobbyId}`);
     const result = this.lobbyManager.getLobbyUsers(lobbyId);
     return this.formatResponse(result);
+  }
+
+  getLobbyHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
+    this.ensureReady();
+    this.logger.debug(`Getting lobby host ID: ${lobbyId}`);
+    return this.lobbyManager.getHostId(lobbyId); 
   }
 
   async leaveLobby(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<Id<"lobbies">>> {

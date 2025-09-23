@@ -304,6 +304,7 @@ export class LobbyManager {
     const previousUsers = this.lobbyUsers;
     const previousUserIds = new Set(previousUsers.map(user => user.userId));
     const newUserIds = new Set(newUsers.map(user => user.userId));
+    this.lobbyUsers = newUsers;
 
     // Find users who joined
     for (const user of newUsers) {
@@ -325,6 +326,7 @@ export class LobbyManager {
         // from the basic lobby users update. Default to LEFT.
         this.sdk.notifyGame(Signals.LOBBY_USERS_UPDATED, {
           ...user,
+          isHost: false,
           changeType: 'LEFT'
         });
       }
@@ -334,8 +336,6 @@ export class LobbyManager {
     if (this.lobbyId) {
       this.updateP2PConnections(newUsers);
     }
-
-    this.lobbyUsers = newUsers;
   }
 
   private processMessageUpdates = (newMessages: LobbyMessage[]): void => {
