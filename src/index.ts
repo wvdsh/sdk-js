@@ -370,7 +370,6 @@ class WavedashSDK {
 
   getLobbyHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
     this.ensureReady();
-    this.logger.debug(`Getting lobby host ID: ${lobbyId}`);
     return this.lobbyManager.getHostId(lobbyId); 
   }
 

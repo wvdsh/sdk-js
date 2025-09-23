@@ -567,7 +567,12 @@ export class P2PManager {
   async sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer): Promise<WavedashResponse<boolean>> {
     try {
       if (!this.currentConnection) {
-        throw new Error('No active P2P connection');
+        return {
+          success: false,
+          data: false,
+          args: { /* Leaving empty to speed up serialization */ },
+          message: 'No active P2P connection'
+        };
       }
 
       let messageData: Uint8Array;

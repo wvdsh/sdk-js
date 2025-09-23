@@ -55,7 +55,8 @@ export class LobbyManager {
         api.gameLobby.createAndJoinLobby,
         args
       );
-
+      
+      this.lobbyHostId = this.sdk.getUserId();
       this.subscribeToLobby(lobbyId);
       // P2P will be initialized when processUserUpdates receives the lobby users
 
