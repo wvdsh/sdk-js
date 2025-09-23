@@ -277,103 +277,25 @@ class WavedashSDK {
   // ============
 
   /**
-   * Enable P2P networking for the current lobby
-   * @param lobbyId - The lobby to enable P2P for
-   * @param members - All lobby members for consistent peer handle generation
-   * @returns P2P connection information
-   */
-  async enableP2P(lobbyId: Id<"lobbies">, members: WavedashUser[]): Promise<string | WavedashResponse<P2PConnection>> {
-    this.ensureReady();
-    this.logger.debug(`Enabling P2P for current lobby: ${lobbyId}`);
-    const result = await this.p2pManager.initializeP2PForCurrentLobby(lobbyId, members);
-    return this.formatResponse(result);
-  }
-
-  /**
-   * Send a message through P2P to a specific peer using their handle
-   * @param toHandle - Peer handle to send to (undefined = broadcast)
+   * Send a message through P2P to a specific peer using their userId
+   * @param toUserId - Peer userId to send to (undefined = broadcast)
    * @param message - Message data
    * @param reliable - Use reliable channel (default: true)
    */
-  async sendP2PMessage(toHandle: number | undefined, message: any, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
+  async sendP2PMessage(toUserId: Id<"users"> | undefined, message: any, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
-    this.logger.debug(`Sending P2P message to peer ${toHandle}, reliable: ${reliable}`);
-    const result = await this.p2pManager.sendP2PMessage(toHandle, message, reliable);
+    this.logger.debug(`Sending P2P message to ${toUserId}, reliable: ${reliable}`);
+    const result = await this.p2pManager.sendP2PMessage(toUserId, message, reliable);
     return this.formatResponse(result);
-  }
-
-  /**
-   * Send high-frequency game data through P2P (uses unreliable channel)
-   * @param toHandle - Peer handle to send to (undefined = broadcast)
-   * @param data - Binary game data
-   */
-  async sendGameData(toHandle: number | undefined, data: ArrayBuffer): Promise<string | WavedashResponse<boolean>> {
-    this.ensureReady();
-    this.logger.debug(`Sending game data to peer ${toHandle}`);
-    const result = await this.p2pManager.sendGameData(toHandle, data);
-    return this.formatResponse(result);
-  }
-
-  /**
-   * Get peer information by handle
-   * @param handle - The peer handle
-   */
-  getPeerByHandle(handle: number): P2PPeer | null {
-    this.ensureReady();
-    return this.p2pManager.getPeerByHandle(handle);
-  }
-
-  /**
-   * Get the peer handle for a specific user
-   * @param userId - The user ID to look up
-   */
-  getUserHandle(userId: Id<"users">): number | null {
-    this.ensureReady();
-    return this.p2pManager.getUserHandle(userId);
-  }
-
-  /**
-   * Get the current P2P connection state
-   */
-  getCurrentP2PConnection(): P2PConnection | null {
-    this.ensureReady();
-    return this.p2pManager.getCurrentP2PConnection();
-  }
-
-  /**
-   * Disconnect P2P for the current lobby
-   */
-  async disconnectP2P(): Promise<string | WavedashResponse<boolean>> {
-    this.ensureReady();
-    this.logger.debug('Disconnecting P2P for current lobby');
-    const result = await this.p2pManager.disconnectP2P();
-    return this.formatResponse(result);
-  }
-
-  /**
-   * Set callback for receiving P2P messages (for web applications)
-   * @param callback - Function to call when P2P messages are received
-   */
-  setP2PMessageCallback(callback: ((message: P2PMessage) => void) | null): void {
-    this.ensureReady();
-    this.p2pManager.setMessageCallback(callback);
   }
 
   /**
    * Check if a specific peer is ready for messaging
    * @param handle - The peer handle to check
    */
-  isPeerReady(handle: number): boolean {
+  isPeerReady(userId: Id<"users">): boolean {
     this.ensureReady();
-    return this.p2pManager.isPeerReady(handle);
-  }
-
-  /**
-   * Get the connection status of all peers
-   */
-  getPeerStatuses(): Record<number, { reliable?: string; unreliable?: string; ready: boolean }> {
-    this.ensureReady();
-    return this.p2pManager.getPeerStatuses();
+    return this.p2pManager.isPeerReady(userId);
   }
 
   // ============

@@ -82,16 +82,14 @@ export interface WavedashResponse<T> {
 
 // P2P Connection types
 export interface P2PPeer {
-  handle: number;           // Integer handle for networking performance
-  userId: Id<"users">;      // Links to persistent user
+  userId: Id<"users">;      // Primary identifier - links to persistent user
   username: string;
-  isHost: boolean;
+  // TODO Calvin: Consider adding int handle for each peer to speed up messaging over string handles
 }
 
 export interface P2PConnection {
   lobbyId: Id<"lobbies">;
-  localHandle: number;
-  peers: Record<number, P2PPeer>;  // handle -> peer info (JSON serializable)
+  peers: Record<Id<"users">, P2PPeer>;  // userId -> peer info (we may add more fields to P2PPeer later)
   state: P2PConnectionState;
 }
 
@@ -102,17 +100,17 @@ export type P2PConnectionState =
   | "failed";
 
 export interface P2PMessage {
-  fromHandle: number;
-  toHandle?: number;        // undefined = broadcast
+  fromUserId: Id<"users">; // Primary identifier for sender
+  toUserId?: Id<"users">;   // Primary identifier for recipient (undefined = broadcast)
   channel: number;          // Channel for message routing
-  data: any;
+  data: ArrayBuffer;
   timestamp: number;
 }
 
 export interface P2PSignalingMessage {  
   type: typeof P2P_SIGNALING_MESSAGE_TYPE[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
-  fromHandle?: number;
-  toHandle: number;
+  fromUserId?: Id<"users">; // Primary identifier for sender
+  toUserId: Id<"users">;   // Primary identifier for recipient
   data: any;
 }
 

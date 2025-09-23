@@ -42,9 +42,9 @@ import { Signals } from '../signals';
 export class P2PManager {
   private sdk: WavedashSDK;
   private currentConnection: P2PConnection | null = null;
-  private peerConnections = new Map<number, RTCPeerConnection>();
-  private reliableChannels = new Map<number, RTCDataChannel>();
-  private unreliableChannels = new Map<number, RTCDataChannel>();
+  private peerConnections = new Map<Id<"users">, RTCPeerConnection>();
+  private reliableChannels = new Map<Id<"users">, RTCDataChannel>();
+  private unreliableChannels = new Map<Id<"users">, RTCDataChannel>();
   private config: P2PConfig;
   private messageCallback: ((message: P2PMessage) => void) | null = null;
   private processedSignalingMessages = new Set<string>(); // Track processed message IDs
@@ -60,31 +60,25 @@ export class P2PManager {
 
   async initializeP2PForCurrentLobby(lobbyId: Id<"lobbies">, members: WavedashUser[]): Promise<WavedashResponse<P2PConnection>> {
     try {
-      // Generate consistent peer handle assignments
-      const peerAssignments = this.generatePeerHandles(members);
-      const localHandle = peerAssignments.get(this.sdk.getUserId());
-      
-      if (!localHandle) {
-        throw new Error('Local user not found in lobby members');
+      // If we already have a connection, update it instead of replacing
+      if (this.currentConnection && this.currentConnection.lobbyId === lobbyId) {
+        return this.updateP2PConnection(members);
       }
 
-      // Create P2P connection state
+      // Create P2P connection state (no more handles needed)
       const connection: P2PConnection = {
         lobbyId,
-        localHandle,
         peers: {},
         state: "connecting"
       };
 
       // Populate peers object (excluding local peer)
-      peerAssignments.forEach((handle, userId) => {
-        const member = members.find(m => m.id === userId);
-        if (member && userId !== this.sdk.getUserId()) {
-          connection.peers[handle] = {
-            handle,
+      members.forEach((member) => {
+        if (member.id !== this.sdk.getUserId()) {
+          // Use userId as the peer identifier instead of handles
+          connection.peers[member.id] = {
             userId: member.id,
-            username: member.username,
-            isHost: false // TODO: Determine host from lobby data
+            username: member.username
           };
         }
       });
@@ -110,18 +104,94 @@ export class P2PManager {
     }
   }
 
-  private generatePeerHandles(members: WavedashUser[]): Map<Id<"users">, number> {
-    const assignments = new Map<Id<"users">, number>();
-    
-    // Sort members by user ID for consistent ordering across all peers
-    const sortedMembers = [...members].sort((a, b) => a.id.localeCompare(b.id));
-    
-    // Assign handles starting from 1
-    sortedMembers.forEach((member, index) => {
-      assignments.set(member.id, index + 1);
-    });
+  private async updateP2PConnection(members: WavedashUser[]): Promise<WavedashResponse<P2PConnection>> {
+    try {
+      if (!this.currentConnection) {
+        throw new Error('No existing P2P connection to update');
+      }
 
-    return assignments;
+      this.sdk.logger.debug('Updating P2P connection with new member list');
+
+      const currentPeerUserIds = new Set(Object.keys(this.currentConnection.peers));
+      currentPeerUserIds.add(this.sdk.getUserId());
+      const newPeerUserIds = new Set(members.map(member => member.id));
+
+      // Find new users who joined
+      const connectionsToCreate: Id<"users">[] = [];
+      for (const member of members) {
+        if (!currentPeerUserIds.has(member.id) && member.id !== this.sdk.getUserId()) {
+          this.sdk.logger.debug(`Adding new peer: ${member.username} (${member.id})`);
+          
+          // Add new peer to connection
+          this.currentConnection.peers[member.id] = {
+            userId: member.id,
+            username: member.username
+          };
+          connectionsToCreate.push(member.id);
+        }
+      }
+
+      // Create connections to new peers only
+      if (connectionsToCreate.length > 0) {
+        const currentUserId = this.sdk.getUserId();
+        const connectionPromises = connectionsToCreate.map(userId => {
+          const shouldCreateChannels = currentUserId < userId;
+          this.sdk.logger.debug(`Creating connection to new peer ${userId}, shouldCreateChannels: ${shouldCreateChannels}`);
+          return this.createPeerConnection(userId, this.currentConnection!, shouldCreateChannels);
+        });
+        await Promise.all(connectionPromises);
+
+        // Initiate offers to new peers where we have lower userId
+        const peersToInitiate = connectionsToCreate.filter(userId => currentUserId < userId);
+        
+        if (peersToInitiate.length > 0) {
+          // Small delay to ensure data channels are set up before creating offers
+          await new Promise(resolve => setTimeout(resolve, 100));
+          
+          const offerPromises = peersToInitiate.map(userId => {
+            this.sdk.logger.debug(`Initiating offer to new peer ${userId} (lower userId rule)`);
+            return this.createOfferToPeer(userId);
+          });
+          
+          await Promise.all(offerPromises);
+          this.sdk.logger.debug(`Initiated ${offerPromises.length} offers to new peers`);
+        }
+      }
+
+      // Clean up connections to users who left
+      for (const userId of Object.keys(this.currentConnection.peers) as Id<"users">[]) {
+        if (!newPeerUserIds.has(userId)) {
+          const peer = this.currentConnection.peers[userId];
+          this.sdk.logger.debug(`Peer left: ${peer.username} (${userId})`);
+          
+          // Clean up WebRTC resources
+          const pc = this.peerConnections.get(userId);
+          if (pc) {
+            pc.close();
+            this.peerConnections.delete(userId);
+          }
+          this.reliableChannels.delete(userId);
+          this.unreliableChannels.delete(userId);
+          
+          // Remove from peer list
+          delete this.currentConnection.peers[userId];
+        }
+      }
+
+      return {
+        success: true,
+        data: this.currentConnection,
+        args: { members }
+      };
+    } catch (error) {
+      this.sdk.logger.error('Error updating P2P connection:', error);
+      return {
+        success: false,
+        data: null,
+        args: { members },
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
   }
 
   private async establishWebRTCConnections(connection: P2PConnection): Promise<void> {
@@ -183,8 +253,6 @@ export class P2PManager {
         this.processedSignalingMessages.add(message._id);
       } catch (error) {
         this.sdk.logger.error('Error handling signaling message:', error);
-        // Still mark as processed to avoid reprocessing
-        this.processedSignalingMessages.add(message._id);
       }
     }
 
@@ -216,24 +284,22 @@ export class P2PManager {
       return;
     }
 
-    const remoteHandle = this.getUserHandle(message.fromUserId);
-    if (!remoteHandle) {
-      this.sdk.logger.warn('Received signaling message from unknown user:', message.fromUserId);
+    const remoteUserId = message.fromUserId;
+    if (!connection.peers[remoteUserId]) {
+      this.sdk.logger.warn('Received signaling message from unknown user:', remoteUserId);
       return;
     }
 
-    const pc = this.peerConnections.get(remoteHandle);
+    const pc = this.peerConnections.get(remoteUserId);
     if (!pc) {
-      this.sdk.logger.warn('No peer connection for handle:', remoteHandle);
+      this.sdk.logger.warn('No peer connection for user:', remoteUserId);
       return;
     }
 
     switch (message.messageType) {
       case P2P_SIGNALING_MESSAGE_TYPE.OFFER:
         // Log offer processing details
-        const hasDataChannelInOffer = message.data.sdp?.includes('m=application');
-        this.sdk.logger.debug(`Processing offer from peer ${remoteHandle}:`);
-        this.sdk.logger.debug(`  Offer contains data channels: ${hasDataChannelInOffer}`);
+        this.sdk.logger.debug(`Processing offer from peer ${remoteUserId}:`);
         
         await pc.setRemoteDescription(new RTCSessionDescription(message.data));
         const answer = await pc.createAnswer();
@@ -247,9 +313,8 @@ export class P2PManager {
           sdp: answer.sdp
         };
         
-        await this.sendSignalingMessage({
+        await this.sendSignalingMessage(remoteUserId, {
           type: P2P_SIGNALING_MESSAGE_TYPE.ANSWER,
-          toHandle: remoteHandle,
           data: answerData
         });
         break;
@@ -262,16 +327,6 @@ export class P2PManager {
         await pc.addIceCandidate(new RTCIceCandidate(message.data));
         break;
 
-      // case P2P_SIGNALING_MESSAGE_TYPE.PEER_JOINED:
-      //   // Handle new peer joining mid-game
-      //   await this.handlePeerJoined(message.data, connection);
-      //   break;
-
-      // case P2P_SIGNALING_MESSAGE_TYPE.PEER_LEFT:
-      //   // Handle peer leaving mid-game
-      //   await this.handlePeerLeft(message.data, connection);
-      //   break;
-
       default:
         this.sdk.logger.warn('Unknown signaling message type:', message.messageType);
     }
@@ -281,101 +336,53 @@ export class P2PManager {
   private async establishPeerConnections(connection: P2PConnection): Promise<void> {
     this.sdk.logger.debug('Establishing WebRTC connections to peers...');
 
+    const currentUserId = this.sdk.getUserId();
     const connectionPromises: Promise<void>[] = [];
     
     // Create peer connections to all other peers
-    Object.entries(connection.peers).forEach(([handleStr, peer]) => {
-      const handle = parseInt(handleStr);
-      if (handle !== connection.localHandle) {
-        // Only create channels if we're the lower handle (we'll initiate the offer)
-        const shouldCreateChannels = connection.localHandle < handle;
-        this.sdk.logger.debug(`Creating connection to peer ${handle} (${peer.username}), shouldCreateChannels: ${shouldCreateChannels}`);
-        connectionPromises.push(this.createPeerConnection(handle, connection, shouldCreateChannels));
-      }
+    (Object.entries(connection.peers) as [Id<"users">, P2PPeer][]).forEach(([userId, peer]) => {
+      const shouldCreateChannels = currentUserId < userId;
+      this.sdk.logger.debug(`Creating connection to peer ${userId} (${peer.username}), shouldCreateChannels: ${shouldCreateChannels}`);
+      connectionPromises.push(this.createPeerConnection(userId, connection, shouldCreateChannels));
     });
 
     // Wait for all connections to be created first
     await Promise.all(connectionPromises);
     
-    // Small delay to ensure data channels are properly set up before creating offers
-    await new Promise(resolve => setTimeout(resolve, 100));
+    // Initiate offers to peers where we have lower userId
+    const peersToInitiate = (Object.keys(connection.peers) as Id<"users">[]).filter(userId => currentUserId < userId);
     
-    // Then initiate offers (lower handle number initiates to prevent conflicts)
-    const offerPromises: Promise<void>[] = [];
-    Object.keys(connection.peers).forEach(handleStr => {
-      const handle = parseInt(handleStr);
-      if (handle !== connection.localHandle && connection.localHandle < handle) {
-        this.sdk.logger.debug(`Initiating offer to peer ${handle}`);
-        offerPromises.push(this.createOfferToPeer(handle));
-      }
-    });
-    
-    await Promise.all(offerPromises);
-    this.sdk.logger.debug(`Created ${connectionPromises.length} peer connections, initiated ${offerPromises.length} offers`);
-  }
-
-  private async handlePeerJoined(data: { newPeerHandle: number, userId: Id<"users">, username: string }, connection: P2PConnection): Promise<void> {
-    this.sdk.logger.debug('Peer joined:', data);
-    
-    // Add new peer to connection
-    connection.peers[data.newPeerHandle] = {
-      handle: data.newPeerHandle,
-      userId: data.userId,
-      username: data.username,
-      isHost: false
-    };
-
-    // Create new peer connection for the joined peer
-    // If we have lower handle, we create channels and initiate offer
-    const shouldCreateChannels = connection.localHandle < data.newPeerHandle;
-    await this.createPeerConnection(data.newPeerHandle, connection, shouldCreateChannels);
-
-    // If we have lower handle, initiate offer to new peer
-    if (shouldCreateChannels) {
-      await this.createOfferToPeer(data.newPeerHandle);
+    if (peersToInitiate.length > 0) {
+      // Small delay to ensure data channels are properly set up before creating offers
+      await new Promise(resolve => setTimeout(resolve, 100));
+      
+      const offerPromises = peersToInitiate.map(userId => {
+        this.sdk.logger.debug(`Initiating offer to peer ${userId} (lower userId rule)`);
+        return this.createOfferToPeer(userId);
+      });
+      
+      await Promise.all(offerPromises);
+      this.sdk.logger.debug(`Created ${connectionPromises.length} peer connections and initiated ${offerPromises.length} offers`);
+    } else {
+      this.sdk.logger.debug(`Created ${connectionPromises.length} peer connections, no offers to initiate`);
     }
   }
 
-  private async handlePeerLeft(data: { leftPeerHandle: number }, connection: P2PConnection): Promise<void> {
-    this.sdk.logger.debug('Peer left:', data);
-    
-    const leftHandle = data.leftPeerHandle;
-    
-    // Close peer connection
-    const pc = this.peerConnections.get(leftHandle);
-    if (pc) {
-      pc.close();
-      this.peerConnections.delete(leftHandle);
-    }
-
-    // Clean up data channels
-    this.reliableChannels.delete(leftHandle);
-    this.unreliableChannels.delete(leftHandle);
-
-    // Remove from connection peers
-    delete connection.peers[leftHandle];
-  }
-
-
-  private async createOfferToPeer(remoteHandle: number): Promise<void> {
-    const pc = this.peerConnections.get(remoteHandle);
+  private async createOfferToPeer(remoteUserId: Id<"users">): Promise<void> {
+    const pc = this.peerConnections.get(remoteUserId);
     if (!pc) {
-      throw new Error(`No peer connection for handle ${remoteHandle}`);
+      throw new Error(`No peer connection for user ${remoteUserId}`);
     }
 
     // Log channel states before creating offer
-    const reliableChannel = this.reliableChannels.get(remoteHandle);
-    const unreliableChannel = this.unreliableChannels.get(remoteHandle);
-    this.sdk.logger.debug(`Creating offer to peer ${remoteHandle}:`);
+    const reliableChannel = this.reliableChannels.get(remoteUserId);
+    const unreliableChannel = this.unreliableChannels.get(remoteUserId);
+    this.sdk.logger.debug(`Creating offer to peer ${remoteUserId}:`);
     this.sdk.logger.debug(`  Reliable channel state: ${reliableChannel?.readyState || 'none'}`);
     this.sdk.logger.debug(`  Unreliable channel state: ${unreliableChannel?.readyState || 'none'}`);
 
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-
-    // Log if SDP contains data channels
-    const hasDataChannel = offer.sdp?.includes('m=application');
-    this.sdk.logger.debug(`  Offer includes data channels: ${hasDataChannel}`);
 
     // Convert RTCSessionDescription to plain object for Convex
     const offerData = {
@@ -383,14 +390,13 @@ export class P2PManager {
       sdp: offer.sdp
     };
 
-    await this.sendSignalingMessage({
+    await this.sendSignalingMessage(remoteUserId, {
       type: P2P_SIGNALING_MESSAGE_TYPE.OFFER,
-      toHandle: remoteHandle,
       data: offerData
     });
   }
 
-  private async createPeerConnection(remoteHandle: number, connection: P2PConnection, shouldCreateChannels: boolean = false): Promise<void> {
+  private async createPeerConnection(remoteUserId: Id<"users">, connection: P2PConnection, shouldCreateChannels: boolean = false): Promise<void> {
     const pc = new RTCPeerConnection({
       iceServers: this.config.iceServers,
       // Enable more aggressive ICE gathering for local testing
@@ -402,15 +408,15 @@ export class P2PManager {
 
     // Only create data channels if this peer will initiate the offer
     if (shouldCreateChannels) {
-      this.sdk.logger.debug(`Creating data channels for peer ${remoteHandle}`);
+      this.sdk.logger.debug(`Creating data channels for peer ${remoteUserId}`);
       
       if (this.config.enableReliableChannel) {
         const reliableChannel = pc.createDataChannel('reliable', {
           ordered: true,
           maxRetransmits: undefined // Full reliability, will retransmit until received
         });
-        this.reliableChannels.set(remoteHandle, reliableChannel);
-        this.setupDataChannelHandlers(reliableChannel, remoteHandle, 'reliable');
+        this.reliableChannels.set(remoteUserId, reliableChannel);
+        this.setupDataChannelHandlers(reliableChannel, remoteUserId, 'reliable');
       }
 
       if (this.config.enableUnreliableChannel) {
@@ -418,11 +424,11 @@ export class P2PManager {
           ordered: false,
           maxRetransmits: 0, // No retransmits, will drop if not received
         });
-        this.unreliableChannels.set(remoteHandle, unreliableChannel);
-        this.setupDataChannelHandlers(unreliableChannel, remoteHandle, 'unreliable');
+        this.unreliableChannels.set(remoteUserId, unreliableChannel);
+        this.setupDataChannelHandlers(unreliableChannel, remoteUserId, 'unreliable');
       }
     } else {
-      this.sdk.logger.debug(`Will receive data channels from peer ${remoteHandle} via ondatachannel`);
+      this.sdk.logger.debug(`Will receive data channels from peer ${remoteUserId} via ondatachannel`);
     }
 
     // Set up peer connection event handlers
@@ -433,7 +439,7 @@ export class P2PManager {
                              event.candidate.candidate.includes('typ srflx') ? 'srflx (STUN)' :
                              event.candidate.candidate.includes('typ relay') ? 'relay (TURN)' : 'unknown';
         
-        this.sdk.logger.debug(`Peer ${remoteHandle} gathered ICE candidate: ${candidateType}`);
+        this.sdk.logger.debug(`Peer ${remoteUserId} gathered ICE candidate: ${candidateType}`);
         this.sdk.logger.debug(`  Candidate: ${event.candidate.candidate}`);
         
         // Convert RTCIceCandidate to a plain object for Convex serialization
@@ -444,10 +450,8 @@ export class P2PManager {
           usernameFragment: event.candidate.usernameFragment
         };
         
-        this.sendSignalingMessage({
+        this.sendSignalingMessage(remoteUserId, {
           type: P2P_SIGNALING_MESSAGE_TYPE.ICE_CANDIDATE,
-          fromHandle: connection.localHandle,
-          toHandle: remoteHandle,
           data: candidateData
         });
       }
@@ -455,53 +459,49 @@ export class P2PManager {
 
     pc.ondatachannel = (event) => {
       const channel = event.channel;
-      this.sdk.logger.debug(`Received ${channel.label} data channel from peer ${remoteHandle}`);
+      this.sdk.logger.debug(`Received ${channel.label} data channel from peer ${remoteUserId}`);
       
       // Store the received channel in the appropriate map
       if (channel.label === 'reliable') {
-        this.reliableChannels.set(remoteHandle, channel);
+        this.reliableChannels.set(remoteUserId, channel);
       } else if (channel.label === 'unreliable') {
-        this.unreliableChannels.set(remoteHandle, channel);
+        this.unreliableChannels.set(remoteUserId, channel);
       }
       
-      this.setupDataChannelHandlers(channel, remoteHandle, channel.label as 'reliable' | 'unreliable');
+      this.setupDataChannelHandlers(channel, remoteUserId, channel.label as 'reliable' | 'unreliable');
     };
 
     // Add connection state monitoring for debugging
     pc.onconnectionstatechange = () => {
-      this.sdk.logger.debug(`Peer ${remoteHandle} connection state: ${pc.connectionState}`);
+      this.sdk.logger.debug(`Peer ${remoteUserId} connection state: ${pc.connectionState}`);
       if (pc.connectionState === 'connected') {
-        this.sdk.logger.debug(`  Peer ${remoteHandle} fully connected, expecting ondatachannel events now...`);
+        this.sdk.logger.debug(`  Peer ${remoteUserId} fully connected, expecting ondatachannel events now...`);
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      this.sdk.logger.debug(`Peer ${remoteHandle} ICE connection state: ${pc.iceConnectionState}`);
+      this.sdk.logger.debug(`Peer ${remoteUserId} ICE connection state: ${pc.iceConnectionState}`);
       if (pc.iceConnectionState === 'connected') {
-        this.sdk.logger.debug(`  ICE connected to peer ${remoteHandle}, data channels should be available...`);
+        this.sdk.logger.debug(`  ICE connected to peer ${remoteUserId}, data channels should be available...`);
       }
     };
 
     pc.onicegatheringstatechange = () => {
-      this.sdk.logger.debug(`Peer ${remoteHandle} ICE gathering state: ${pc.iceGatheringState}`);
+      this.sdk.logger.debug(`Peer ${remoteUserId} ICE gathering state: ${pc.iceGatheringState}`);
     };
 
-    this.peerConnections.set(remoteHandle, pc);
-
-    // TODO: Implement actual WebRTC negotiation (offer/answer exchange)
-    // This will require integration with Convex signaling server
+    this.peerConnections.set(remoteUserId, pc);
   }
 
-  private setupDataChannelHandlers(channel: RTCDataChannel, remoteHandle: number, type: 'reliable' | 'unreliable'): void {
+  private setupDataChannelHandlers(channel: RTCDataChannel, remoteUserId: Id<"users">, type: 'reliable' | 'unreliable'): void {
     channel.onopen = () => {
-      this.sdk.logger.debug(`${type} data channel opened with peer ${remoteHandle}`);
+      this.sdk.logger.debug(`${type} data channel opened with peer ${remoteUserId}`);
       
       // Check if this peer is now fully ready (both channels open if both are enabled)
-      if (this.isPeerReady(remoteHandle)) {
-        const peer = this.getPeerByHandle(remoteHandle);
+      if (this.isPeerReady(remoteUserId)) {
+        const peer = this.currentConnection?.peers[remoteUserId];
         if (peer) {
           this.sdk.notifyGame(Signals.P2P_CONNECTION_ESTABLISHED, {
-            peerHandle: remoteHandle,
             userId: peer.userId,
             username: peer.username
           });
@@ -516,7 +516,7 @@ export class P2PManager {
       } catch (error) {
         // Handle binary data
         this.handleIncomingP2PMessage({
-          fromHandle: remoteHandle,
+          fromUserId: remoteUserId,
           channel: 0, // Default channel for binary data
           data: event.data,
           timestamp: Date.now()
@@ -525,11 +525,10 @@ export class P2PManager {
     };
 
     channel.onerror = (error) => {
-      this.sdk.logger.error(`Data channel error with peer ${remoteHandle}:`, error);
-      const peer = this.getPeerByHandle(remoteHandle);
+      this.sdk.logger.error(`Data channel error with peer ${remoteUserId}:`, error);
+      const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
         this.sdk.notifyGame(Signals.P2P_CONNECTION_FAILED, {
-          peerHandle: remoteHandle,
           userId: peer.userId,
           username: peer.username,
           error: error.toString()
@@ -538,11 +537,10 @@ export class P2PManager {
     };
 
     channel.onclose = () => {
-      this.sdk.logger.debug(`${type} data channel closed with peer ${remoteHandle}`);
-      const peer = this.getPeerByHandle(remoteHandle);
+      this.sdk.logger.debug(`${type} data channel closed with peer ${remoteUserId}`);
+      const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
         this.sdk.notifyGame(Signals.P2P_PEER_DISCONNECTED, {
-          peerHandle: remoteHandle,
           userId: peer.userId,
           username: peer.username
         });
@@ -554,24 +552,25 @@ export class P2PManager {
   // Message Sending
   // ================
 
-  async sendP2PMessage(toHandle: number | undefined, data: any, reliable: boolean = true): Promise<WavedashResponse<boolean>> {
+  async sendP2PMessage(toUserId: Id<"users"> | undefined, data: ArrayBuffer, reliable: boolean = true): Promise<WavedashResponse<boolean>> {
     try {
       if (!this.currentConnection) {
         throw new Error('No active P2P connection');
       }
 
       const message: P2PMessage = {
-        fromHandle: this.currentConnection.localHandle,
-        toHandle,
+        fromUserId: this.sdk.getUserId(),
+        toUserId: toUserId,
         channel: 0, // Default channel for now, can add app-level channels later
         data,
         timestamp: Date.now()
       };
 
+      // TODO Calvin: This should be a binary message instead of JSON
       const messageData = JSON.stringify(message);
       const channelMap = reliable ? this.reliableChannels : this.unreliableChannels;
 
-      if (toHandle === undefined) {
+      if (toUserId === undefined) {
         // Broadcast to all peers
         channelMap.forEach((channel) => {
           if (channel.readyState === 'open') {
@@ -580,9 +579,9 @@ export class P2PManager {
         });
       } else {
         // Send to specific peer
-        const channel = channelMap.get(toHandle);
+        const channel = channelMap.get(toUserId);
         if (!channel || channel.readyState !== 'open') {
-          throw new Error(`No open channel to peer ${toHandle}`);
+          throw new Error(`No open channel to peer ${toUserId}`);
         }
         channel.send(messageData);
       }
@@ -590,54 +589,14 @@ export class P2PManager {
       return {
         success: true,
         data: true,
-        args: { toHandle, reliable }
+        args: { toUserId, reliable }
       };
     } catch (error) {
       this.sdk.logger.error(`Error sending P2P message:`, error);
       return {
         success: false,
         data: false,
-        args: { toHandle, reliable },
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
-  }
-
-  async sendGameData(toHandle: number | undefined, data: ArrayBuffer): Promise<WavedashResponse<boolean>> {
-    try {
-      if (!this.currentConnection) {
-        throw new Error('No active P2P connection');
-      }
-
-      const channelMap = this.unreliableChannels; // Game data uses unreliable channel
-
-      if (toHandle === undefined) {
-        // Broadcast to all peers
-        channelMap.forEach((channel) => {
-          if (channel.readyState === 'open') {
-            channel.send(data);
-          }
-        });
-      } else {
-        // Send to specific peer
-        const channel = channelMap.get(toHandle);
-        if (!channel || channel.readyState !== 'open') {
-          throw new Error(`No open channel to peer ${toHandle}`);
-        }
-        channel.send(data);
-      }
-
-      return {
-        success: true,
-        data: true,
-        args: { toHandle }
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Error sending game data:`, error);
-      return {
-        success: false,
-        data: false,
-        args: { toHandle },
+        args: { toUserId, reliable },
         message: error instanceof Error ? error.message : String(error)
       };
     }
@@ -661,13 +620,12 @@ export class P2PManager {
   // Signaling
   // ===============
 
-  private async sendSignalingMessage(message: P2PSignalingMessage): Promise<void> {
+  private async sendSignalingMessage(toUserId: Id<"users">, message: { type: any; data: any }): Promise<void> {
     if (!this.currentConnection) {
       throw new Error('No active P2P connection for signaling');
     }
 
     try {
-      const toUserId = this.currentConnection.peers[message.toHandle].userId;
       await this.sdk.convexClient.mutation(
         api.p2pSignaling.sendSignalingMessage,
         {
@@ -688,7 +646,7 @@ export class P2PManager {
   // Cleanup
   // ===============
 
-  async disconnectP2P(): Promise<WavedashResponse<boolean>> {
+  disconnectP2P(): WavedashResponse<boolean> {
     try {
       if (!this.currentConnection) {
         return {
@@ -702,18 +660,15 @@ export class P2PManager {
       this.stopSignalingMessageSubscription();
 
       // Close all peer connections
-      Object.entries(this.currentConnection.peers).forEach(([handleStr, _]) => {
-        const handle = Number(handleStr);
-        if (handle !== this.currentConnection!.localHandle) {
-          const pc = this.peerConnections.get(handle);
-          if (pc) {
-            pc.close();
-            this.peerConnections.delete(handle);
-          }
-
-          this.reliableChannels.delete(handle);
-          this.unreliableChannels.delete(handle);
+      (Object.entries(this.currentConnection.peers) as [Id<"users">, P2PPeer][]).forEach(([userId, _]) => {
+        const pc = this.peerConnections.get(userId);
+        if (pc) {
+          pc.close();
+          this.peerConnections.delete(userId);
         }
+
+        this.reliableChannels.delete(userId);
+        this.unreliableChannels.delete(userId);
       });
 
       this.currentConnection = null;
@@ -746,36 +701,16 @@ export class P2PManager {
     return this.currentConnection;
   }
 
-  getPeerByHandle(handle: number): P2PPeer | null {
-    return this.currentConnection?.peers[handle] || null;
-  }
-
-  getUserHandle(userId: Id<"users">): number | null {
-    if (!this.currentConnection) return null;
-
-    for (const [handleStr, peer] of Object.entries(this.currentConnection.peers)) {
-      if (peer.userId === userId) {
-        return Number(handleStr);
-      }
-    }
-    return null;
-  }
-
   updateConfig(config: Partial<P2PConfig>): void {
     this.config = { ...this.config, ...config };
   }
 
-  // Set callback for receiving P2P messages (for web applications)
-  setMessageCallback(callback: ((message: P2PMessage) => void) | null): void {
-    this.messageCallback = callback;
-  }
-
   // Check if channels are ready for a specific peer
-  isPeerReady(handle: number): boolean {
+  isPeerReady(userId: Id<"users">): boolean {
     if (!this.currentConnection) return false;
     
-    const reliableChannel = this.reliableChannels.get(handle);
-    const unreliableChannel = this.unreliableChannels.get(handle);
+    const reliableChannel = this.reliableChannels.get(userId);
+    const unreliableChannel = this.unreliableChannels.get(userId);
     
     const reliableReady = !this.config.enableReliableChannel || (reliableChannel?.readyState === 'open');
     const unreliableReady = !this.config.enableUnreliableChannel || (unreliableChannel?.readyState === 'open');
@@ -784,19 +719,19 @@ export class P2PManager {
   }
 
   // Get status of all peer connections
-  getPeerStatuses(): Record<number, { reliable?: string; unreliable?: string; ready: boolean }> {
+  getPeerStatuses(): Record<Id<"users">, { reliable?: string; unreliable?: string; ready: boolean }> {
     if (!this.currentConnection) return {};
     
-    const statuses: Record<number, { reliable?: string; unreliable?: string; ready: boolean }> = {};
+    const statuses: Record<Id<"users">, { reliable?: string; unreliable?: string; ready: boolean }> = {};
     
-    for (const handle of Object.keys(this.currentConnection.peers).map(Number)) {
-      const reliableChannel = this.reliableChannels.get(handle);
-      const unreliableChannel = this.unreliableChannels.get(handle);
+    for (const userId of Object.keys(this.currentConnection.peers) as Id<"users">[]) {
+      const reliableChannel = this.reliableChannels.get(userId);
+      const unreliableChannel = this.unreliableChannels.get(userId);
       
-      statuses[handle] = {
+      statuses[userId] = {
         reliable: reliableChannel?.readyState,
         unreliable: unreliableChannel?.readyState,
-        ready: this.isPeerReady(handle)
+        ready: this.isPeerReady(userId)
       };
     }
     

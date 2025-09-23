@@ -88,8 +88,8 @@ export class LobbyManager {
       // P2P will be initialized when processUserUpdates receives the lobby users
 
       // Do we need this? We already return the lobby id in the Promise
-      // Assuming a user can join a lobby from the Wavedash UI, in addition to game UI, so game needs a notification
-      this.sdk.notifyGame(Signals.LOBBY_JOINED, lobbyId);
+      // Assuming a user can join a lobby from the Wavedash UI, in addition to game UI, game would need a notification
+      // this.sdk.notifyGame(Signals.LOBBY_JOINED, lobbyId);
       return {
         success: true,
         data: lobbyId,
@@ -155,15 +155,14 @@ export class LobbyManager {
     const args = { lobbyId };
 
     try {
+      // Clean up subscriptions BEFORE leaving lobby so we don't trigger updates to ourselves from leaving
+      this.unsubscribeFromCurrentLobby();
+
+      // Now we can leave the lobby
       await this.sdk.convexClient.mutation(
         api.gameLobby.leaveLobby,
         args
       );
-
-      // Disconnect from all P2P peers before unsubscribing from lobby
-      await this.sdk.p2pManager.disconnectP2P();
-
-      this.unsubscribeFromCurrentLobby();
 
       return {
         success: true,
@@ -218,13 +217,16 @@ export class LobbyManager {
       this.sdk.logger.error(`Message cannot be longer than ${LOBBY_MESSAGE_MAX_LENGTH} characters`);
       return false;
     }
-    this.sdk.convexClient.mutation(
-      api.gameLobby.sendMessage,
-      args
-    ).catch((error) => {
+    try {
+      // Fire and forget, not awaiting the result
+      this.sdk.convexClient.mutation(
+        api.gameLobby.sendMessage,
+        args
+      )
+    } catch (error) {
       this.sdk.logger.error(`Error sending lobby message: ${error}`);
       return false;
-    });
+    }
 
     return true;
   }
@@ -285,9 +287,7 @@ export class LobbyManager {
     }
 
     // Clean up P2P connections when leaving lobby
-    this.sdk.p2pManager.disconnectP2P().catch(error => {
-      this.sdk.logger.error('Error disconnecting P2P during cleanup:', error);
-    });
+    this.sdk.p2pManager.disconnectP2P()
 
     this.lobbyId = null;
     this.lobbyUsers = [];
@@ -341,6 +341,7 @@ export class LobbyManager {
   private processMessageUpdates = (newMessages: LobbyMessage[]): void => {
     for (const message of newMessages) {
       if (!this.recentMessageIds.includes(message.messageId)) {
+        this.recentMessageIds.push(message.messageId);
         this.sdk.notifyGame(Signals.LOBBY_MESSAGE, message);
       }
     }
@@ -365,33 +366,26 @@ export class LobbyManager {
       if (newUsers.length <= 1) {
         // If only one user left, disconnect all P2P connections
         await this.sdk.p2pManager.disconnectP2P();
-        this.sdk.logger.debug('Only one user remaining, P2P connections disconnected');
+        this.sdk.logger.debug('Only one user in lobby, P2P connections disconnected');
         return;
       }
 
-      // Get current P2P connection to see what peers we already have
-      const currentConnection = this.sdk.p2pManager.getCurrentP2PConnection();
-      
-      if (!currentConnection) {
-        // No existing P2P connection, initialize fresh
-        const wavedashUsers: WavedashUser[] = newUsers.map(lobbyUser => ({
-          id: lobbyUser.userId,
-          username: lobbyUser.username
-        }));
-        
-        const result = await this.sdk.p2pManager.initializeP2PForCurrentLobby(this.lobbyId, wavedashUsers);
-        if (!result.success) {
-          this.sdk.logger.error('Failed to initialize P2P connections:', result.message);
-        } else {
-          this.sdk.logger.debug(`P2P connections initialized for lobby ${this.lobbyId} with ${wavedashUsers.length} users`);
-        }
+      // Convert to WavedashUser format
+      const wavedashUsers: WavedashUser[] = newUsers.map(lobbyUser => ({
+        id: lobbyUser.userId,
+        username: lobbyUser.username
+      }));
+
+      // Initialize or update P2P - the P2P manager handles both cases
+      const result = await this.sdk.p2pManager.initializeP2PForCurrentLobby(this.lobbyId, wavedashUsers);
+      if (!result.success) {
+        this.sdk.logger.error('Failed to initialize/update P2P connections:', result.message);
       } else {
-        // Don't reinitialize - P2P manager already handles peer join/leave through signaling
-        // The existing connection will automatically handle new peers through WebRTC signaling
-        this.sdk.logger.debug('P2P connection exists, relying on signaling for peer updates');
+        this.sdk.logger.debug(`P2P connections updated for lobby ${this.lobbyId} with ${wavedashUsers.length} users`);
       }
     } catch (error) {
       this.sdk.logger.error('Error updating P2P connections:', error);
     }
   }
+
 }
