@@ -284,21 +284,17 @@ class WavedashSDK {
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
    * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
    */
-  async sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer): Promise<string | WavedashResponse<boolean>> {
+  sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
     this.ensureReady();
-    this.logger.debug(`Sending P2P message to ${toUserId}, reliable: ${reliable}`);
-    const result = await this.p2pManager.sendP2PMessage(toUserId, appChannel, reliable, payload);
-    return this.formatResponse(result);
+    return this.p2pManager.sendP2PMessage(toUserId, appChannel, reliable, payload);
   }
 
   /**
    * Send the same payload to all peers in the lobby
    */
-  async broadcastP2PMessage(appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer): Promise<string | WavedashResponse<boolean>> {
+  broadcastP2PMessage(appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
     this.ensureReady();
-    this.logger.debug(`Broadcasting P2P message, reliable: ${reliable}`);
-    const result = await this.p2pManager.sendP2PMessage(undefined, appChannel, reliable, payload);
-    return this.formatResponse(result);
+    return this.p2pManager.sendP2PMessage(undefined, appChannel, reliable, payload);
   }
 
   /**
@@ -364,8 +360,8 @@ class WavedashSDK {
   getNumLobbyUsers(lobbyId: Id<"lobbies">): number {
     this.ensureReady();
     this.logger.debug(`Getting number of lobby users: ${lobbyId}`);
-    const result = this.lobbyManager.getLobbyUsers(lobbyId);
-    return result.length;
+    const result = this.lobbyManager.getNumLobbyUsers(lobbyId);
+    return result;
   }
 
   getLobbyHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
@@ -381,7 +377,7 @@ class WavedashSDK {
 
   setLobbyData(lobbyId: Id<"lobbies">, key: string, value: any): boolean {
     this.ensureReady();
-    this.logger.debug(`Setting lobby data: ${key} for lobby: ${lobbyId}`);
+    this.logger.debug(`Setting lobby data: ${key} to ${value}`);
     return this.lobbyManager.setLobbyData(lobbyId, key, value);
   }
 

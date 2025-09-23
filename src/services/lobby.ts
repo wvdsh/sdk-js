@@ -56,8 +56,9 @@ export class LobbyManager {
         args
       );
       
-      this.lobbyHostId = this.sdk.getUserId();
       this.subscribeToLobby(lobbyId);
+      this.lobbyHostId = this.sdk.getUserId();
+      this.lobbyId = lobbyId;
       // P2P will be initialized when processUserUpdates receives the lobby users
 
       return {
@@ -142,13 +143,14 @@ export class LobbyManager {
     if (this.lobbyId === lobbyId && this.lobbyHostId === this.sdk.getUserId()) {
       if (this.lobbyMetadata[key] !== value) {
         this.lobbyMetadata[key] = value;
-        if (this.lobbyDataUpdateTimeout) {
-          clearTimeout(this.lobbyDataUpdateTimeout);
+        if (!this.lobbyDataUpdateTimeout) {
+          this.sdk.logger.debug('Setting timeout for lobby data update');
+          this.lobbyDataUpdateTimeout = setTimeout(() => {
+            this.processPendingLobbyDataUpdates();
+            this.lobbyDataUpdateTimeout = null;
+            this.sdk.logger.debug('Removing timeout for lobby data update');
+          }, 10);
         }
-        this.lobbyDataUpdateTimeout = setTimeout(() => {
-          this.processPendingLobbyDataUpdates();
-          this.lobbyDataUpdateTimeout = null;
-        }, 100);
       }
       return true;
     }
@@ -162,7 +164,7 @@ export class LobbyManager {
     return this.cachedLobbies[lobbyId].maxPlayers;
   }
 
-  getLobbyPlayerCount(lobbyId: Id<"lobbies">): number {
+  getNumLobbyUsers(lobbyId: Id<"lobbies">): number {
     if (this.lobbyId === lobbyId) {
       return this.lobbyUsers.length;
     }
@@ -266,7 +268,7 @@ export class LobbyManager {
     this.unsubscribeFromCurrentLobby();
 
     this.lobbyId = lobbyId;
-
+    
     // Subscribe to lobby messages
     this.unsubscribeLobbyMessages = this.sdk.convexClient.onUpdate(
       api.gameLobby.lobbyMessages,
@@ -318,6 +320,7 @@ export class LobbyManager {
   }
 
   private processPendingLobbyDataUpdates(): void {
+    this.sdk.logger.debug('Bulk updating lobby metadata:', this.lobbyMetadata);
     this.sdk.convexClient.mutation(api.gameLobby.setLobbyMetadata, {
       lobbyId: this.lobbyId!,
       updates: this.lobbyMetadata

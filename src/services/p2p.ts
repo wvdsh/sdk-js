@@ -564,15 +564,10 @@ export class P2PManager {
   // ================
 
   // TODO Calvin: Try having JS poll the queue and send all queued messages once per tick rather than sending small packets one at a time
-  async sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer): Promise<WavedashResponse<boolean>> {
+  sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
     try {
       if (!this.currentConnection) {
-        return {
-          success: false,
-          data: false,
-          args: { /* Leaving empty to speed up serialization */ },
-          message: 'No active P2P connection'
-        };
+        return false;
       }
 
       let messageData: Uint8Array;
@@ -583,12 +578,7 @@ export class P2PManager {
         const channel = appChannel;
         const queueData = this.readFromOutgoingQueue(channel);
         if (!queueData) {
-          return {
-            success: false,
-            data: false,
-            args: { /* Leaving empty to speed up serialization */ },
-            message: 'No message available in outgoing queue'
-          };
+          return false;
         }
         messageData = queueData;
       } else {
@@ -619,19 +609,10 @@ export class P2PManager {
         channel.send(messageData as Uint8Array<ArrayBuffer>);
       }
 
-      return {
-        success: true,
-        data: true,
-        args: { /* Leaving empty to speed up serialization */ }
-      };
+      return true;
     } catch (error) {
       this.sdk.logger.error(`Error sending P2P message:`, error);
-      return {
-        success: false,
-        data: false,
-        args: { /* Leaving empty to speed up serialization */ },
-        message: error instanceof Error ? error.message : String(error)
-      };
+      return false;
     }
   }
 
@@ -978,14 +959,16 @@ export class P2PManager {
     if (messageSize === 0 || messageSize > this.MESSAGE_SIZE - 4) {
       return null; // Invalid message
     }
-
-    // Create a view directly into the SharedArrayBuffer (zero-copy)
-    const messageData = new Uint8Array(queue.buffer, outgoingDataOffset + readOffset + 4, messageSize);
     
     // Update read pointer atomically
     const nextReadIndex = (readIndex + 1) % this.QUEUE_SIZE;
     Atomics.store(queue.outgoingHeaderView, 1, nextReadIndex); // readIndex
     Atomics.sub(queue.outgoingHeaderView, 2, 1); // messageCount--
+
+    // WebRTC refuses to send from SharedArrayBuffer directly so we need to make a copy
+    const messageData = new Uint8Array(messageSize);
+    const sourceView = new Uint8Array(queue.buffer, outgoingDataOffset + readOffset + 4, messageSize);
+    messageData.set(sourceView);
     
     return messageData;
   }
