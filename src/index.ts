@@ -279,23 +279,53 @@ class WavedashSDK {
   /**
    * Send a message through P2P to a specific peer using their userId
    * @param toUserId - Peer userId to send to (undefined = broadcast)
-   * @param message - Message data
-   * @param reliable - Use reliable channel (default: true)
+   * @param payload - Data to send to the peer
+   * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.
+   * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
    */
-  async sendP2PMessage(toUserId: Id<"users"> | undefined, message: any, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
+  async sendP2PMessage(toUserId: Id<"users"> | undefined, payload: ArrayBuffer, appChannel: number = 0, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
     this.logger.debug(`Sending P2P message to ${toUserId}, reliable: ${reliable}`);
-    const result = await this.p2pManager.sendP2PMessage(toUserId, message, reliable);
+    const result = await this.p2pManager.sendP2PMessage(toUserId, payload, appChannel, reliable);
+    return this.formatResponse(result);
+  }
+
+  /**
+   * Send the same payload to all peers in the lobby
+   */
+  async broadcastP2PMessage(payload: ArrayBuffer, appChannel: number = 0, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
+    this.ensureReady();
+    this.logger.debug(`Broadcasting P2P message, reliable: ${reliable}`);
+    const result = await this.p2pManager.sendP2PMessage(undefined, payload, appChannel, reliable);
     return this.formatResponse(result);
   }
 
   /**
    * Check if a specific peer is ready for messaging
-   * @param handle - The peer handle to check
+   * @param userId - The peer user ID to check
    */
   isPeerReady(userId: Id<"users">): boolean {
     this.ensureReady();
     return this.p2pManager.isPeerReady(userId);
+  }
+
+  /**
+   * Get the SharedArrayBuffer for a specific P2P message channel
+   * @param channel - Channel number (0-7)
+   * @returns SharedArrayBuffer for direct access from game engines, or null if not available
+   */
+  getP2PChannelQueue(channel: number): SharedArrayBuffer | null {
+    this.ensureReady();
+    return this.p2pManager.getChannelQueueBuffer(channel);
+  }
+
+  /**
+   * Get P2P message queue information for debugging
+   */
+  getP2PMessageQueueInfo(): any {
+    this.ensureReady();
+    const info = this.p2pManager.getMessageQueueInfo();
+    return this.formatResponse(info);
   }
 
   // ============

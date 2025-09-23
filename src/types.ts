@@ -101,9 +101,8 @@ export type P2PConnectionState =
 
 export interface P2PMessage {
   fromUserId: Id<"users">; // Primary identifier for sender
-  toUserId?: Id<"users">;   // Primary identifier for recipient (undefined = broadcast)
   channel: number;          // Channel for message routing
-  data: ArrayBuffer;
+  payload: ArrayBuffer;
   timestamp: number;
 }
 

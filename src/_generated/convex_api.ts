@@ -523,13 +523,7 @@ export type PublicApiType = {
       "query",
       "public",
       { lobbyId: Id<"lobbies"> },
-      Array<{
-        data: any;
-        fromUserId: Id<"users">;
-        lobbyId: Id<"lobbies">;
-        messageType: "offer" | "answer" | "ice-candidate";
-        toUserId: Id<"users">;
-      }>
+      any
     >;
     markSignalingMessagesProcessed: FunctionReference<
       "mutation",
