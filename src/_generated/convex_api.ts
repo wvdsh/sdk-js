@@ -141,10 +141,10 @@ export type PublicApiType = {
         username: string;
       }>
     >;
-    setLobbyData: FunctionReference<
+    setLobbyMetadata: FunctionReference<
       "mutation",
       "public",
-      { key: string; lobbyId: Id<"lobbies">; value: any },
+      { lobbyId: Id<"lobbies">; updates: Record<string, any> },
       boolean
     >;
     getLobbyMetadata: FunctionReference<

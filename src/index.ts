@@ -26,7 +26,8 @@ import type {
   P2PConnection,
   P2PMessage,
   LobbyUser,
-  Signal
+  Signal,
+  Lobby
 } from "./types";
 
 class WavedashSDK {
@@ -346,6 +347,13 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  async listAvailableLobbies(): Promise<string | WavedashResponse<Lobby[]>> {
+    this.ensureReady();
+    this.logger.debug(`Listing available lobbies`);
+    const result = await this.lobbyManager.listAvailableLobbies();
+    return this.formatResponse(result);
+  }
+
   getLobbyUsers(lobbyId: Id<"lobbies">): string | LobbyUser[] {
     this.ensureReady();
     this.logger.debug(`Getting lobby users: ${lobbyId}`);
@@ -353,10 +361,29 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  getNumLobbyUsers(lobbyId: Id<"lobbies">): number {
+    this.ensureReady();
+    this.logger.debug(`Getting number of lobby users: ${lobbyId}`);
+    const result = this.lobbyManager.getLobbyUsers(lobbyId);
+    return result.length;
+  }
+
   getLobbyHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
     this.ensureReady();
     this.logger.debug(`Getting lobby host ID: ${lobbyId}`);
     return this.lobbyManager.getHostId(lobbyId); 
+  }
+
+  getLobbyData(lobbyId: Id<"lobbies">, key: string): string {
+    this.ensureReady();
+    this.logger.debug(`Getting lobby data: ${key} for lobby: ${lobbyId}`);
+    return this.lobbyManager.getLobbyData(lobbyId, key);
+  }
+
+  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: any): boolean {
+    this.ensureReady();
+    this.logger.debug(`Setting lobby data: ${key} for lobby: ${lobbyId}`);
+    return this.lobbyManager.setLobbyData(lobbyId, key, value);
   }
 
   async leaveLobby(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<Id<"lobbies">>> {

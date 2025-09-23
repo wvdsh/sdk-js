@@ -30,6 +30,7 @@ export class LobbyManager {
   private lobbyHostId: Id<"users"> | null = null;
   private lobbyMetadata: Record<string, any> = {};
   private recentMessageIds: Id<"lobbyMessages">[] = [];
+  private lobbyDataUpdateTimeout: number | null = null;
 
   // Cache results of queries for a list of lobbies
   // We'll cache metadata and num users for each lobby and return that info synchronously when requested by the game
@@ -132,6 +133,25 @@ export class LobbyManager {
       return '';
     }
     return this.cachedLobbies[lobbyId].metadata[key] || '';
+  }
+
+  // Set synchronously here and batch updates to the backend in a single request
+  // That way game can easily set all the data it needs in sequential calls without multiple network requests
+  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: any): boolean {
+    if (this.lobbyId === lobbyId && this.lobbyHostId === this.sdk.getUserId()) {
+      if (this.lobbyMetadata[key] !== value) {
+        this.lobbyMetadata[key] = value;
+        if (this.lobbyDataUpdateTimeout) {
+          clearTimeout(this.lobbyDataUpdateTimeout);
+        }
+        this.lobbyDataUpdateTimeout = setTimeout(() => {
+          this.processPendingLobbyDataUpdates();
+          this.lobbyDataUpdateTimeout = null;
+        }, 100);
+      }
+      return true;
+    }
+    return false;
   }
 
   getLobbyMaxPlayers(lobbyId: Id<"lobbies">): number {
@@ -294,6 +314,15 @@ export class LobbyManager {
     this.lobbyHostId = null;
     this.lobbyMetadata = {};
     this.recentMessageIds = [];
+  }
+
+  private processPendingLobbyDataUpdates(): void {
+    this.sdk.convexClient.mutation(api.gameLobby.setLobbyMetadata, {
+      lobbyId: this.lobbyId!,
+      updates: this.lobbyMetadata
+    }).catch((error) => {
+      this.sdk.logger.error('Error updating lobby metadata:', error);
+    });
   }
 
   /**
