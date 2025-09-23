@@ -279,24 +279,24 @@ class WavedashSDK {
   /**
    * Send a message through P2P to a specific peer using their userId
    * @param toUserId - Peer userId to send to (undefined = broadcast)
-   * @param payload - Data to send to the peer
    * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
+   * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
    */
-  async sendP2PMessage(toUserId: Id<"users"> | undefined, payload: ArrayBuffer, appChannel: number = 0, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
+  async sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
     this.logger.debug(`Sending P2P message to ${toUserId}, reliable: ${reliable}`);
-    const result = await this.p2pManager.sendP2PMessage(toUserId, payload, appChannel, reliable);
+    const result = await this.p2pManager.sendP2PMessage(toUserId, appChannel, reliable, payload);
     return this.formatResponse(result);
   }
 
   /**
    * Send the same payload to all peers in the lobby
    */
-  async broadcastP2PMessage(payload: ArrayBuffer, appChannel: number = 0, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
+  async broadcastP2PMessage(appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
     this.logger.debug(`Broadcasting P2P message, reliable: ${reliable}`);
-    const result = await this.p2pManager.sendP2PMessage(undefined, payload, appChannel, reliable);
+    const result = await this.p2pManager.sendP2PMessage(undefined, appChannel, reliable, payload);
     return this.formatResponse(result);
   }
 
