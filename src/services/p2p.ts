@@ -718,6 +718,11 @@ export class P2PManager {
     return reliableReady && unreliableReady;
   }
 
+  isBroadcastReady(): boolean {
+    if (!this.currentConnection) return false;
+    return this.reliableChannels.size > 0 && this.unreliableChannels.size > 0;
+  }
+
   // Get status of all peer connections
   getPeerStatuses(): Record<Id<"users">, { reliable?: string; unreliable?: string; ready: boolean }> {
     if (!this.currentConnection) return {};
@@ -937,6 +942,7 @@ export class P2PManager {
   }
 
   // Read one message from outgoing queue for a specific channel
+  // TODO Calvin: Confirm that the message pulled from the queue matches the intended recipient for the call to sendP2PMessage
   private readFromOutgoingQueue(channel: number): Uint8Array | null {
     const queue = this.channelQueues.get(channel);
     if (!queue) {
