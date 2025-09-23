@@ -47,6 +47,7 @@ export class P2PManager {
   private unreliableChannels = new Map<number, RTCDataChannel>();
   private config: P2PConfig;
   private messageCallback: ((message: P2PMessage) => void) | null = null;
+  private processedSignalingMessages = new Set<string>(); // Track processed message IDs
 
   constructor(sdk: WavedashSDK, config?: Partial<P2PConfig>) {
     this.sdk = sdk;
@@ -135,6 +136,7 @@ export class P2PManager {
 
 
   private unsubscribeFromSignalingMessages: (() => void) | null = null;
+  private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
 
   private subscribeToSignalingMessages(connection: P2PConnection): void {
     // Subscribe to real-time signaling message updates
@@ -159,23 +161,52 @@ export class P2PManager {
   private async processSignalingMessages(messages: any[], connection: P2PConnection): Promise<void> {
     if (messages.length === 0) return;
 
-    const messageIds: Id<"p2pSignalingMessages">[] = [];
+    const newMessageIds: Id<"p2pSignalingMessages">[] = [];
+    const messagesToProcess: any[] = [];
 
+    // Filter out messages we've already processed or are pending processing
     for (const message of messages) {
+      if (!this.processedSignalingMessages.has(message._id) && 
+          !this.pendingProcessedMessageIds.has(message._id)) {
+        messagesToProcess.push(message);
+      }
+      // Always include in batch to mark as processed
+      newMessageIds.push(message._id);
+    }
+
+    // Process only new messages
+    for (const message of messagesToProcess) {
+      this.pendingProcessedMessageIds.add(message._id);
+      
       try {
         await this.handleSignalingMessage(message, connection);
-        messageIds.push(message._id);
+        this.processedSignalingMessages.add(message._id);
       } catch (error) {
         this.sdk.logger.error('Error handling signaling message:', error);
+        // Still mark as processed to avoid reprocessing
+        this.processedSignalingMessages.add(message._id);
       }
     }
 
-    // Mark messages as processed
-    if (messageIds.length > 0) {
-      await this.sdk.convexClient.mutation(
-        api.p2pSignaling.markSignalingMessagesProcessed,
-        { messageIds }
-      );
+    // Mark all messages as processed in batch
+    if (newMessageIds.length > 0) {
+      try {
+        await this.sdk.convexClient.mutation(
+          api.p2pSignaling.markSignalingMessagesProcessed,
+          { messageIds: newMessageIds }
+        );
+        
+        // Remove from pending set after successful batch processing
+        for (const messageId of newMessageIds) {
+          this.pendingProcessedMessageIds.delete(messageId);
+        }
+      } catch (error) {
+        this.sdk.logger.error('Failed to mark signaling messages as processed:', error);
+        // Remove from pending set even on failure to avoid permanent blocking
+        for (const messageId of newMessageIds) {
+          this.pendingProcessedMessageIds.delete(messageId);
+        }
+      }
     }
   }
 
@@ -686,6 +717,10 @@ export class P2PManager {
       });
 
       this.currentConnection = null;
+      
+      // Clear processed message caches
+      this.processedSignalingMessages.clear();
+      this.pendingProcessedMessageIds.clear();
 
       return {
         success: true,

@@ -49,9 +49,9 @@ window.p2pTest = {
             
             if (success) {
                 console.log('✅ Successfully joined lobby:', lobbyId);
-                console.log('🔗 P2P connections automatically being established with existing lobby members!');
-                console.log('📋 Next: Wait a moment for P2P to connect, then try messaging!');
-                console.log('📋 Use: p2pTest.checkP2PReady() to see connection status');
+                console.log('🔗 P2P connections will automatically establish when lobby subscription loads!');
+                console.log('📋 You should be able to send messages immediately!');
+                console.log('📋 Use: p2pTest.checkP2PReady() to verify status if needed');
             } else {
                 console.error('❌ Failed to join lobby');
             }
