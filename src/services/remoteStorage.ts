@@ -73,10 +73,10 @@ async function uploadFromFS(this: WavedashSDK, presignedUploadUrl: string, fileP
     if (!exists) {
       throw new Error(`File not found in FS: ${filePath}`);
     }
-    const blob = this.engineInstance!.FS.readFile(filePath) as Uint8Array;
+    const data = this.engineInstance!.FS.readFile(filePath) as Uint8Array<ArrayBuffer>;
     const response = await fetch(presignedUploadUrl, {
       method: 'PUT',
-      body: blob
+      body: data
       // credentials not needed for presigned upload URL
     });
     return response.ok;
@@ -148,19 +148,18 @@ export async function download(this: WavedashSDK, url: string, filePath: string)
  * @param uploadTo - Optionally provide a path to upload the file to, defaults to the same path as the local file
  * @returns The path of the remote file that the local file was uploaded to
  */
-export async function uploadRemoteFile(this: WavedashSDK, filePath: string, uploadTo?: string): Promise<WavedashResponse<string>> {
-  const args = { filePath, uploadTo };
-  const remoteDestination = uploadTo || args.filePath;
+export async function uploadRemoteFile(this: WavedashSDK, filePath: string): Promise<WavedashResponse<string>> {
+  const args = { filePath };
 
   try {
     const uploadUrl = await this.convexClient.mutation(
       api.remoteFileStorage.getUploadUrl,
-      { path: remoteDestination }
+      { path: args.filePath }
     );
     const success = await upload.call(this, uploadUrl, args.filePath);
     return {
       success: success,
-      data: remoteDestination,
+      data: args.filePath,
       args: args
     };
   } catch (error) {
@@ -181,16 +180,15 @@ export async function uploadRemoteFile(this: WavedashSDK, filePath: string, uplo
  * @param downloadTo - Optionally provide a path to download the file to, defaults to the same path as the remote file
  * @returns The path of the local file that the remote file was downloaded to
  */
-export async function downloadRemoteFile(this: WavedashSDK, filePath: string, downloadTo?: string): Promise<WavedashResponse<string>> {
-  const args = { filePath, downloadTo };
+export async function downloadRemoteFile(this: WavedashSDK, filePath: string): Promise<WavedashResponse<string>> {
+  const args = { filePath };
 
   try {
     const url = getRemoteStorageUrl.call(this, args.filePath);
-    const localDestination = downloadTo || args.filePath;
-    const success = await download.call(this, url, localDestination);
+    const success = await download.call(this, url, args.filePath);
     return {
       success: success,
-      data: localDestination,
+      data: args.filePath,
       args: args
     };
   } catch (error) {

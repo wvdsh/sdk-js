@@ -1,14 +1,15 @@
 import { ConvexClient } from "convex/browser";
-import * as remoteStorage from "./services/remoteStorage";
 import * as Constants from "./_generated/constants";
+import * as remoteStorage from "./services/remoteStorage";
 import * as leaderboards from "./services/leaderboards";
 import * as ugc from "./services/ugc";
-import * as lobby from "./services/lobby";
+// TODO: Refactor all the services above to use Manager pattern we have for lobby and p2p
+import { LobbyManager } from "./services/lobby";
 import { P2PManager } from "./services/p2p";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import type {
   Id,
-  LobbyType,
+  LobbyVisibility,
   LeaderboardSortOrder,
   LeaderboardDisplayType,
   WavedashConfig,
@@ -24,7 +25,9 @@ import type {
   P2PPeer,
   P2PConnection,
   P2PMessage,
-  LobbyUsers
+  LobbyUser,
+  Signal,
+  Lobby
 } from "./types";
 
 class WavedashSDK {
@@ -32,7 +35,8 @@ class WavedashSDK {
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: WavedashUser;
-  protected p2pManager: P2PManager;
+  p2pManager: P2PManager;
+  protected lobbyManager: LobbyManager;
   
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
@@ -46,6 +50,7 @@ class WavedashSDK {
     this.wavedashUser = wavedashUser;
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
+    this.lobbyManager = new LobbyManager(this);
   }
 
   // =============
@@ -224,10 +229,10 @@ class WavedashSDK {
    * @param downloadTo - Optionally provide a path to download the file to, defaults to the same path as the remote file
    * @returns The path of the local file that the remote file was downloaded to
    */
-  async downloadRemoteFile(filePath: string, downloadToLocation?: string): Promise<string | WavedashResponse<string>> {
+  async downloadRemoteFile(filePath: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote file: ${filePath}`);
-    const result = await remoteStorage.downloadRemoteFile.call(this, filePath, downloadToLocation);
+    const result = await remoteStorage.downloadRemoteFile.call(this, filePath);
     return this.formatResponse(result);
   }
 
@@ -237,10 +242,10 @@ class WavedashSDK {
    * @param uploadTo - Optionally provide a path to upload the file to, defaults to the same path as the local file
    * @returns The path of the remote file that the local file was uploaded to
    */
-  async uploadRemoteFile(filePath: string, uploadToLocation?: string): Promise<string | WavedashResponse<string>> {
+  async uploadRemoteFile(filePath: string): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Uploading remote file: ${filePath}`);
-    const result = await remoteStorage.uploadRemoteFile.call(this, filePath, uploadToLocation);
+    const result = await remoteStorage.uploadRemoteFile.call(this, filePath);
     return this.formatResponse(result);
   }
 
@@ -273,145 +278,148 @@ class WavedashSDK {
   // ============
 
   /**
-   * Enable P2P networking for the current lobby
-   * @param lobbyId - The lobby to enable P2P for
-   * @param members - All lobby members for consistent peer handle generation
-   * @returns P2P connection information
+   * Send a message through P2P to a specific peer using their userId
+   * @param toUserId - Peer userId to send to (undefined = broadcast)
+   * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.
+   * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
+   * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
+   * @returns true if the message was sent out successfully
    */
-  async enableP2P(lobbyId: Id<"lobbies">, members: WavedashUser[]): Promise<string | WavedashResponse<P2PConnection>> {
+  sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
     this.ensureReady();
-    this.logger.debug(`Enabling P2P for current lobby: ${lobbyId}`);
-    const result = await this.p2pManager.initializeP2PForCurrentLobby(lobbyId, members);
-    return this.formatResponse(result);
+    return this.p2pManager.sendP2PMessage(toUserId, appChannel, reliable, payload);
   }
 
   /**
-   * Send a message through P2P to a specific peer using their handle
-   * @param toHandle - Peer handle to send to (undefined = broadcast)
-   * @param channel - Channel number for message routing
-   * @param message - Message data
-   * @param reliable - Use reliable channel (default: true)
+   * Send the same payload to all peers in the lobby
+   * @param appChannel - Optional app-level channel for message routing. All messages still use the same P2P connection under the hood.
+   * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
+   * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
+   * @returns true if the message was sent out successfully
    */
-  async sendP2PMessage(toHandle: number | undefined, channel: number, message: any, reliable: boolean = true): Promise<string | WavedashResponse<boolean>> {
+  broadcastP2PMessage(appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
     this.ensureReady();
-    this.logger.debug(`Sending P2P message to peer ${toHandle} on channel ${channel}`);
-    const result = await this.p2pManager.sendP2PMessage(toHandle, channel, message, reliable);
-    return this.formatResponse(result);
-  }
-
-  /**
-   * Send high-frequency game data through P2P (uses unreliable channel)
-   * @param toHandle - Peer handle to send to (undefined = broadcast)
-   * @param channel - Channel number for message routing
-   * @param data - Binary game data
-   */
-  async sendGameData(toHandle: number | undefined, channel: number, data: ArrayBuffer): Promise<string | WavedashResponse<boolean>> {
-    this.ensureReady();
-    this.logger.debug(`Sending game data to peer ${toHandle} on channel ${channel}`);
-    const result = await this.p2pManager.sendGameData(toHandle, channel, data);
-    return this.formatResponse(result);
-  }
-
-  /**
-   * Get peer information by handle
-   * @param handle - The peer handle
-   */
-  getPeerByHandle(handle: number): P2PPeer | null {
-    this.ensureReady();
-    return this.p2pManager.getPeerByHandle(handle);
-  }
-
-  /**
-   * Get the peer handle for a specific user
-   * @param userId - The user ID to look up
-   */
-  getUserHandle(userId: Id<"users">): number | null {
-    this.ensureReady();
-    return this.p2pManager.getUserHandle(userId);
-  }
-
-  /**
-   * Get the current P2P connection state
-   */
-  getCurrentP2PConnection(): P2PConnection | null {
-    this.ensureReady();
-    return this.p2pManager.getCurrentP2PConnection();
-  }
-
-  /**
-   * Disconnect P2P for the current lobby
-   */
-  async disconnectP2P(): Promise<string | WavedashResponse<boolean>> {
-    this.ensureReady();
-    this.logger.debug('Disconnecting P2P for current lobby');
-    const result = await this.p2pManager.disconnectP2P();
-    return this.formatResponse(result);
-  }
-
-  /**
-   * Set callback for receiving P2P messages (for web applications)
-   * @param callback - Function to call when P2P messages are received
-   */
-  setP2PMessageCallback(callback: ((message: P2PMessage) => void) | null): void {
-    this.ensureReady();
-    this.p2pManager.setMessageCallback(callback);
+    return this.p2pManager.sendP2PMessage(undefined, appChannel, reliable, payload);
   }
 
   /**
    * Check if a specific peer is ready for messaging
-   * @param handle - The peer handle to check
+   * @param userId - The peer user ID to check
    */
-  isPeerReady(handle: number): boolean {
+  isPeerReady(userId: Id<"users">): boolean {
     this.ensureReady();
-    return this.p2pManager.isPeerReady(handle);
+    return this.p2pManager.isPeerReady(userId);
   }
 
   /**
-   * Get the connection status of all peers
+   * Check if the broadcast is ready for messaging
+   * @returns true if at least one peer is ready for messaging
    */
-  getPeerStatuses(): Record<number, { reliable?: string; unreliable?: string; ready: boolean }> {
+  isBroadcastReady(): boolean {
     this.ensureReady();
-    return this.p2pManager.getPeerStatuses();
+    return this.p2pManager.isBroadcastReady();
+  }
+
+  /**
+   * Get the SharedArrayBuffer for a specific P2P message channel
+   * @param channel - Channel number (0-3)
+   * @returns SharedArrayBuffer for direct access from game engines, or null if not available
+   */
+  getP2PChannelQueue(channel: number): SharedArrayBuffer | null {
+    this.ensureReady();
+    return this.p2pManager.getChannelQueueBuffer(channel);
+  }
+
+  /**
+   * Get P2P message queue information for debugging
+   */
+  getP2PMessageQueueInfo(): any {
+    this.ensureReady();
+    const info = this.p2pManager.getMessageQueueInfo();
+    return this.formatResponse(info);
   }
 
   // ============
   // Game Lobbies
   // ============
 
-  async createLobby(lobbyType: LobbyType, maxPlayers?: number): Promise<string | WavedashResponse<Id<"lobbies">>> {
+  async createLobby(visibility: LobbyVisibility, maxPlayers?: number): Promise<string | WavedashResponse<Id<"lobbies">>> {
     this.ensureReady();
-    this.logger.debug('Creating lobby with type:', lobbyType, 'and max players:', maxPlayers);
-    const result = await lobby.createLobby.call(this, lobbyType, maxPlayers);
+    this.logger.debug('Creating lobby with visibility:', visibility, 'and max players:', maxPlayers);
+    const result = await this.lobbyManager.createLobby(visibility, maxPlayers);
     return this.formatResponse(result);
   }
 
   async joinLobby(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<Id<"lobbies">>> {
     this.ensureReady();
     this.logger.debug(`Joining lobby: ${lobbyId}`);
-    const result = await lobby.joinLobby.call(this, lobbyId);
+    const result = await this.lobbyManager.joinLobby(lobbyId);
     return this.formatResponse(result);
   }
 
-  async getLobbyUsers(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<LobbyUsers>> {
+  async listAvailableLobbies(): Promise<string | WavedashResponse<Lobby[]>> {
+    this.ensureReady();
+    this.logger.debug(`Listing available lobbies`);
+    const result = await this.lobbyManager.listAvailableLobbies();
+    return this.formatResponse(result);
+  }
+
+  getLobbyUsers(lobbyId: Id<"lobbies">): string | LobbyUser[] {
     this.ensureReady();
     this.logger.debug(`Getting lobby users: ${lobbyId}`);
-    const result = await lobby.getLobbyUsers.call(this, lobbyId);
+    const result = this.lobbyManager.getLobbyUsers(lobbyId);
     return this.formatResponse(result);
   }
 
-  async leaveLobby(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<boolean>> {
+  getNumLobbyUsers(lobbyId: Id<"lobbies">): number {
+    this.ensureReady();
+    this.logger.debug(`Getting number of lobby users: ${lobbyId}`);
+    const result = this.lobbyManager.getNumLobbyUsers(lobbyId);
+    return result;
+  }
+
+  getLobbyHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
+    this.ensureReady();
+    return this.lobbyManager.getHostId(lobbyId); 
+  }
+
+  getLobbyData(lobbyId: Id<"lobbies">, key: string): string {
+    this.ensureReady();
+    this.logger.debug(`Getting lobby data: ${key} for lobby: ${lobbyId}`);
+    return this.lobbyManager.getLobbyData(lobbyId, key);
+  }
+
+  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: any): boolean {
+    this.ensureReady();
+    this.logger.debug(`Setting lobby data: ${key} to ${value}`);
+    return this.lobbyManager.setLobbyData(lobbyId, key, value);
+  }
+
+  async leaveLobby(lobbyId: Id<"lobbies">): Promise<string | WavedashResponse<Id<"lobbies">>> {
     this.ensureReady();
     this.logger.debug(`Leaving lobby: ${lobbyId}`);
-    const result = await lobby.leaveLobby.call(this, lobbyId);
+    const result = await this.lobbyManager.leaveLobby(lobbyId);
     return this.formatResponse(result);
   }
 
-  // TODO: Consider returning the parsed message from the server rather than a boolean
-  async sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): Promise<string | WavedashResponse<boolean>> {
+  // Fire and forget, returns true if the message was sent out successfully
+  // Game can listen for the LobbyMessage signal to get the message that was posted
+  sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
     this.ensureReady();
     this.logger.debug(`Sending lobby message: ${message} to lobby: ${lobbyId}`);
-    const result = await lobby.sendLobbyMessage.call(this, lobbyId, message);
-    return this.formatResponse(result);
+    return this.lobbyManager.sendLobbyMessage(lobbyId, message);
+  }
+
+  // ==============================
+  // JS -> Game Event Broadcasting
+  // ==============================
+  notifyGame(signal: Signal, payload: string | number | boolean | object): void {
+    const data = typeof payload === 'object' ? JSON.stringify(payload) : payload;
+    this.engineInstance?.SendMessage(
+      this.engineCallbackReceiver,
+      signal,
+      data
+    );
   }
 
   // ================

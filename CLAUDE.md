@@ -43,14 +43,14 @@ The SDK follows a class-based architecture with dual-mode operation:
 - **Context-Aware Responses**: `formatResponse()` method automatically formats return values based on whether a game engine instance is attached
 - **Async Operation Handling**: Centralized error handling through helper methods
 - **Type Safety**: Extensive use of TypeScript with API types extracted from Convex backend
-- **Caching**: Leaderboard caching using `Map<Id<"leaderboards">, Leaderboard>`
+- **Caching**: Leaderboard caching using `Map<Id<"leaderboards">, Leaderboard>`, Lobby metadata caching
 
 ### API Integration
 
 The SDK integrates with a Convex backend through:
 - **Queries**: Read operations (getting leaderboards, user data, etc.)
-- **Mutations**: Write operations (creating lobbies, sending messages, etc.)
-- **Subscriptions**: Real-time updates (lobby messages)
+- **Mutations**: Write operations (creating lobbies, posting to leaderboard, etc.)
+- **Subscriptions**: Real-time updates (lobby messages, lobby users)
 
 ## Key Features
 
@@ -69,9 +69,24 @@ The SDK integrates with a Convex backend through:
 - Attach UGC to leaderboard entries
 - Control visibility and access permissions
 
+### P2P Networking
+- WebRTC-based peer-to-peer connections between lobby members autotriggered when users join lobby
+- Convex backend handles initial WebRTC signaling (offer/answer/ICE exchange)
+- Reliable and unreliable data channels for different message types
+- Deterministic peer handle assignment based on sorted user IDs
+- TURN server fallback for NAT traversal when direct connections fail
+
+Later:
+1. Timeout connections that are unused for long enough, the next sendMessage would trigger a new connection to be made
+2. Allow different P2P network topology (mesh, star, relay)
+3. Don't auto-connect every single lobby member, generate P2P connection on the fly when game first tries to send a packet to a user
+4. More customization on sending (no delay, buffering multiple packets per send)
+5. int handles for peers to reduce packet size and speed up comparisons
+6. Look into more performant options for sharing zero-copy data between engine and JS, current set up requires a few mandatory data copies
+
 ### Dual Platform Support
 - **Web**: Direct JavaScript object returns
-- **Game Engines**: JSON string communication via `SendMessage` interface
+- **Game Engines**: JSON string communication via return values and `SendMessage` notifications
 
 ## Build System
 

@@ -2,10 +2,13 @@ import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 import { api, PublicApiType } from "./_generated/convex_api";
 import { P2P_SIGNALING_MESSAGE_TYPE } from "./_generated/constants";
+import { Signals } from "./signals";
 
 // Extract types from the API
-export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
-export type LobbyUsers = FunctionReturnType<typeof api.gameLobby.lobbyUsers>;
+export type LobbyVisibility = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["visibility"];
+export type LobbyUser = FunctionReturnType<typeof api.gameLobby.lobbyUsers>[0];
+export type LobbyMessage = FunctionReturnType<typeof api.gameLobby.lobbyMessages>[0];
+export type Lobby = FunctionReturnType<typeof api.gameLobby.listAvailable>[0];
 export type UGCType = PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
 export type UGCVisibility = PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
 export type LeaderboardSortOrder = PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
@@ -16,6 +19,9 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<typeof api.leaderboard
   userId: Id<"users">;
   username: string;
 };
+
+// Type helper to get signal values as a union type
+export type Signal = typeof Signals[keyof typeof Signals];
 
 // Configuration and user types
 export interface WavedashConfig {
@@ -50,7 +56,7 @@ export interface EngineInstance {
   type: GameEngine;
   // Broadcasts a message to the engine instance
   // Exposed natively by Unity's engine instance, added manually by Wavedash Godot SDK
-  SendMessage(objectName: string, methodName: string, value?: string | number): void;
+  SendMessage(objectName: string, methodName: Signal, value?: string | number | boolean): void;
   // Standard Emscripten filesystem API: https://emscripten.org/docs/api_reference/Filesystem-API.html
   FS: {
     readFile(path: string, opts?: Record<string, any>): string | Uint8Array;
@@ -76,16 +82,14 @@ export interface WavedashResponse<T> {
 
 // P2P Connection types
 export interface P2PPeer {
-  handle: number;           // Integer handle for networking performance
-  userId: Id<"users">;      // Links to persistent user
+  userId: Id<"users">;      // Primary identifier - links to persistent user
   username: string;
-  isHost: boolean;
+  // TODO Calvin: Consider adding int handle for each peer to speed up messaging over string handles
 }
 
 export interface P2PConnection {
   lobbyId: Id<"lobbies">;
-  localHandle: number;
-  peers: Record<number, P2PPeer>;  // handle -> peer info (JSON serializable)
+  peers: Record<Id<"users">, P2PPeer>;  // userId -> peer info (we may add more fields to P2PPeer later)
   state: P2PConnectionState;
 }
 
@@ -96,17 +100,16 @@ export type P2PConnectionState =
   | "failed";
 
 export interface P2PMessage {
-  fromHandle: number;
-  toHandle?: number;        // undefined = broadcast
+  fromUserId: Id<"users">; // Primary identifier for sender TODO: Make this a small int handle instead of a 32 byte string
   channel: number;          // Channel for message routing
-  data: any;
-  timestamp: number;
+  payload: ArrayBuffer | string | Uint8Array;
+  // TODO: Assign an incrementing messsage ID to each message for ordering?
 }
 
 export interface P2PSignalingMessage {  
   type: typeof P2P_SIGNALING_MESSAGE_TYPE[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
-  fromHandle?: number;
-  toHandle?: number;
+  fromUserId?: Id<"users">; // Primary identifier for sender
+  toUserId: Id<"users">;   // Primary identifier for recipient
   data: any;
 }
 
