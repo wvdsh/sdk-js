@@ -1,7 +1,7 @@
 /**
  * P2P networking service
  * 
- * Handles WebRTC peer-to-peer connections for lobbies with integer peer handles
+ * Handles WebRTC peer-to-peer connections for lobbies
  */
 
 import type {
@@ -9,12 +9,11 @@ import type {
   WavedashResponse,
   P2PPeer,
   P2PConnection,
-  P2PConnectionState,
   P2PMessage,
-  P2PSignalingMessage,
   P2PConfig,
   WavedashUser,
 } from '../types';
+import { Signals } from '../signals';
 import { api } from '../_generated/convex_api';
 import type { WavedashSDK } from '../index';
 import { P2P_SIGNALING_MESSAGE_TYPE } from '../_generated/constants';
@@ -37,8 +36,6 @@ const DEFAULT_P2P_CONFIG: P2PConfig = {
   enableUnreliableChannel: true,
 };
 
-import { Signals } from '../signals';
-
 export class P2PManager {
   private sdk: WavedashSDK;
   private currentConnection: P2PConnection | null = null;
@@ -51,9 +48,9 @@ export class P2PManager {
   // SharedArrayBuffer message queues - one per channel for performance
   private channelQueues = new Map<number, {
     buffer: SharedArrayBuffer;
-    incomingHeaderView: Int32Array;     // P2P network → Game engine (JS writes, Godot reads)
+    incomingHeaderView: Int32Array;     // P2P network → Game engine (JS writes, engine reads)
     incomingDataView: Uint8Array;
-    outgoingHeaderView: Int32Array;     // Game engine → P2P network (Godot writes, JS reads)
+    outgoingHeaderView: Int32Array;     // Game engine → P2P network (engine writes, JS reads)
     outgoingDataView: Uint8Array;
   }>();
   private readonly QUEUE_SIZE = 256; // Number of messages per direction per channel
@@ -62,7 +59,7 @@ export class P2PManager {
   private readonly MAX_CHANNELS = 4; // Maximum number of channels to support
   
   // Binary message format offsets
-  private readonly USERID_SIZE = 32;
+  private readonly USERID_SIZE = 32;  // TODO: Switch to int handles so this can be 4 bytes instead of 32
   private readonly CHANNEL_SIZE = 4;
   private readonly DATALENGTH_SIZE = 4;
   private readonly CHANNEL_OFFSET = this.USERID_SIZE; // Channel comes after fromUserId
@@ -935,7 +932,7 @@ export class P2PManager {
     };
   }
 
-  // Get SharedArrayBuffer for specific channel (for Godot to access directly)
+  // Get SharedArrayBuffer for specific channel (for game engine to access directly)
   getChannelQueueBuffer(channel: number): SharedArrayBuffer | null {
     const queue = this.channelQueues.get(channel);
     return queue ? queue.buffer : null;

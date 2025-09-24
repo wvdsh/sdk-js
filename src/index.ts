@@ -283,6 +283,7 @@ class WavedashSDK {
    * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
    * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
+   * @returns true if the message was sent out successfully
    */
   sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
     this.ensureReady();
@@ -291,6 +292,10 @@ class WavedashSDK {
 
   /**
    * Send the same payload to all peers in the lobby
+   * @param appChannel - Optional app-level channel for message routing. All messages still use the same P2P connection under the hood.
+   * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
+   * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
+   * @returns true if the message was sent out successfully
    */
   broadcastP2PMessage(appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
     this.ensureReady();
@@ -308,6 +313,7 @@ class WavedashSDK {
 
   /**
    * Check if the broadcast is ready for messaging
+   * @returns true if at least one peer is ready for messaging
    */
   isBroadcastReady(): boolean {
     this.ensureReady();
