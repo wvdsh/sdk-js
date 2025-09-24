@@ -307,6 +307,14 @@ class WavedashSDK {
   }
 
   /**
+   * Check if the broadcast is ready for messaging
+   */
+  isBroadcastReady(): boolean {
+    this.ensureReady();
+    return this.p2pManager.isBroadcastReady();
+  }
+
+  /**
    * Get the SharedArrayBuffer for a specific P2P message channel
    * @param channel - Channel number (0-3)
    * @returns SharedArrayBuffer for direct access from game engines, or null if not available
