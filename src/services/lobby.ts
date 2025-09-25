@@ -31,6 +31,8 @@ export class LobbyManager {
   private lobbyMetadata: Record<string, any> = {};
   private recentMessageIds: Id<"lobbyMessages">[] = [];
   private lobbyDataUpdateTimeout: number | null = null;
+  private maybeBeingDeletedLobbyIds: Set<Id<"lobbies">> = new Set();
+  private resetMaybeBeingDeletedLobbyIdTimeouts: Map<Id<"lobbies">, number> = new Map();
 
   // Cache results of queries for a list of lobbies
   // We'll cache metadata and num users for each lobby and return that info synchronously when requested by the game
@@ -210,13 +212,17 @@ export class LobbyManager {
       const lobbies = await this.sdk.convexClient.query(
         api.gameLobby.listAvailable,
         args
-      );  
-      for (const lobby of lobbies) {
+      );
+
+      // Filter out lobbies that are being deleted
+      const filteredLobbies = lobbies.filter((lobby) => !this.maybeBeingDeletedLobbyIds.has(lobby.lobbyId));
+
+      for (const lobby of filteredLobbies) {
         this.cachedLobbies[lobby.lobbyId] = lobby;
       }
       return {
         success: true,
-        data: lobbies,
+        data: filteredLobbies,
         args: args
       };
     } catch (error) {
@@ -312,6 +318,28 @@ export class LobbyManager {
     // Clean up P2P connections when leaving lobby
     this.sdk.p2pManager.disconnectP2P()
 
+    // If we're leaving as the last user in the lobby, it's going to be deleted unless someone else joined right as we left
+    // Temporarily track this lobby ID so we don't list it as available
+    if (this.lobbyId && this.lobbyUsers.length === 1) {
+      const lobbyId = this.lobbyId;
+      
+      // Clear any existing timeout for this lobby
+      const existingTimeout = this.resetMaybeBeingDeletedLobbyIdTimeouts.get(lobbyId);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+      
+      // Track this lobby as potentially being deleted
+      this.maybeBeingDeletedLobbyIds.add(lobbyId);
+      
+      // Set timeout to remove it from the set after 500ms
+      const timeoutId = setTimeout(() => {
+        this.maybeBeingDeletedLobbyIds.delete(lobbyId);
+        this.resetMaybeBeingDeletedLobbyIdTimeouts.delete(lobbyId);
+      }, 500);
+      
+      this.resetMaybeBeingDeletedLobbyIdTimeouts.set(lobbyId, timeoutId);
+    }
     this.lobbyId = null;
     this.lobbyUsers = [];
     this.lobbyHostId = null;
