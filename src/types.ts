@@ -1,7 +1,7 @@
 import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 import { api, PublicApiType } from "./_generated/convex_api";
-import { P2P_SIGNALING_MESSAGE_TYPE } from "./_generated/constants";
+import { GAME_ENGINE, P2P_SIGNALING_MESSAGE_TYPE } from "./_generated/constants";
 
 // Extract types from the API
 export type LobbyType = PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["lobbyType"];
@@ -39,15 +39,10 @@ export interface RemoteFileMetadata {
   etag: string;  // ETag of the entry
 }
 
-export enum GameEngine {
-  Godot="GODOT",
-  Unity="UNITY",
-  Custom="CUSTOM",
-}
 
 export interface EngineInstance {
   // Add more as we support more engines
-  type: GameEngine;
+  type: typeof GAME_ENGINE[keyof typeof GAME_ENGINE];
   // Broadcasts a message to the engine instance
   // Exposed natively by Unity's engine instance, added manually by Wavedash Godot SDK
   SendMessage(objectName: string, methodName: string, value?: string | number): void;

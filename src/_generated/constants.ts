@@ -8,6 +8,14 @@
  * We use int values here rather than strings to speed up data marshalling in SDK calls
  */
 
+// ========== GAME ENGINE ==========
+export const GAME_ENGINE = {
+	GODOT: 'GODOT',
+	UNITY: 'UNITY',
+	UNREAL: 'UNREAL',
+	CUSTOM: 'CUSTOM'
+} as const;
+
 // ========== LOBBIES ==========
 const LOBBY_EXPIRY_HOURS = 24;
 
@@ -17,11 +25,13 @@ export const LOBBY_DEFAULTS = {
 	EXPIRY_MS: LOBBY_EXPIRY_HOURS * 60 * 60 * 1000
 } as const;
 
-export const LOBBY_TYPE = {
+export const LOBBY_VISIBILITY = {
 	PUBLIC: 0,
 	FRIENDS_ONLY: 1,
 	PRIVATE: 2
 } as const;
+
+export const LOBBY_MESSAGE_MAX_LENGTH = 500;
 
 // ========== LEADERBOARDS ==========
 export const LEADERBOARD_SORT_ORDER = {
@@ -59,16 +69,14 @@ export const UGC_UPLOAD_STATUS = {
 
 export const REMOTE_STORAGE = {
 	DEFAULT_LIMIT_BYTES: 1024 * 1024 * 1024, // 1GB default limit
-	
+
 	// Rate limiting configuration
-	UPLOADS_PER_MINUTE: 30,     // Max uploads per minute (burst protection)
-	UPLOADS_PER_HOUR: 300,      // Max uploads per hour (sustained usage)
+	UPLOADS_PER_MINUTE: 30, // Max uploads per minute (burst protection)
+	UPLOADS_PER_HOUR: 300 // Max uploads per hour (sustained usage)
 } as const;
 
 export const P2P_SIGNALING_MESSAGE_TYPE = {
 	OFFER: 'offer',
 	ANSWER: 'answer',
-	ICE_CANDIDATE: 'ice-candidate',
-	PEER_JOINED: 'peer-joined',
-	PEER_LEFT: 'peer-left'
+	ICE_CANDIDATE: 'ice-candidate'
 } as const;

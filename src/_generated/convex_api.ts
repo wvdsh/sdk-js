@@ -86,7 +86,7 @@ export type PublicApiType = {
       "public",
       { lobbyId: Id<"lobbies"> },
       Array<{
-        isCurrentUser: boolean;
+        isHost: boolean;
         lobbyId: Id<"lobbies">;
         userId: Id<"users">;
         username: string;
@@ -95,8 +95,8 @@ export type PublicApiType = {
     createAndJoinLobby: FunctionReference<
       "mutation",
       "public",
-      { lobbyType: 0 | 1 | 2; maxPlayers?: number },
-      any
+      { maxPlayers?: number; visibility: 0 | 1 | 2 },
+      Id<"lobbies">
     >;
     joinLobby: FunctionReference<
       "mutation",
@@ -108,19 +108,50 @@ export type PublicApiType = {
       "mutation",
       "public",
       { lobbyId: Id<"lobbies"> },
-      any
+      boolean
     >;
     sendMessage: FunctionReference<
       "mutation",
       "public",
       { lobbyId: Id<"lobbies">; message: string },
-      any
+      string
+    >;
+    listAvailable: FunctionReference<
+      "query",
+      "public",
+      { filters?: Record<string, any> },
+      Array<{
+        lobbyId: Id<"lobbies">;
+        maxPlayers: number;
+        metadata: Record<string, any>;
+        playerCount: number;
+        visibility: 0 | 1 | 2;
+      }>
     >;
     lobbyMessages: FunctionReference<
       "query",
       "public",
       { lobbyId: Id<"lobbies"> },
-      any
+      Array<{
+        lobbyId: Id<"lobbies">;
+        message: string;
+        messageId: Id<"lobbyMessages">;
+        timestamp: number;
+        userId: Id<"users">;
+        username: string;
+      }>
+    >;
+    setLobbyMetadata: FunctionReference<
+      "mutation",
+      "public",
+      { lobbyId: Id<"lobbies">; updates: Record<string, any> },
+      boolean
+    >;
+    getLobbyMetadata: FunctionReference<
+      "query",
+      "public",
+      { lobbyId: Id<"lobbies"> },
+      Record<string, any>
     >;
   };
   auth: {
@@ -483,13 +514,8 @@ export type PublicApiType = {
       {
         data: any;
         lobbyId: Id<"lobbies">;
-        messageType:
-          | "offer"
-          | "answer"
-          | "ice-candidate"
-          | "peer-joined"
-          | "peer-left";
-        toUserId?: Id<"users">;
+        messageType: "offer" | "answer" | "ice-candidate";
+        toUserId: Id<"users">;
       },
       any
     >;
@@ -503,12 +529,6 @@ export type PublicApiType = {
       "mutation",
       "public",
       { messageIds: Array<Id<"p2pSignalingMessages">> },
-      any
-    >;
-    cleanupExpiredSignalingMessages: FunctionReference<
-      "mutation",
-      "public",
-      Record<string, never>,
       any
     >;
   };

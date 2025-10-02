@@ -446,9 +446,6 @@ export { WavedashSDK };
 // Re-export all types
 export type * from "./types";
 
-// export enums from types
-export { GameEngine } from "./types";
-
 // Type-safe initialization helper
 export function setupWavedashSDK(
   convexClient: ConvexClient,
