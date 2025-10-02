@@ -22,12 +22,10 @@ import type {
   UGCType,
   UGCVisibility,
   RemoteFileMetadata,
-  P2PPeer,
-  P2PConnection,
   P2PMessage,
   LobbyUser,
   Signal,
-  Lobby
+  Lobby,
 } from "./types";
 
 class WavedashSDK {
@@ -282,11 +280,16 @@ class WavedashSDK {
    * @param toUserId - Peer userId to send to (undefined = broadcast)
    * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
-   * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
+   * @param payload - The payload to send (either byte array or a base64 encoded string)
    * @returns true if the message was sent out successfully
    */
-  sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
+  sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload: string | Uint8Array): boolean {
     this.ensureReady();
+    if (toUserId && !this.p2pManager.isPeerReady(toUserId)) {
+      return false;
+    } else if (!toUserId && !this.p2pManager.isBroadcastReady()) {
+      return false;
+    }
     return this.p2pManager.sendP2PMessage(toUserId, appChannel, reliable, payload);
   }
 
@@ -294,12 +297,29 @@ class WavedashSDK {
    * Send the same payload to all peers in the lobby
    * @param appChannel - Optional app-level channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
-   * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
+   * @param payload - The payload to send (either byte array or a base64 encoded string)
    * @returns true if the message was sent out successfully
    */
-  broadcastP2PMessage(appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
+  broadcastP2PMessage(appChannel: number = 0, reliable: boolean = true, payload: string | Uint8Array): boolean {
     this.ensureReady();
+    if (!this.p2pManager.isBroadcastReady()) {
+      return false;
+    }
     return this.p2pManager.sendP2PMessage(undefined, appChannel, reliable, payload);
+  }
+
+  /**
+   * Read one binary message from a specific P2P message channel
+   * @param appChannel - The channel to read from
+   * @returns To Game Engine: Uint8Array (zero-copy view, empty if no message available)
+   *          To JS: P2PMessage (null if no message available)
+   */
+  readP2PMessageFromChannel(appChannel: number): Uint8Array | P2PMessage | null {
+    this.ensureReady();
+    // Should we return a copy of the binary data rather than a view into the SharedArrayBuffer?
+    // We're assuming the engine makes its own copy of the binary data when calling this function
+    // If we ever see race conditions, make this a copy, but for performance, we're returning a view
+    return this.p2pManager.readMessageFromChannel(appChannel);
   }
 
   /**
@@ -318,25 +338,6 @@ class WavedashSDK {
   isBroadcastReady(): boolean {
     this.ensureReady();
     return this.p2pManager.isBroadcastReady();
-  }
-
-  /**
-   * Get the SharedArrayBuffer for a specific P2P message channel
-   * @param channel - Channel number (0-3)
-   * @returns SharedArrayBuffer for direct access from game engines, or null if not available
-   */
-  getP2PChannelQueue(channel: number): SharedArrayBuffer | null {
-    this.ensureReady();
-    return this.p2pManager.getChannelQueueBuffer(channel);
-  }
-
-  /**
-   * Get P2P message queue information for debugging
-   */
-  getP2PMessageQueueInfo(): any {
-    this.ensureReady();
-    const info = this.p2pManager.getMessageQueueInfo();
-    return this.formatResponse(info);
   }
 
   // ============
@@ -406,7 +407,6 @@ class WavedashSDK {
   // Game can listen for the LobbyMessage signal to get the message that was posted
   sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
     this.ensureReady();
-    this.logger.debug(`Sending lobby message: ${message} to lobby: ${lobbyId}`);
     return this.lobbyManager.sendLobbyMessage(lobbyId, message);
   }
 
@@ -427,7 +427,7 @@ class WavedashSDK {
   // ================
 
   private isGodot(): boolean {
-    return this.engineInstance !== null && this.engineInstance.type === "GODOT";
+    return this.engineInstance !== null && this.engineInstance.type === Constants.GAME_ENGINE.GODOT;
   }
 
   // Helper to format response based on context

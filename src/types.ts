@@ -97,7 +97,7 @@ export type P2PConnectionState =
 export interface P2PMessage {
   fromUserId: Id<"users">; // Primary identifier for sender TODO: Make this a small int handle instead of a 32 byte string
   channel: number;          // Channel for message routing
-  payload: ArrayBuffer | string | Uint8Array;
+  payload: Uint8Array;
   // TODO: Assign an incrementing messsage ID to each message for ordering?
 }
 

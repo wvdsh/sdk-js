@@ -46,17 +46,17 @@ export class P2PManager {
   private processedSignalingMessages = new Set<string>(); // Track processed message IDs
   
   // SharedArrayBuffer message queues - one per channel for performance
+  // Only incoming queue is used (P2P network → Game engine)
   private channelQueues = new Map<number, {
     buffer: SharedArrayBuffer;
-    incomingHeaderView: Int32Array;     // P2P network → Game engine (JS writes, engine reads)
+    incomingHeaderView: Int32Array;
     incomingDataView: Uint8Array;
-    outgoingHeaderView: Int32Array;     // Game engine → P2P network (engine writes, JS reads)
-    outgoingDataView: Uint8Array;
   }>();
   private readonly QUEUE_SIZE = 256; // Number of messages per direction per channel
   private readonly MESSAGE_SIZE = 1024; // Max bytes per message
   private readonly HEADER_SIZE = 16; // Queue metadata: writeIndex, readIndex, messageCount, version
-  private readonly MAX_CHANNELS = 4; // Maximum number of channels to support
+  private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
+  private readonly DEFAULT_NUM_CHANNELS = 4;  // Default number of channels to pre-allocate
   
   // Binary message format offsets
   private readonly USERID_SIZE = 32;  // TODO: Switch to int handles so this can be 4 bytes instead of 32
@@ -529,7 +529,7 @@ export class P2PManager {
 
     channel.onmessage = (event) => {
       // Enqueue the raw binary data directly to SharedArrayBuffer queue
-      this.enqueueBinaryMessage(event.data);
+      this.enqueueBinaryMessageToIncomingQueue(event.data);
     };
 
     channel.onerror = (error) => {
@@ -560,33 +560,21 @@ export class P2PManager {
   // Message Sending
   // ================
 
-  // TODO Calvin: Try having JS poll the queue and send all queued messages once per tick rather than sending small packets one at a time
-  sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
+  sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload: string | Uint8Array): boolean {
     try {
-      if (!this.currentConnection) {
+      if (!this.currentConnection || !payload) {
         return false;
       }
 
-      let messageData: Uint8Array;
+      const data = typeof payload === 'string' ? this.decodeBase64(payload) : payload;
 
-      // Check if we're being called with channel number (read from queue) or direct data
-      if (!payload) {
-        // No payload provided, read from outgoing queue at specified channel
-        const channel = appChannel;
-        const queueData = this.readFromOutgoingQueue(channel);
-        if (!queueData) {
-          return false;
-        }
-        messageData = queueData;
-      } else {
-        // Called with payload provided - encode it
-        const message: P2PMessage = {
-          fromUserId: this.sdk.getUserId(),
-          channel: appChannel,
-          payload: payload
-        };
-        messageData = this.encodeBinaryMessage(message);
-      }
+      // Called with payload provided - encode it
+      const message: P2PMessage = {
+        fromUserId: this.sdk.getUserId(),
+        channel: appChannel,
+        payload: data
+      };
+      const messageData: Uint8Array = this.encodeBinaryMessage(message);
 
       const channelMap = reliable ? this.reliableChannels : this.unreliableChannels;
 
@@ -747,11 +735,11 @@ export class P2PManager {
   private initializeMessageQueue(): void {
     try {
       // Pre-create queues for common channels (0-3)
-      for (let channel = 0; channel < this.MAX_CHANNELS; channel++) {
+      for (let channel = 0; channel < this.DEFAULT_NUM_CHANNELS; channel++) {
         this.createChannelQueue(channel);
       }
       
-      this.sdk.logger.debug(`Initialized ${this.MAX_CHANNELS} SharedArrayBuffer P2P message queues`);
+      this.sdk.logger.debug(`Initialized ${this.DEFAULT_NUM_CHANNELS} SharedArrayBuffer P2P message queues`);
     } catch (error) {
       this.sdk.logger.warn('SharedArrayBuffer not supported');
       // Fallback to signal-based notifications
@@ -759,105 +747,29 @@ export class P2PManager {
   }
 
   private createChannelQueue(channel: number): void {
-    // Total size: 2 headers + 2 data sections (bidirectional)
+    // Only incoming queue needed (P2P network → Game engine)
     const queueDataSize = this.MESSAGE_SIZE * this.QUEUE_SIZE;
-    const totalSize = (this.HEADER_SIZE * 2) + (queueDataSize * 2);
+    const totalSize = this.HEADER_SIZE + queueDataSize;
     const buffer = new SharedArrayBuffer(totalSize);
     
-    // Layout: [Incoming Header][Outgoing Header][Incoming Data][Outgoing Data]
+    // Layout: [Incoming Header][Incoming Data]
     const incomingHeaderView = new Int32Array(buffer, 0, 4);
-    const outgoingHeaderView = new Int32Array(buffer, this.HEADER_SIZE, 4);
-    const incomingDataView = new Uint8Array(buffer, this.HEADER_SIZE * 2, queueDataSize);
-    const outgoingDataView = new Uint8Array(buffer, (this.HEADER_SIZE * 2) + queueDataSize, queueDataSize);
+    const incomingDataView = new Uint8Array(buffer, this.HEADER_SIZE, queueDataSize);
     
-    // Initialize both queue headers
-    // Incoming queue (P2P network → Game engine)
+    // Initialize incoming queue header
     incomingHeaderView[0] = 0; // writeIndex
     incomingHeaderView[1] = 0; // readIndex  
     incomingHeaderView[2] = 0; // messageCount
     incomingHeaderView[3] = 1; // version
     
-    // Outgoing queue (Game engine → P2P network)
-    outgoingHeaderView[0] = 0; // writeIndex
-    outgoingHeaderView[1] = 0; // readIndex  
-    outgoingHeaderView[2] = 0; // messageCount
-    outgoingHeaderView[3] = 1; // version
-    
     this.channelQueues.set(channel, {
       buffer,
       incomingHeaderView,
-      incomingDataView,
-      outgoingHeaderView,
-      outgoingDataView
+      incomingDataView
     });
-    
-    // Expose to global scope for Godot access
-    // if (typeof window !== 'undefined') {
-    //   if (!(window as any).WavedashP2PChannelQueues) {
-    //     (window as any).WavedashP2PChannelQueues = {};
-    //   }
-    //   (window as any).WavedashP2PChannelQueues[channel] = buffer;
-    // }
   }
 
-  // private enqueueMessage(message: P2PMessage): void {
-  //   const channel = message.channel;
-    
-  //   // Create channel queue if it doesn't exist
-  //   if (!this.channelQueues.has(channel)) {
-  //     if (channel >= this.MAX_CHANNELS) {
-  //       this.sdk.logger.warn(`Channel ${channel} exceeds max channels (${this.MAX_CHANNELS}), dropping message`);
-  //       return;
-  //     }
-  //     this.createChannelQueue(channel);
-  //   }
-
-  //   const queue = this.channelQueues.get(channel)!;
-
-  //   try {
-  //     // Encode message to binary
-  //     const messageData = this.encodeBinaryMessage(message);
-  //     if (messageData.byteLength > this.MESSAGE_SIZE - 4) { // -4 for size prefix
-  //       this.sdk.logger.warn(`Message too large for queue: ${messageData.byteLength} > ${this.MESSAGE_SIZE - 4}`);
-  //       return;
-  //     }
-
-  //     // Get current queue state (atomic reads) - using incoming queue
-  //     const writeIndex = Atomics.load(queue.incomingHeaderView, 0);
-  //     const messageCount = Atomics.load(queue.incomingHeaderView, 2);
-
-  //     // Check if queue is full
-  //     if (messageCount >= this.QUEUE_SIZE) {
-  //       this.sdk.logger.warn(`P2P message queue full for channel ${channel}, dropping message`);
-  //       return;
-  //     }
-
-  //     // Calculate write position in the incoming data buffer
-  //     const writeOffset = writeIndex * this.MESSAGE_SIZE;
-      
-  //     // Write message size at the beginning of the slot
-  //     const incomingDataOffset = this.HEADER_SIZE * 2; // Skip both headers
-  //     const slotView = new DataView(queue.buffer, incomingDataOffset + writeOffset, this.MESSAGE_SIZE);
-  //     slotView.setUint32(0, messageData.byteLength, true);
-      
-  //     // Write message data
-  //     const messageBytes = new Uint8Array(messageData);
-  //     queue.incomingDataView.set(messageBytes, writeOffset + 4);
-
-  //     // Update queue pointers atomically
-  //     const nextWriteIndex = (writeIndex + 1) % this.QUEUE_SIZE;
-  //     Atomics.store(queue.incomingHeaderView, 0, nextWriteIndex); // writeIndex
-  //     Atomics.add(queue.incomingHeaderView, 2, 1); // messageCount++
-      
-  //     // Notify waiting readers (Game engine side)
-  //     Atomics.notify(queue.incomingHeaderView, 2, 1);
-      
-  //   } catch (error) {
-  //     this.sdk.logger.error(`Error enqueuing P2P message on channel ${channel}:`, error);
-  //   }
-  // }
-
-  private enqueueBinaryMessage(binaryData: ArrayBuffer): void {
+  private enqueueBinaryMessageToIncomingQueue(binaryData: ArrayBuffer): void {
     try {
       // Extract channel from the binary data to determine which queue to use
       if (binaryData.byteLength < this.CHANNEL_OFFSET + this.CHANNEL_SIZE) {
@@ -899,7 +811,7 @@ export class P2PManager {
       const writeOffset = writeIndex * this.MESSAGE_SIZE;
       
       // Write message size at the beginning of the slot
-      const incomingDataOffset = this.HEADER_SIZE * 2; // Skip both headers
+      const incomingDataOffset = this.HEADER_SIZE; // Skip header
       const slotView = new DataView(queue.buffer, incomingDataOffset + writeOffset, this.MESSAGE_SIZE);
       slotView.setUint32(0, binaryData.byteLength, true);
       
@@ -912,7 +824,7 @@ export class P2PManager {
       Atomics.store(queue.incomingHeaderView, 0, nextWriteIndex); // writeIndex
       Atomics.add(queue.incomingHeaderView, 2, 1); // messageCount++
       
-      // Notify waiting readers (Game engine side)
+      // Notify waiting readers (Only matters if we have another thread also reading directly from this queue, which we don't yet)
       Atomics.notify(queue.incomingHeaderView, 2, 1);
       
     } catch (error) {
@@ -938,42 +850,44 @@ export class P2PManager {
     return queue ? queue.buffer : null;
   }
 
-  // Read one message from outgoing queue for a specific channel
-  // TODO Calvin: Confirm that the message pulled from the queue matches the intended recipient for the call to sendP2PMessage
-  private readFromOutgoingQueue(channel: number): Uint8Array | null {
-    const queue = this.channelQueues.get(channel);
+  // Read one message from the incoming queue for a specific channel
+  // Returns raw binary to game engines
+  // Returns decoded P2PMessage if called in a JS context
+  readMessageFromChannel(appChannel: number): Uint8Array | P2PMessage | null {
+    const queue = this.channelQueues.get(appChannel);
     if (!queue) {
-      return null;
+      return this.sdk.engineInstance ? new Uint8Array(0) : null;
     }
-
-    const messageCount = Atomics.load(queue.outgoingHeaderView, 2);
-    if (messageCount === 0) {
-      return null; // No messages available
-    }
-
-    const readIndex = Atomics.load(queue.outgoingHeaderView, 1);
-    const readOffset = readIndex * this.MESSAGE_SIZE;
-    const outgoingDataOffset = (this.HEADER_SIZE * 2) + (this.MESSAGE_SIZE * this.QUEUE_SIZE);
     
-    // Read message size
-    const slotView = new DataView(queue.buffer, outgoingDataOffset + readOffset, this.MESSAGE_SIZE);
+    const messageCount = Atomics.load(queue.incomingHeaderView, 2);
+    if (messageCount === 0) {
+      return this.sdk.engineInstance ? new Uint8Array(0) : null;
+    }
+    
+    const readIndex = Atomics.load(queue.incomingHeaderView, 1);
+    const readOffset = readIndex * this.MESSAGE_SIZE;
+    const incomingDataOffset = this.HEADER_SIZE;
+    
+    const slotView = new DataView(queue.buffer, incomingDataOffset + readOffset, this.MESSAGE_SIZE);
     const messageSize = slotView.getUint32(0, true);
     
     if (messageSize === 0 || messageSize > this.MESSAGE_SIZE - 4) {
-      return null; // Invalid message
+      // Invalid message, skip it
+      const nextReadIndex = (readIndex + 1) % this.QUEUE_SIZE;
+      Atomics.store(queue.incomingHeaderView, 1, nextReadIndex); // readIndex
+      Atomics.sub(queue.incomingHeaderView, 2, 1); // messageCount--
+      return this.sdk.engineInstance ? new Uint8Array(0) : null;
     }
     
-    // Update read pointer atomically
-    const nextReadIndex = (readIndex + 1) % this.QUEUE_SIZE;
-    Atomics.store(queue.outgoingHeaderView, 1, nextReadIndex); // readIndex
-    Atomics.sub(queue.outgoingHeaderView, 2, 1); // messageCount--
+    // Create a view directly from the SharedArrayBuffer (no copying needed for incoming messages)
+    const messageView = new Uint8Array(queue.buffer, incomingDataOffset + readOffset + 4, messageSize);
 
-    // WebRTC refuses to send from SharedArrayBuffer directly so we need to make a copy
-    const messageData = new Uint8Array(messageSize);
-    const sourceView = new Uint8Array(queue.buffer, outgoingDataOffset + readOffset + 4, messageSize);
-    messageData.set(sourceView);
-    
-    return messageData;
+    const nextReadIndex = (readIndex + 1) % this.QUEUE_SIZE;
+    Atomics.store(queue.incomingHeaderView, 1, nextReadIndex); // readIndex
+    Atomics.sub(queue.incomingHeaderView, 2, 1); // messageCount--
+
+    // Engine gets the raw binary, JS gets the decoded P2PMessage
+    return this.sdk.engineInstance ? messageView : this.decodeBinaryMessage(messageView);
   }
 
   // ================
@@ -983,7 +897,7 @@ export class P2PManager {
   private encodeBinaryMessage(message: P2PMessage): Uint8Array {
     // Binary format: [fromUserId(32)][channel(4)][dataLength(4)][payload(...)]
     const fromUserIdBytes = new TextEncoder().encode(message.fromUserId).slice(0, this.USERID_SIZE);
-    const payloadBytes = message.payload instanceof ArrayBuffer ? new Uint8Array(message.payload) : new Uint8Array(0);
+    const payloadBytes = message.payload
     
     const totalLength = this.PAYLOAD_OFFSET + payloadBytes.length;
     const uint8View = new Uint8Array(totalLength);
@@ -1011,13 +925,13 @@ export class P2PManager {
     return uint8View;
   }
 
-  private decodeBinaryMessage(data: ArrayBuffer): P2PMessage {
+  private decodeBinaryMessage(data: Uint8Array): P2PMessage {
     if (data.byteLength < this.PAYLOAD_OFFSET) {
       throw new Error('Invalid binary message: too short');
     }
     
-    const view = new DataView(data);
-    const uint8View = new Uint8Array(data);
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
+    const uint8View = data;
     
     let offset = 0;
     
@@ -1042,5 +956,20 @@ export class P2PManager {
       channel,
       payload: payload
     };
+  }
+
+  private decodeBase64(base64Data: string): Uint8Array {
+    if ('fromBase64' in Uint8Array) {
+      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array/fromBase64
+      return (Uint8Array as any).fromBase64(base64Data);
+    } else {
+      // Fallback for older environments
+      const binaryString = atob(base64Data);
+      const uint8View = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        uint8View[i] = binaryString.charCodeAt(i);
+      }
+      return uint8View;
+    }
   }
 }

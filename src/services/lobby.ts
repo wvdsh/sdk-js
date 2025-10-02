@@ -426,7 +426,7 @@ export class LobbyManager {
     try {
       if (newUsers.length <= 1) {
         // If only one user left, disconnect all P2P connections
-        await this.sdk.p2pManager.disconnectP2P();
+        this.sdk.p2pManager.disconnectP2P();
         this.sdk.logger.debug('Only one user in lobby, P2P connections disconnected');
         return;
       }
