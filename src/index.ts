@@ -22,12 +22,10 @@ import type {
   UGCType,
   UGCVisibility,
   RemoteFileMetadata,
-  P2PPeer,
-  P2PConnection,
   P2PMessage,
   LobbyUser,
   Signal,
-  Lobby
+  Lobby,
 } from "./types";
 
 class WavedashSDK {
@@ -426,7 +424,7 @@ class WavedashSDK {
   // ================
 
   private isGodot(): boolean {
-    return this.engineInstance !== null && this.engineInstance.type === "GODOT";
+    return this.engineInstance !== null && this.engineInstance.type === Constants.GAME_ENGINE.GODOT;
   }
 
   // Helper to format response based on context
