@@ -282,11 +282,16 @@ class WavedashSDK {
    * @param toUserId - Peer userId to send to (undefined = broadcast)
    * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
-   * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
+   * @param payload - The payload to send (either byte array or a base64 encoded string)
    * @returns true if the message was sent out successfully
    */
-  sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
+  sendP2PMessage(toUserId: Id<"users"> | undefined, appChannel: number = 0, reliable: boolean = true, payload: string | Uint8Array): boolean {
     this.ensureReady();
+    if (toUserId && !this.p2pManager.isPeerReady(toUserId)) {
+      return false;
+    } else if (!toUserId && !this.p2pManager.isBroadcastReady()) {
+      return false;
+    }
     return this.p2pManager.sendP2PMessage(toUserId, appChannel, reliable, payload);
   }
 
@@ -294,12 +299,25 @@ class WavedashSDK {
    * Send the same payload to all peers in the lobby
    * @param appChannel - Optional app-level channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
-   * @param payload - Optionally provide the payload to send, if not provided, the message will be read from the outgoing SharedArrayBuffer queue instead
+   * @param payload - The payload to send (either byte array or a base64 encoded string)
    * @returns true if the message was sent out successfully
    */
-  broadcastP2PMessage(appChannel: number = 0, reliable: boolean = true, payload?: ArrayBuffer | string | Uint8Array): boolean {
+  broadcastP2PMessage(appChannel: number = 0, reliable: boolean = true, payload: string | Uint8Array): boolean {
     this.ensureReady();
+    if (!this.p2pManager.isBroadcastReady()) {
+      return false;
+    }
     return this.p2pManager.sendP2PMessage(undefined, appChannel, reliable, payload);
+  }
+
+   /**
+    * Read one binary message from a specific P2P message channel
+    * @param appChannel - The channel to read from
+    * @returns The message data as Uint8Array (zero-copy view, empty if no message available)
+    */
+   readP2PMessageFromChannel(appChannel: number): Uint8Array {
+    this.ensureReady();
+    return this.p2pManager.readOneMessageFromIncomingQueue(appChannel);
   }
 
   /**
@@ -442,6 +460,56 @@ class WavedashSDK {
       this.logger.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
+  }
+
+  // DEBUGGING
+  testReceivingArray(data: any, numBytes: number): void {
+
+    console.log('Received data of type ', typeof data, numBytes);
+    console.log(data);
+    
+    // Create Uint8Array view with only originalSize bytes (ignoring padding)
+    // const uint8View = new Uint8Array(data, 0, originalSize);
+    // console.log('Uint8Array view (original size only):', uint8View);
+    // console.log('First few bytes:', Array.from(uint8View.slice(0, Math.min(16, originalSize))));
+  }
+
+  testSendingArrayBuffer(numBytes: number): ArrayBuffer {
+    const data = new Uint8Array(numBytes);
+    for (let i = 0; i < numBytes; i++) {
+      data[i] = i;
+    }
+    return data.buffer;
+  }
+
+  testSendingUint8Array(numBytes: number): Uint8Array {
+    const data = new Uint8Array(numBytes);
+    for (let i = 0; i < numBytes; i++) {
+      data[i] = i;
+    }
+    return data;
+  }
+
+  testReceivingBase64(data: string): void {
+    console.log('Received base64 data:', data);
+    
+    // Use native fromBase64 if available, fallback to atob + Uint8Array construction
+    let uint8View: Uint8Array;
+    if ('fromBase64' in Uint8Array) {
+      console.log('Using native fromBase64');
+      uint8View = (Uint8Array as any).fromBase64(data);
+    } else {
+      // Fallback for older environments
+      console.log('Using fallback atob');
+      const binaryString = atob(data);
+      uint8View = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        uint8View[i] = binaryString.charCodeAt(i);
+      }
+    }
+    
+    console.log('Uint8Array view:', uint8View);
+    console.log('First few bytes:', Array.from(uint8View.slice(0, Math.min(16, uint8View.length))));
   }
 }
 
