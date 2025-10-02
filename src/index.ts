@@ -316,6 +316,9 @@ class WavedashSDK {
    */
   readP2PMessageFromChannel(appChannel: number): Uint8Array | P2PMessage | null {
     this.ensureReady();
+    // Should we return a copy of the binary data rather than a view into the SharedArrayBuffer?
+    // We're assuming the engine makes its own copy of the binary data when calling this function
+    // If we ever see race conditions, make this a copy, but for performance, we're returning a view
     return this.p2pManager.readMessageFromChannel(appChannel);
   }
 
