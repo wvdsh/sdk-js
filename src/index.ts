@@ -313,11 +313,12 @@ class WavedashSDK {
    /**
     * Read one binary message from a specific P2P message channel
     * @param appChannel - The channel to read from
-    * @returns The message data as Uint8Array (zero-copy view, empty if no message available)
+    * @returns To Game Engine: Uint8Array (zero-copy view, empty if no message available)
+    *          To JS: P2PMessage (null if no message available)
     */
-   readP2PMessageFromChannel(appChannel: number): Uint8Array {
+   readP2PMessageFromChannel(appChannel: number): Uint8Array | P2PMessage | null {
     this.ensureReady();
-    return this.p2pManager.readOneMessageFromIncomingQueue(appChannel);
+    return this.p2pManager.readMessageFromChannel(appChannel);
   }
 
   /**
@@ -460,56 +461,6 @@ class WavedashSDK {
       this.logger.warn('SDK not initialized. Call init() first.');
       throw new Error('SDK not initialized');
     }
-  }
-
-  // DEBUGGING
-  testReceivingArray(data: any, numBytes: number): void {
-
-    console.log('Received data of type ', typeof data, numBytes);
-    console.log(data);
-    
-    // Create Uint8Array view with only originalSize bytes (ignoring padding)
-    // const uint8View = new Uint8Array(data, 0, originalSize);
-    // console.log('Uint8Array view (original size only):', uint8View);
-    // console.log('First few bytes:', Array.from(uint8View.slice(0, Math.min(16, originalSize))));
-  }
-
-  testSendingArrayBuffer(numBytes: number): ArrayBuffer {
-    const data = new Uint8Array(numBytes);
-    for (let i = 0; i < numBytes; i++) {
-      data[i] = i;
-    }
-    return data.buffer;
-  }
-
-  testSendingUint8Array(numBytes: number): Uint8Array {
-    const data = new Uint8Array(numBytes);
-    for (let i = 0; i < numBytes; i++) {
-      data[i] = i;
-    }
-    return data;
-  }
-
-  testReceivingBase64(data: string): void {
-    console.log('Received base64 data:', data);
-    
-    // Use native fromBase64 if available, fallback to atob + Uint8Array construction
-    let uint8View: Uint8Array;
-    if ('fromBase64' in Uint8Array) {
-      console.log('Using native fromBase64');
-      uint8View = (Uint8Array as any).fromBase64(data);
-    } else {
-      // Fallback for older environments
-      console.log('Using fallback atob');
-      const binaryString = atob(data);
-      uint8View = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        uint8View[i] = binaryString.charCodeAt(i);
-      }
-    }
-    
-    console.log('Uint8Array view:', uint8View);
-    console.log('First few bytes:', Array.from(uint8View.slice(0, Math.min(16, uint8View.length))));
   }
 }
 
