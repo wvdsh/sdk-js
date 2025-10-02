@@ -886,7 +886,7 @@ export class P2PManager {
     Atomics.store(queue.incomingHeaderView, 1, nextReadIndex); // readIndex
     Atomics.sub(queue.incomingHeaderView, 2, 1); // messageCount--
 
-    // Return the Uint8Array view directly - no copying needed
+    // Engine gets the raw binary, JS gets the decoded P2PMessage
     return this.sdk.engineInstance ? messageView : this.decodeBinaryMessage(messageView);
   }
 
@@ -960,6 +960,7 @@ export class P2PManager {
 
   private decodeBase64(base64Data: string): Uint8Array {
     if ('fromBase64' in Uint8Array) {
+      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array/fromBase64
       return (Uint8Array as any).fromBase64(base64Data);
     } else {
       // Fallback for older environments
