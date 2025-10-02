@@ -930,7 +930,7 @@ export class P2PManager {
       throw new Error('Invalid binary message: too short');
     }
     
-    const view = new DataView(data.buffer);
+    const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
     const uint8View = data;
     
     let offset = 0;
