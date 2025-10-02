@@ -310,13 +310,13 @@ class WavedashSDK {
     return this.p2pManager.sendP2PMessage(undefined, appChannel, reliable, payload);
   }
 
-   /**
-    * Read one binary message from a specific P2P message channel
-    * @param appChannel - The channel to read from
-    * @returns To Game Engine: Uint8Array (zero-copy view, empty if no message available)
-    *          To JS: P2PMessage (null if no message available)
-    */
-   readP2PMessageFromChannel(appChannel: number): Uint8Array | P2PMessage | null {
+  /**
+   * Read one binary message from a specific P2P message channel
+   * @param appChannel - The channel to read from
+   * @returns To Game Engine: Uint8Array (zero-copy view, empty if no message available)
+   *          To JS: P2PMessage (null if no message available)
+   */
+  readP2PMessageFromChannel(appChannel: number): Uint8Array | P2PMessage | null {
     this.ensureReady();
     return this.p2pManager.readMessageFromChannel(appChannel);
   }
@@ -337,25 +337,6 @@ class WavedashSDK {
   isBroadcastReady(): boolean {
     this.ensureReady();
     return this.p2pManager.isBroadcastReady();
-  }
-
-  /**
-   * Get the SharedArrayBuffer for a specific P2P message channel
-   * @param channel - Channel number (0-3)
-   * @returns SharedArrayBuffer for direct access from game engines, or null if not available
-   */
-  getP2PChannelQueue(channel: number): SharedArrayBuffer | null {
-    this.ensureReady();
-    return this.p2pManager.getChannelQueueBuffer(channel);
-  }
-
-  /**
-   * Get P2P message queue information for debugging
-   */
-  getP2PMessageQueueInfo(): any {
-    this.ensureReady();
-    const info = this.p2pManager.getMessageQueueInfo();
-    return this.formatResponse(info);
   }
 
   // ============
@@ -425,7 +406,6 @@ class WavedashSDK {
   // Game can listen for the LobbyMessage signal to get the message that was posted
   sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
     this.ensureReady();
-    this.logger.debug(`Sending lobby message: ${message} to lobby: ${lobbyId}`);
     return this.lobbyManager.sendLobbyMessage(lobbyId, message);
   }
 
