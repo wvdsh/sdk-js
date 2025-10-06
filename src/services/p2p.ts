@@ -44,6 +44,7 @@ export class P2PManager {
   private unreliableChannels = new Map<Id<"users">, RTCDataChannel>();
   private config: P2PConfig;
   private processedSignalingMessages = new Set<string>(); // Track processed message IDs
+  private connectionStateCheckInterval: ReturnType<typeof setInterval> | null = null;
   
   // SharedArrayBuffer message queues - one per channel for performance
   // Only incoming queue is used (P2P network → Game engine)
@@ -52,7 +53,8 @@ export class P2PManager {
     incomingHeaderView: Int32Array;
     incomingDataView: Uint8Array;
   }>();
-  private readonly QUEUE_SIZE = 256; // Number of messages per direction per channel
+
+  private readonly QUEUE_SIZE = 1024; // Number of messages per direction per channel
   private readonly MESSAGE_SIZE = 1024; // Max bytes per message
   private readonly HEADER_SIZE = 16; // Queue metadata: writeIndex, readIndex, messageCount, version
   private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
@@ -220,8 +222,60 @@ export class P2PManager {
     await this.establishPeerConnections(connection);
 
     connection.state = "connecting";
+    
+    // Start polling connection state
+    this.startConnectionStatePolling();
   }
 
+  // Periodically check peer connection states and update connection.state
+  private startConnectionStatePolling(): void {
+    // Clear any existing interval
+    this.stopConnectionStatePolling();
+    
+    // Poll every 500ms
+    this.connectionStateCheckInterval = setInterval(() => {
+      this.updateConnectionState();
+    }, 500);
+    
+    // Also do an immediate check
+    this.updateConnectionState();
+  }
+
+  private stopConnectionStatePolling(): void {
+    if (this.connectionStateCheckInterval !== null) {
+      clearInterval(this.connectionStateCheckInterval);
+      this.connectionStateCheckInterval = null;
+    }
+  }
+
+  private updateConnectionState(): void {
+    if (!this.currentConnection) return;
+    
+    const peerIds = Object.keys(this.currentConnection.peers) as Id<"users">[];
+    const previousState = this.currentConnection.state;
+    
+    // No peers means disconnected
+    if (peerIds.length === 0) {
+      this.currentConnection.state = "disconnected";
+    }
+    // All peers are connected
+    else if (this.allPeersConnected()) {
+      this.currentConnection.state = "connected";
+    }
+    // Have peers but not all connected
+    else {
+      this.currentConnection.state = "connecting";
+    }
+    
+    // Log state changes
+    if (previousState !== this.currentConnection.state) {
+      const connectedCount = peerIds.filter(userId => this.isPeerReady(userId)).length;
+      this.sdk.logger.debug(
+        `P2P connection state: ${previousState} → ${this.currentConnection.state} ` +
+        `(${connectedCount}/${peerIds.length} peers connected)`
+      );
+    }
+  }
 
   private unsubscribeFromSignalingMessages: (() => void) | null = null;
   private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
@@ -527,12 +581,12 @@ export class P2PManager {
       }
     };
 
-    channel.onmessage = (event) => {
+    channel.onmessage = (event: MessageEvent<any>) => {
       // Enqueue the raw binary data directly to SharedArrayBuffer queue
-      this.enqueueBinaryMessageToIncomingQueue(event.data);
+      this.enqueueMessage(event.data);
     };
 
-    channel.onerror = (error) => {
+    channel.onerror = (error: RTCErrorEvent) => {
       this.sdk.logger.error(`Data channel error with peer ${remoteUserId}:`, error);
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
@@ -641,6 +695,13 @@ export class P2PManager {
         };
       }
 
+      // Stop connection state polling
+      this.stopConnectionStatePolling();
+
+      // Update state to disconnected
+      this.currentConnection.state = "disconnected";
+      this.sdk.logger.debug('P2P connection state: disconnected');
+
       // Stop signaling message polling
       this.stopSignalingMessageSubscription();
 
@@ -701,6 +762,16 @@ export class P2PManager {
     const unreliableReady = !this.config.enableUnreliableChannel || (unreliableChannel?.readyState === 'open');
     
     return reliableReady && unreliableReady;
+  }
+
+  // Check if all peers are connected
+  private allPeersConnected(): boolean {
+    if (!this.currentConnection) return false;
+    
+    const peerIds = Object.keys(this.currentConnection.peers) as Id<"users">[];
+    if (peerIds.length === 0) return true; // No peers means "connected"
+    
+    return peerIds.every(userId => this.isPeerReady(userId));
   }
 
   isBroadcastReady(): boolean {
@@ -769,7 +840,7 @@ export class P2PManager {
     });
   }
 
-  private enqueueBinaryMessageToIncomingQueue(binaryData: ArrayBuffer): void {
+  private enqueueMessage(binaryData: ArrayBuffer): void {
     try {
       // Extract channel from the binary data to determine which queue to use
       if (binaryData.byteLength < this.CHANNEL_OFFSET + this.CHANNEL_SIZE) {
