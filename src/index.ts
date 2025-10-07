@@ -6,6 +6,7 @@ import * as ugc from "./services/ugc";
 // TODO: Refactor all the services above to use Manager pattern we have for lobby and p2p
 import { LobbyManager } from "./services/lobby";
 import { P2PManager } from "./services/p2p";
+import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import type {
   Id,
@@ -33,13 +34,14 @@ class WavedashSDK {
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: WavedashUser;
-  p2pManager: P2PManager;
   protected lobbyManager: LobbyManager;
+  protected heartbeatManager: HeartbeatManager;
   
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
   engineInstance: EngineInstance | null = null;
   logger: WavedashLogger;
+  p2pManager: P2PManager;
 
   Constants = Constants;
 
@@ -49,6 +51,7 @@ class WavedashSDK {
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
+    this.heartbeatManager = new HeartbeatManager(this);
   }
 
   // =============
@@ -80,6 +83,9 @@ class WavedashSDK {
     if (this.config.p2p) {
       this.p2pManager.updateConfig(this.config.p2p);
     }
+
+    // Start heartbeat service
+    this.heartbeatManager.start();
     
     this.logger.debug('Initialized with config:', this.config);
     return true;
