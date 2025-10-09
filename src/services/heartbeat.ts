@@ -63,42 +63,32 @@ export class HeartbeatManager {
       // @ts-ignore - connectionState exists but may not be in type definitions
       const state: ConnectionState = this.sdk.convexClient.connectionState() as ConnectionState;
       this.isConnected = state.isWebSocketConnected;
-      
-      // Re-update user rich presence in case we were disconnected long enough that
-      // the user activity cleared
-      await this.updateUserActivity();
+      const connection = {
+        isConnected: state.isWebSocketConnected,
+        hasEverConnected: state.hasEverConnected,
+        connectionCount: state.connectionCount,
+        connectionRetries: state.connectionRetries
+      }
       
       // Handle connection state changes
       if (this.isConnected && !wasConnected) {
         // Reconnected
+        // Re-update user rich presence in case we were disconnected long enough that
+        // the user activity cleared
+        await this.updateUserActivity();
         this.disconnectedTicks = 0;
-        this.sdk.notifyGame(Signals.BACKEND_CONNECTED, {
-          isConnected: this.isConnected,
-          hasEverConnected: state.hasEverConnected,
-          connectionCount: state.connectionCount,
-          connectionRetries: state.connectionRetries
-        });
+        this.sdk.notifyGame(Signals.BACKEND_CONNECTED, connection);
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedTicks = 1;
-        this.sdk.notifyGame(Signals.BACKEND_RECONNECTING, {
-          isConnected: this.isConnected,
-          hasEverConnected: state.hasEverConnected,
-          connectionCount: state.connectionCount,
-          connectionRetries: state.connectionRetries
-        });
+        this.sdk.notifyGame(Signals.BACKEND_RECONNECTING, connection);
       } else if (!this.isConnected && !wasConnected) {
         // Still disconnected - increment counter
         this.disconnectedTicks++;
         
         // After threshold, notify as truly disconnected
         if (this.disconnectedTicks === this.DISCONNECTED_THRESHOLD_TICKS) {
-          this.sdk.notifyGame(Signals.BACKEND_DISCONNECTED, {
-            isConnected: this.isConnected,
-            hasEverConnected: state.hasEverConnected,
-            connectionCount: state.connectionCount,
-            connectionRetries: state.connectionRetries
-          });
+          this.sdk.notifyGame(Signals.BACKEND_DISCONNECTED, connection);
         }
       } else if (this.isConnected && wasConnected) {
         // Still connected - reset counter
