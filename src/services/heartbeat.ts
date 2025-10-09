@@ -4,7 +4,7 @@
  * Polls connection state and sends periodic heartbeats to backend
  */
 
-import type { Id, WavedashResponse, WavedashSDK } from '../index';
+import type { WavedashSDK } from '../index';
 import { Signals } from '../signals';
 import { api } from '../_generated/convex_api';
 import type { ConnectionState } from 'convex/browser';
@@ -81,10 +81,14 @@ export class HeartbeatManager {
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedTicks = 1;
+        this.sdk.logger.warn('Backend disconnected - attempting to reconnect');
         this.sdk.notifyGame(Signals.BACKEND_RECONNECTING, connection);
       } else if (!this.isConnected && !wasConnected) {
         // Still disconnected - increment counter
         this.disconnectedTicks++;
+        if (this.disconnectedTicks <= this.DISCONNECTED_THRESHOLD_TICKS) {
+          this.sdk.logger.warn(`Reconnecting... (${this.disconnectedTicks} / ${this.DISCONNECTED_THRESHOLD_TICKS})`);
+        }
         
         // After threshold, notify as truly disconnected
         if (this.disconnectedTicks === this.DISCONNECTED_THRESHOLD_TICKS) {
