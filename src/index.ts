@@ -84,7 +84,7 @@ class WavedashSDK {
       this.p2pManager.updateConfig(this.config.p2p);
     }
 
-    // Start heartbeat service
+    // Start heartbeat service (fire and forget)
     this.heartbeatManager.start();
     
     this.logger.debug('Initialized with config:', this.config);
@@ -469,9 +469,7 @@ export function setupWavedashSDK(
 
   if (typeof window !== 'undefined') {
     (window as any).WavedashJS = sdk;
-    console.log('[WavedashJS] SDK attached to window');
   }
-
 
   return sdk;
 }
