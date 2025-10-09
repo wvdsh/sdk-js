@@ -81,22 +81,17 @@ export type PublicApiType = {
     >;
   };
   gameLobby: {
-    lobbyUsers: FunctionReference<
-      "query",
-      "public",
-      { lobbyId: Id<"lobbies"> },
-      Array<{
-        isHost: boolean;
-        lobbyId: Id<"lobbies">;
-        userId: Id<"users">;
-        username: string;
-      }>
-    >;
     createAndJoinLobby: FunctionReference<
       "mutation",
       "public",
       { maxPlayers?: number; visibility: 0 | 1 | 2 },
       Id<"lobbies">
+    >;
+    getLobbyMetadata: FunctionReference<
+      "query",
+      "public",
+      { lobbyId: Id<"lobbies"> },
+      Record<string, any>
     >;
     joinLobby: FunctionReference<
       "mutation",
@@ -109,12 +104,6 @@ export type PublicApiType = {
       "public",
       { lobbyId: Id<"lobbies"> },
       boolean
-    >;
-    sendMessage: FunctionReference<
-      "mutation",
-      "public",
-      { lobbyId: Id<"lobbies">; message: string },
-      string
     >;
     listAvailable: FunctionReference<
       "query",
@@ -141,17 +130,28 @@ export type PublicApiType = {
         username: string;
       }>
     >;
+    lobbyUsers: FunctionReference<
+      "query",
+      "public",
+      { lobbyId: Id<"lobbies"> },
+      Array<{
+        isHost: boolean;
+        lobbyId: Id<"lobbies">;
+        userId: Id<"users">;
+        username: string;
+      }>
+    >;
+    sendMessage: FunctionReference<
+      "mutation",
+      "public",
+      { lobbyId: Id<"lobbies">; message: string },
+      string
+    >;
     setLobbyMetadata: FunctionReference<
       "mutation",
       "public",
       { lobbyId: Id<"lobbies">; updates: Record<string, any> },
       boolean
-    >;
-    getLobbyMetadata: FunctionReference<
-      "query",
-      "public",
-      { lobbyId: Id<"lobbies"> },
-      Record<string, any>
     >;
   };
   ugcAccess: {
@@ -537,6 +537,15 @@ export type PublicApiType = {
       { messageIds: Array<Id<"p2pSignalingMessages">> },
       any
     >;
+  };
+  userActivity: {
+    updateUserActivity: FunctionReference<
+      "mutation",
+      "public",
+      { data?: Record<string, any>; type?: 0 | 2 | 1 },
+      boolean
+    >;
+    heartbeat: FunctionReference<"mutation", "public", any, any>;
   };
 };
 export type InternalApiType = {};
