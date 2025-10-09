@@ -1,7 +1,9 @@
 /**
  * Heartbeat service
  * 
- * Polls connection state and sends periodic heartbeats to backend
+ * Polls connection state and sends periodic heartbeats to backend.
+ * Lets the game know if backend connection ever changes.
+ * Lets the backend know game presence is still alive.
  */
 
 import type { WavedashSDK } from '../index';
@@ -11,44 +13,65 @@ import type { ConnectionState } from 'convex/browser';
 
 export class HeartbeatManager {
   private sdk: WavedashSDK;
-  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private sendHeartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private testConnectionInterval: ReturnType<typeof setInterval> | null = null;
   private isConnected: boolean = false;
   private disconnectedTicks: number = 0;
-  private readonly HEARTBEAT_INTERVAL_MS = 1000; // 1 second
+  private isHeartbeatInProgress: boolean = false;
+  private readonly SEND_HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
+  private readonly TEST_CONNECTION_INTERVAL_MS = 1_000; // 1 second
   private readonly DISCONNECTED_THRESHOLD_TICKS = 10; // Number of ticks before considering ourselves disconnected
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
+
+    // Ensure user presence is ended when the window closes
+    window.addEventListener('beforeunload', () => {
+      this.endUserPresence();
+    });
   }
 
   async start(): Promise<void> {
     // Stop any existing heartbeat
     this.stop();
 
+    // Set initial presence
+    this.updateUserPresence({forceUpdate: true});
+
     // Populate initial connection state
     // @ts-ignore - connectionState exists but may not be in type definitions
     this.isConnected = this.sdk.convexClient.connectionState().isWebSocketConnected;
-    await this.updateUserActivity();
 
-    // Start heartbeat interval
-    this.heartbeatInterval = setInterval(() => {
-      this.tick();
-    }, this.HEARTBEAT_INTERVAL_MS);
+    // Check connection interval
+    this.testConnectionInterval = setInterval(() => {
+      this.testConnection();
+    }, this.TEST_CONNECTION_INTERVAL_MS);
+
+    // Send heartbeat interval
+    this.sendHeartbeatInterval = setInterval(() => {
+      this.trySendHeartbeat();
+    }, this.SEND_HEARTBEAT_INTERVAL_MS);
 
     // Run immediately
-    this.tick();
+    this.testConnection();
+    this.trySendHeartbeat();
   }
 
   stop(): void {
-    if (this.heartbeatInterval !== null) {
-      clearInterval(this.heartbeatInterval);
-      this.heartbeatInterval = null;
+    if (this.sendHeartbeatInterval !== null) {
+      clearInterval(this.sendHeartbeatInterval);
+      this.sendHeartbeatInterval = null;
+    }
+    if (this.testConnectionInterval !== null) {
+      clearInterval(this.testConnectionInterval);
+      this.testConnectionInterval = null;
     }
   }
 
-  async updateUserActivity(data?: Record<string, any>): Promise<boolean> {
+  async updateUserPresence(data?: Record<string, any>): Promise<boolean> {
     try {
-      await this.sdk.convexClient.mutation(api.userActivity.updateUserActivity, { data });
+      const dataToSend = data ?? {forceUpdate: true};
+      await this.sdk.convexClient.mutation(api.presence.heartbeat, { data: dataToSend });
       return true;
     } catch (error) {
       this.sdk.logger.error(`Error updating presence: ${error}`);
@@ -56,15 +79,19 @@ export class HeartbeatManager {
     }
   }
 
-  private async tick(): Promise<void> {
+  async endUserPresence(): Promise<void> {
+    await this.sdk.convexClient.mutation(api.presence.endUserPresence, {});
+  }
+
+  private async testConnection(): Promise<void> {
     try {
       // Check local connection state
       const wasConnected = this.isConnected;
       // @ts-ignore - connectionState exists but may not be in type definitions
       const state: ConnectionState = this.sdk.convexClient.connectionState() as ConnectionState;
-      this.isConnected = state.isWebSocketConnected;
+      this.isConnected = navigator.onLine && state.isWebSocketConnected;
       const connection = {
-        isConnected: state.isWebSocketConnected,
+        isConnected: this.isConnected,
         hasEverConnected: state.hasEverConnected,
         connectionCount: state.connectionCount,
         connectionRetries: state.connectionRetries
@@ -73,9 +100,6 @@ export class HeartbeatManager {
       // Handle connection state changes
       if (this.isConnected && !wasConnected) {
         // Reconnected
-        // Re-update user rich presence in case we were disconnected long enough that
-        // the user activity cleared
-        await this.updateUserActivity();
         this.disconnectedTicks = 0;
         this.sdk.notifyGame(Signals.BACKEND_CONNECTED, connection);
       } else if (!this.isConnected && wasConnected) {
@@ -98,28 +122,30 @@ export class HeartbeatManager {
         // Still connected - reset counter
         this.disconnectedTicks = 0;
       }
-
-      // Send heartbeat to backend if connected
-      if (this.isConnected) {
-        await this.trySendHeartbeat();
-      }
     } catch (error) {
-      this.sdk.logger.error('Heartbeat failed:', error);
+      this.sdk.logger.error('Error testing connection:', error);
     }
   }
 
   private async trySendHeartbeat(): Promise<void> {
+    // Single-flight: don't send a new heartbeat if one is already in progress
+    if (this.isHeartbeatInProgress) {
+      return;
+    }
+
+    this.isHeartbeatInProgress = true;
     try {
-      await this.sdk.convexClient.mutation(api.userActivity.heartbeat, {});
+      await this.sdk.convexClient.mutation(api.presence.heartbeat, {});
     } catch (error) {
       // Don't log every heartbeat error to avoid spam
       // The connection state polling will handle disconnection notification
+    } finally {
+      this.isHeartbeatInProgress = false;
     }
   }
 
   isCurrentlyConnected(): boolean {
-    // @ts-ignore - connectionState exists but may not be in type definitions
-    return this.sdk.convexClient.connectionState().isWebSocketConnected;
+    return this.isConnected;
   }
 }
 

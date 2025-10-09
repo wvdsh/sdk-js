@@ -538,14 +538,20 @@ export type PublicApiType = {
       any
     >;
   };
-  userActivity: {
-    updateUserActivity: FunctionReference<
+  presence: {
+    heartbeat: FunctionReference<
       "mutation",
       "public",
-      { data?: Record<string, any>; type?: 0 | 2 | 1 },
-      boolean
+      { data?: Record<string, any> },
+      any
     >;
-    heartbeat: FunctionReference<"mutation", "public", any, any>;
+    endUserPresence: FunctionReference<"mutation", "public", any, any>;
+    getUserPresences: FunctionReference<
+      "query",
+      "public",
+      { userIds: Array<Id<"users">> },
+      any
+    >;
   };
 };
 export type InternalApiType = {};
