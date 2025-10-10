@@ -30,13 +30,15 @@ export class HeartbeatManager {
     this.convexHttpOrigin = this.getConvexHttpOrigin();
 
     // Try to end user presence when the window closes
-    window.addEventListener('pagehide', (event) => {
-      // Only fire if the page is actually unloading, not just going in the bfcache
-      if (!event.persisted && this.convexHttpOrigin) {
-        // Send a beacon POST request to the backend to end user presence
-        navigator.sendBeacon(`${this.convexHttpOrigin}/webhooks/end-user-presence`);
-      }
-    });
+    if (typeof window !== 'undefined') {
+      window.addEventListener('pagehide', (event) => {
+        // Only fire if the page is actually unloading, not just going in the bfcache
+        if (!event.persisted && this.convexHttpOrigin) {
+          // Send a beacon POST request to the backend to end user presence
+          navigator.sendBeacon(`${this.convexHttpOrigin}/webhooks/end-user-presence`);
+        }
+      });
+    }
   }
 
   private getConvexHttpOrigin(): string {
