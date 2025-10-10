@@ -546,12 +546,6 @@ export type PublicApiType = {
       any
     >;
     endUserPresence: FunctionReference<"mutation", "public", any, any>;
-    getUserPresences: FunctionReference<
-      "query",
-      "public",
-      { userIds: Array<Id<"users">> },
-      any
-    >;
   };
 };
 export type InternalApiType = {};
