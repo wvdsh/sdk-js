@@ -54,7 +54,7 @@ export class P2PManager {
     incomingDataView: Uint8Array;
   }>();
 
-  private readonly CHECK_CONNECTION_INTERVAL_MS = 500; // 500ms
+  private readonly CHECK_CONNECTION_INTERVAL_MS = 1_000; // 1 second
 
   private readonly QUEUE_SIZE = 1024; // Number of messages per direction per channel
   private readonly MESSAGE_SIZE = 1024; // Max bytes per message
