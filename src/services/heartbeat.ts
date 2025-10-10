@@ -18,6 +18,7 @@ export class HeartbeatManager {
   private isConnected: boolean = false;
   private disconnectedTicks: number = 0;
   private isHeartbeatInProgress: boolean = false;
+  private convexHttpOrigin: string;
   private readonly SEND_HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000; // 1 second
   private readonly DISCONNECTED_THRESHOLD_TICKS = 10; // Number of ticks before considering ourselves disconnected
@@ -25,10 +26,27 @@ export class HeartbeatManager {
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
 
-    // Ensure user presence is ended when the window closes
-    window.addEventListener('beforeunload', () => {
-      this.endUserPresence();
+    // Cache the Convex HTTP origin once at initialization
+    this.convexHttpOrigin = this.getConvexHttpOrigin();
+
+    // Try to end user presence when the window closes
+    window.addEventListener('pagehide', (event) => {
+      // Only fire if the page is actually unloading, not just going in the bfcache
+      if (!event.persisted && this.convexHttpOrigin) {
+        // Send a beacon POST request to the backend to end user presence
+        navigator.sendBeacon(`${this.convexHttpOrigin}/webhooks/end-user-presence`);
+      }
     });
+  }
+
+  private getConvexHttpOrigin(): string {
+    if (typeof window !== 'undefined' && window.location) {
+      const hostname = window.location.hostname;
+      const parts = hostname.split('.');
+      return `${window.location.protocol}//convex-http.` + parts.slice(1).join('.');
+    } else {
+      return '';
+    }
   }
 
   async start(): Promise<void> {
@@ -51,10 +69,6 @@ export class HeartbeatManager {
     this.sendHeartbeatInterval = setInterval(() => {
       this.trySendHeartbeat();
     }, this.SEND_HEARTBEAT_INTERVAL_MS);
-
-    // Run immediately
-    this.testConnection();
-    this.trySendHeartbeat();
   }
 
   stop(): void {
@@ -102,6 +116,8 @@ export class HeartbeatManager {
         // Reconnected
         this.disconnectedTicks = 0;
         this.sdk.notifyGame(Signals.BACKEND_CONNECTED, connection);
+        // Update presence in case it expired while we were disconnected
+        this.updateUserPresence({forceUpdate: true});
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedTicks = 1;
