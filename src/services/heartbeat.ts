@@ -29,7 +29,9 @@ export class HeartbeatManager {
     // Cache the Convex HTTP origin once at initialization
     this.convexHttpOrigin = this.getConvexHttpOrigin();
 
-    // Try to end user presence when the window closes
+    // Try to end user presence when the tab actually closes / navigates away
+    // TODO: Should we do this every time the tab is hidden? And mark you present when it comes back?
+    // You'd rack up a lot of game sessions but we'd get more granular tracking
     if (typeof window !== 'undefined') {
       window.addEventListener('pagehide', (event) => {
         // Only fire if the page is actually unloading, not just going in the bfcache
