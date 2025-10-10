@@ -54,6 +54,8 @@ export class P2PManager {
     incomingDataView: Uint8Array;
   }>();
 
+  private readonly CHECK_CONNECTION_INTERVAL_MS = 500; // 500ms
+
   private readonly QUEUE_SIZE = 1024; // Number of messages per direction per channel
   private readonly MESSAGE_SIZE = 1024; // Max bytes per message
   private readonly HEADER_SIZE = 16; // Queue metadata: writeIndex, readIndex, messageCount, version
@@ -232,10 +234,9 @@ export class P2PManager {
     // Clear any existing interval
     this.stopConnectionStatePolling();
     
-    // Poll every 500ms
     this.connectionStateCheckInterval = setInterval(() => {
       this.updateConnectionState();
-    }, 500);
+    }, this.CHECK_CONNECTION_INTERVAL_MS);
     
     // Also do an immediate check
     this.updateConnectionState();
