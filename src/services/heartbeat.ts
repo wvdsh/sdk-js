@@ -20,9 +20,10 @@ export class HeartbeatManager {
   private disconnectedTicks: number = 0;
   private isHeartbeatInProgress: boolean = false;
   private convexHttpOrigin: string;
-  private readonly SEND_HEARTBEAT_INTERVAL_MS = GAMEPLAY_HEARTBEAT.INTERVAL_MS; // 30 seconds
-  private readonly TEST_CONNECTION_INTERVAL_MS = 1_000; // 1 second
-  private readonly DISCONNECTED_THRESHOLD_TICKS = GAMEPLAY_HEARTBEAT.TIMEOUT_MS / this.TEST_CONNECTION_INTERVAL_MS; // Number of ticks before considering ourselves disconnected
+  private readonly SEND_HEARTBEAT_INTERVAL_MS = GAMEPLAY_HEARTBEAT.INTERVAL_MS;
+  private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
+  // Number of ticks before considering ourselves disconnected
+  private readonly DISCONNECTED_THRESHOLD_TICKS = GAMEPLAY_HEARTBEAT.TIMEOUT_MS / this.TEST_CONNECTION_INTERVAL_MS;
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
