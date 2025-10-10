@@ -80,3 +80,8 @@ export const P2P_SIGNALING_MESSAGE_TYPE = {
 	ANSWER: 'answer',
 	ICE_CANDIDATE: 'ice-candidate'
 } as const;
+
+export const GAMEPLAY_HEARTBEAT = {
+	INTERVAL_MS: 30_000,	// send heartbeat to backend every 30s
+	TIMEOUT_MS: 90_000		// mark user as disconnected after 90s of no heartbeats
+}

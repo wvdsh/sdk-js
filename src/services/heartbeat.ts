@@ -10,6 +10,7 @@ import type { WavedashSDK } from '../index';
 import { Signals } from '../signals';
 import { api } from '../_generated/convex_api';
 import type { ConnectionState } from 'convex/browser';
+import { GAMEPLAY_HEARTBEAT } from '../_generated/constants';
 
 export class HeartbeatManager {
   private sdk: WavedashSDK;
@@ -19,9 +20,9 @@ export class HeartbeatManager {
   private disconnectedTicks: number = 0;
   private isHeartbeatInProgress: boolean = false;
   private convexHttpOrigin: string;
-  private readonly SEND_HEARTBEAT_INTERVAL_MS = 30_000; // 30 seconds
+  private readonly SEND_HEARTBEAT_INTERVAL_MS = GAMEPLAY_HEARTBEAT.INTERVAL_MS; // 30 seconds
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000; // 1 second
-  private readonly DISCONNECTED_THRESHOLD_TICKS = 10; // Number of ticks before considering ourselves disconnected
+  private readonly DISCONNECTED_THRESHOLD_TICKS = GAMEPLAY_HEARTBEAT.TIMEOUT_MS / this.TEST_CONNECTION_INTERVAL_MS; // Number of ticks before considering ourselves disconnected
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
@@ -32,14 +33,11 @@ export class HeartbeatManager {
     // Try to end user presence when the tab actually closes / navigates away
     // TODO: Should we do this every time the tab is hidden? And mark you present when it comes back?
     // You'd rack up a lot of game sessions but we'd get more granular tracking
-    if (typeof window !== 'undefined') {
+    if (typeof window !== 'undefined' && this.convexHttpOrigin) {
       window.addEventListener('pagehide', (event) => {
-        // Only fire if the page is actually unloading, not just going in the bfcache
-        if (!event.persisted && this.convexHttpOrigin) {
-          // Send a beacon POST request to the backend to end user presence
-          navigator.sendBeacon(`${this.convexHttpOrigin}/webhooks/end-user-presence`);
-        }
-      });
+        // Send a beacon POST request to the backend to end user presence
+        navigator.sendBeacon(`${this.convexHttpOrigin}/webhooks/end-user-presence`);
+      }, { capture: true });
     }
   }
 
@@ -125,15 +123,11 @@ export class HeartbeatManager {
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedTicks = 1;
-        this.sdk.logger.warn('Backend disconnected - attempting to reconnect');
+        this.sdk.logger.warn('Backend disconnected - attempting to reconnect...');
         this.sdk.notifyGame(Signals.BACKEND_RECONNECTING, connection);
       } else if (!this.isConnected && !wasConnected) {
         // Still disconnected - increment counter
         this.disconnectedTicks++;
-        if (this.disconnectedTicks <= this.DISCONNECTED_THRESHOLD_TICKS) {
-          this.sdk.logger.warn(`Reconnecting... (${this.disconnectedTicks} / ${this.DISCONNECTED_THRESHOLD_TICKS})`);
-        }
-        
         // After threshold, notify as truly disconnected
         if (this.disconnectedTicks === this.DISCONNECTED_THRESHOLD_TICKS) {
           this.sdk.notifyGame(Signals.BACKEND_DISCONNECTED, connection);

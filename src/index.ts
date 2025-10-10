@@ -417,6 +417,21 @@ class WavedashSDK {
   }
 
   // ==============================
+  // User Presence
+  // ==============================
+  /**
+   * Updates rich user presence so friends can see what the player is doing in game
+   * TODO: data param should be more strongly typed
+   * @param data Game data to send to the backend
+   * @returns true if the presence was updated successfully
+   */
+  async updateUserPresence(data?: Record<string, any>): Promise<boolean> {
+    this.ensureReady();
+    const result = await this.heartbeatManager.updateUserPresence(data);
+    return result;
+  }
+
+  // ==============================
   // JS -> Game Event Broadcasting
   // ==============================
   notifyGame(signal: Signal, payload: string | number | boolean | object): void {
