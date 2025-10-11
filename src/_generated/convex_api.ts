@@ -446,8 +446,6 @@ export type PublicApiType = {
         {
           gameCloud: "SANDBOX" | "PRODUCTION";
           gameId: Id<"games">;
-          name: string;
-          r2Key?: string;
           type:
             | "INTERNAL"
             | "PRODUCTION"
@@ -538,6 +536,32 @@ export type PublicApiType = {
       "public",
       { path: string },
       string
+    >;
+  };
+  gameAchievements: {
+    getAchievement: FunctionReference<
+      "query",
+      "public",
+      { identifier: string },
+      boolean
+    >;
+    getStat: FunctionReference<
+      "query",
+      "public",
+      { identifier: string },
+      number
+    >;
+    setAchievement: FunctionReference<
+      "mutation",
+      "public",
+      { identifier: string },
+      any
+    >;
+    setStat: FunctionReference<
+      "mutation",
+      "public",
+      { identifier: string; value: number },
+      any
     >;
   };
 };

@@ -80,3 +80,14 @@ export const P2P_SIGNALING_MESSAGE_TYPE = {
 	ANSWER: 'answer',
 	ICE_CANDIDATE: 'ice-candidate'
 } as const;
+
+export const GAME_AUTHORITY = {
+	CLIENT: 0,
+	SERVER: 1
+} as const;
+
+export const STAT_TYPE = {
+	INTEGER: 0,
+	FLOAT: 1,
+	AVG_RATE: 2
+} as const;
