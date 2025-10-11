@@ -81,7 +81,18 @@ export const P2P_SIGNALING_MESSAGE_TYPE = {
 	ICE_CANDIDATE: 'ice-candidate'
 } as const;
 
+export const GAME_AUTHORITY = {
+	CLIENT: 0,
+	SERVER: 1
+} as const;
+
+export const STAT_TYPE = {
+	INTEGER: 0,
+	FLOAT: 1,
+	AVG_RATE: 2
+} as const;
+
 export const GAMEPLAY_HEARTBEAT = {
-	INTERVAL_MS: 30_000,	// send heartbeat to backend every 30s
-	TIMEOUT_MS: 90_000		// mark user as disconnected after 90s of no heartbeats
-}
+	INTERVAL_MS: 30_000, // send heartbeat to backend every 30s
+	TIMEOUT_MS: 90_000 // mark user as disconnected after 90s of no heartbeats
+} as const;
