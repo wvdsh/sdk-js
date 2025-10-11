@@ -93,6 +93,6 @@ export const STAT_TYPE = {
 } as const;
 
 export const GAMEPLAY_HEARTBEAT = {
-	INTERVAL_MS: 30_000, // send heartbeat to backend every 30s
-	TIMEOUT_MS: 90_000 // mark user as disconnected after 90s of no heartbeats
+	INTERVAL_MS: 30_000,	// send heartbeat to backend every 30s
+	TIMEOUT_MS: 90_000		// mark user as disconnected after 90s of no heartbeats
 } as const;
