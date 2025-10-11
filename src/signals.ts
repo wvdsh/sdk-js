@@ -21,6 +21,11 @@ export const Signals = {
   P2P_CONNECTION_FAILED: 'P2PConnectionFailed', // connection to peer failed
   P2P_PEER_DISCONNECTED: 'P2PPeerDisconnected', // peer disconnected
   
+  // Backend connection signals
+  BACKEND_CONNECTED: 'BackendConnected', // connected to Convex backend
+  BACKEND_DISCONNECTED: 'BackendDisconnected', // disconnected from Convex backend
+  BACKEND_RECONNECTING: 'BackendReconnecting', // attempting to reconnect to backend
+  
   // TODO: Future signals to implement
   // LOBBY_INVITE: 'LobbyInvite',
   // P2P_CONNECTION_REQUESTED: 'P2PConnectionRequested', // for now we always connect all lobby members

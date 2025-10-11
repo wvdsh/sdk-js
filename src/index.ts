@@ -7,6 +7,7 @@ import * as ugc from "./services/ugc";
 import { LobbyManager } from "./services/lobby";
 import { P2PManager } from "./services/p2p";
 import { AchievementsManager } from "./services/achievements";
+import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import type {
   Id,
@@ -34,14 +35,15 @@ class WavedashSDK {
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: WavedashUser;
-  p2pManager: P2PManager;
   protected lobbyManager: LobbyManager;
   protected achievementsManager: AchievementsManager;
+  protected heartbeatManager: HeartbeatManager;
 
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
   engineInstance: EngineInstance | null = null;
   logger: WavedashLogger;
+  p2pManager: P2PManager;
 
   Constants = Constants;
 
@@ -52,6 +54,7 @@ class WavedashSDK {
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
     this.achievementsManager = new AchievementsManager(this);
+    this.heartbeatManager = new HeartbeatManager(this);
   }
 
   // =============
@@ -86,6 +89,9 @@ class WavedashSDK {
     }
 
     this.logger.debug("Initialized with config:", this.config);
+    // Start heartbeat service (fire and forget)
+    this.heartbeatManager.start();
+
     return true;
   }
 
@@ -542,6 +548,21 @@ class WavedashSDK {
   }
 
   // ==============================
+  // User Presence
+  // ==============================
+  /**
+   * Updates rich user presence so friends can see what the player is doing in game
+   * TODO: data param should be more strongly typed
+   * @param data Game data to send to the backend
+   * @returns true if the presence was updated successfully
+   */
+  async updateUserPresence(data?: Record<string, any>): Promise<boolean> {
+    this.ensureReady();
+    const result = await this.heartbeatManager.updateUserPresence(data);
+    return result;
+  }
+
+  // ==============================
   // JS -> Game Event Broadcasting
   // ==============================
   notifyGame(
@@ -597,7 +618,7 @@ export function setupWavedashSDK(
 
   if (typeof window !== "undefined") {
     (window as any).WavedashJS = sdk;
-    console.log("[WavedashJS] SDKe attached to window");
+    console.log("[WavedashJS] SDK attached to window");
   }
 
   return sdk;
