@@ -8,15 +8,12 @@ export class AchievementsManager {
     this.sdk = sdk;
   }
 
-  async setAchievement(
-    achievementIdentifier: string
-  ): Promise<WavedashResponse<void>> {
-    const args = { achievementIdentifier };
-
+  async setAchievement(identifier: string): Promise<WavedashResponse<void>> {
+    const args = { identifier };
     try {
       await this.sdk.convexClient.mutation(
         api.gameAchievements.setAchievement,
-        { identifier: achievementIdentifier }
+        args
       );
       return {
         success: true,
@@ -33,10 +30,8 @@ export class AchievementsManager {
     }
   }
 
-  async getAchievement(
-    achievementIdentifier: string
-  ): Promise<WavedashResponse<boolean>> {
-    const args = { identifier: achievementIdentifier };
+  async getAchievement(identifier: string): Promise<WavedashResponse<boolean>> {
+    const args = { identifier };
 
     try {
       const response = await this.sdk.convexClient.query(
