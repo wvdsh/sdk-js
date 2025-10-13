@@ -37,7 +37,15 @@ export class HeartbeatManager {
     if (typeof window !== 'undefined' && this.convexHttpOrigin) {
       window.addEventListener('pagehide', (event) => {
         // Send a beacon POST request to the backend to end user presence
-        navigator.sendBeacon(`${this.convexHttpOrigin}/webhooks/end-user-presence`);
+        const url = `${this.convexHttpOrigin}/webhooks/end-user-presence`;
+        const sent = navigator.sendBeacon(url);
+        if (!sent) {
+          fetch(url, {
+            method: 'POST',
+            keepalive: true,
+            credentials: 'include'
+          });
+        }
       }, { capture: true });
     }
   }
