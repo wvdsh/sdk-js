@@ -5,9 +5,6 @@ export const api: PublicApiType = anyApi as unknown as PublicApiType;
 export const internal: InternalApiType = anyApi as unknown as InternalApiType;
 
 export type PublicApiType = {
-  users: {
-    me: FunctionReference<"query", "public", Record<string, never>, any>;
-  };
   games: {
     list: FunctionReference<
       "query",
@@ -79,6 +76,9 @@ export type PublicApiType = {
       { playKeyId: Id<"playKeys"> },
       any
     >;
+  };
+  users: {
+    me: FunctionReference<"query", "public", Record<string, never>, any>;
   };
   gameLobby: {
     createAndJoinLobby: FunctionReference<
@@ -153,6 +153,30 @@ export type PublicApiType = {
       { lobbyId: Id<"lobbies">; updates: Record<string, any> },
       boolean
     >;
+  };
+  auth: {
+    oauth: {
+      googleOAuthCallback: FunctionReference<
+        "action",
+        "public",
+        { code: string; origin: string },
+        any
+      >;
+    };
+    sessions: {
+      logout: FunctionReference<
+        "mutation",
+        "public",
+        { sessionToken: string },
+        any
+      >;
+      refresh: FunctionReference<
+        "mutation",
+        "public",
+        { sessionToken: string },
+        any
+      >;
+    };
   };
   ugcAccess: {
     getUGCDownloadUrl: FunctionReference<
@@ -324,31 +348,35 @@ export type PublicApiType = {
       }
     >;
   };
-  auth: {
-    oauth: {
-      googleOAuthCallback: FunctionReference<
-        "action",
-        "public",
-        { code: string; origin: string },
-        any
-      >;
-    };
-    sessions: {
-      logout: FunctionReference<
-        "mutation",
-        "public",
-        { sessionToken: string },
-        any
-      >;
-      refresh: FunctionReference<
-        "mutation",
-        "public",
-        { sessionToken: string },
-        any
-      >;
-    };
-  };
   developers: {
+    organizations: {
+      list: FunctionReference<"query", "public", any, any>;
+      get: FunctionReference<
+        "query",
+        "public",
+        { orgId: Id<"organizations"> },
+        any
+      >;
+      create: FunctionReference<"mutation", "public", { name: string }, any>;
+      update: FunctionReference<
+        "mutation",
+        "public",
+        { name: string; orgId: Id<"organizations"> },
+        any
+      >;
+      del: FunctionReference<
+        "mutation",
+        "public",
+        { orgId: Id<"organizations"> },
+        any
+      >;
+      switchTo: FunctionReference<
+        "mutation",
+        "public",
+        { orgId: Id<"organizations"> },
+        any
+      >;
+    };
     games: {
       list: FunctionReference<
         "query",
@@ -379,34 +407,6 @@ export type PublicApiType = {
         "mutation",
         "public",
         { gameId: Id<"games"> },
-        any
-      >;
-    };
-    organizations: {
-      list: FunctionReference<"query", "public", any, any>;
-      get: FunctionReference<
-        "query",
-        "public",
-        { orgId: Id<"organizations"> },
-        any
-      >;
-      create: FunctionReference<"mutation", "public", { name: string }, any>;
-      update: FunctionReference<
-        "mutation",
-        "public",
-        { name: string; orgId: Id<"organizations"> },
-        any
-      >;
-      del: FunctionReference<
-        "mutation",
-        "public",
-        { orgId: Id<"organizations"> },
-        any
-      >;
-      switchTo: FunctionReference<
-        "mutation",
-        "public",
-        { orgId: Id<"organizations"> },
         any
       >;
     };
@@ -505,14 +505,6 @@ export type PublicApiType = {
   organizations: {
     getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
   };
-  remoteFileStorage: {
-    getUploadUrl: FunctionReference<
-      "mutation",
-      "public",
-      { path: string },
-      string
-    >;
-  };
   p2pSignaling: {
     sendSignalingMessage: FunctionReference<
       "mutation",
@@ -538,6 +530,14 @@ export type PublicApiType = {
       any
     >;
   };
+  remoteFileStorage: {
+    getUploadUrl: FunctionReference<
+      "mutation",
+      "public",
+      { path: string },
+      string
+    >;
+  };
   presence: {
     heartbeat: FunctionReference<
       "mutation",
@@ -545,61 +545,31 @@ export type PublicApiType = {
       { data?: Record<string, any> },
       any
     >;
-    myActivePresence: FunctionReference<
-      "query",
-      "public",
-      any,
-      {
-        avatarUrl?: string;
-        browsingSection?: string;
-        currentlyActive: boolean;
-        gameName?: string;
-        lastActiveAt: number;
-        presenceType: 5 | 10;
-        userId: Id<"users">;
-        username: string;
-      }
-    >;
-    listOnlineFriendPresences: FunctionReference<
-      "query",
-      "public",
-      any,
-      Array<{
-        avatarUrl?: string;
-        browsingSection?: string;
-        currentlyActive: boolean;
-        gameName?: string;
-        lastActiveAt: number;
-        presenceType: 5 | 10;
-        userId: Id<"users">;
-        username: string;
-      }>
-    >;
     endUserPresence: FunctionReference<"mutation", "public", any, any>;
   };
   gameAchievements: {
-    getAchievement: FunctionReference<
+    getMyAchievementsForGame: FunctionReference<
       "query",
       "public",
-      { identifier: string },
-      boolean
+      Record<string, never>,
+      Array<string>
     >;
-    getStat: FunctionReference<
+    getMyStatsForGame: FunctionReference<
       "query",
       "public",
-      { identifier: string },
-      number
+      Record<string, never>,
+      Array<{ identifier: string; value: number }>
     >;
-    setAchievement: FunctionReference<
+    setUserGameAchievements: FunctionReference<
       "mutation",
       "public",
-      { identifier: string },
+      { achievements: Array<string> },
       any
     >;
-    setStat: FunctionReference<
+    setUserGameStats: FunctionReference<
       "mutation",
       "public",
-      { identifier: string; value: number },
+      { stats: Array<{ identifier: string; value: number }> },
       any
     >;
   };

@@ -6,7 +6,7 @@ import * as ugc from "./services/ugc";
 // TODO: Refactor all the services above to use Manager pattern we have for lobby and p2p
 import { LobbyManager } from "./services/lobby";
 import { P2PManager } from "./services/p2p";
-import { AchievementsManager } from "./services/achievements";
+import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import type {
@@ -36,7 +36,7 @@ class WavedashSDK {
   protected config: WavedashConfig | null = null;
   protected wavedashUser: WavedashUser;
   protected lobbyManager: LobbyManager;
-  protected achievementsManager: AchievementsManager;
+  protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
 
   convexClient: ConvexClient;
@@ -53,7 +53,7 @@ class WavedashSDK {
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
-    this.achievementsManager = new AchievementsManager(this);
+    this.statsManager = new StatsManager(this);
     this.heartbeatManager = new HeartbeatManager(this);
   }
 
@@ -373,6 +373,34 @@ class WavedashSDK {
     this.logger.debug(`Downloading remote directory: ${path}`);
     const result = await remoteStorage.downloadRemoteDirectory.call(this, path);
     return this.formatResponse(result);
+  }
+
+  // ============
+  // Achievements + Stats
+  // ============
+  getAchievement(identifier: string): boolean {
+    this.ensureReady();
+    return this.statsManager.getAchievement(identifier);
+  }
+  getStat(identifier: string): number {
+    this.ensureReady();
+    return this.statsManager.getStat(identifier);
+  }
+  setAchievement(identifier: string): void {
+    this.ensureReady();
+    this.statsManager.setAchievement(identifier);
+  }
+  setStat(identifier: string, value: number): void {
+    this.ensureReady();
+    this.statsManager.setStat(identifier, value);
+  }
+  async requestStats(): Promise<string | WavedashResponse<boolean>> {
+    this.ensureReady();
+    return this.formatResponse(await this.statsManager.requestStats());
+  }
+  async storeStats(): Promise<string | WavedashResponse<boolean>> {
+    this.ensureReady();
+    return this.formatResponse(await this.statsManager.storeStats());
   }
 
   // ============
