@@ -6,7 +6,7 @@ import * as ugc from "./services/ugc";
 // TODO: Refactor all the services above to use Manager pattern we have for lobby and p2p
 import { LobbyManager } from "./services/lobby";
 import { P2PManager } from "./services/p2p";
-import { StatsManager } from "./services/achievements";
+import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import type {
