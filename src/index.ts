@@ -394,13 +394,13 @@ class WavedashSDK {
     this.ensureReady();
     this.statsManager.setStat(identifier, value);
   }
-  async requestStats(): Promise<void> {
+  async requestStats(): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
-    this.statsManager.requestStats();
+    return this.formatResponse(await this.statsManager.requestStats());
   }
-  async storeStats(): Promise<void> {
+  async storeStats(): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
-    this.statsManager.storeStats();
+    return this.formatResponse(await this.statsManager.storeStats());
   }
 
   // ============

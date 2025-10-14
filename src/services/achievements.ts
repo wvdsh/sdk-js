@@ -30,7 +30,7 @@ export class StatsManager {
     }
   }
 
-  async requestStats(): Promise<WavedashResponse<void>> {
+  async requestStats(): Promise<WavedashResponse<boolean>> {
     try {
       await Promise.all([
         new Promise((resolve, reject) => {
@@ -41,6 +41,9 @@ export class StatsManager {
               this.hasLoadedStats = true;
               this.stats = unionBy(this.stats, newStats, "identifier");
               resolve(undefined);
+            },
+            (error) => {
+              reject(error);
             }
           );
         }),
@@ -55,27 +58,30 @@ export class StatsManager {
                 ...achievements,
               ]);
               resolve(undefined);
+            },
+            (error) => {
+              reject(error);
             }
           );
         }),
       ]);
       return {
         success: true,
-        data: undefined,
+        data: true,
         args: {},
       };
     } catch (error) {
       this.sdk.logger.error(`Error requesting stats: ${error}`);
       return {
         success: false,
-        data: undefined,
+        data: false,
         args: {},
         message: error instanceof Error ? error.message : String(error),
       };
     }
   }
 
-  async storeStats(): Promise<WavedashResponse<void>> {
+  async storeStats(): Promise<WavedashResponse<boolean>> {
     try {
       this.ensureLoaded();
       const updatedStats = this.stats.filter((stat) =>
@@ -102,14 +108,14 @@ export class StatsManager {
       this.updatedAchievementIdentifiers.clear();
       return {
         success: true,
-        data: undefined,
+        data: true,
         args: {},
       };
     } catch (error) {
       this.sdk.logger.error(`Error storing stats: ${error}`);
       return {
         success: false,
-        data: undefined,
+        data: false,
         args: {},
         message: error instanceof Error ? error.message : String(error),
       };
@@ -132,9 +138,11 @@ export class StatsManager {
   setStat(identifier: string, value: number): void {
     this.ensureLoaded();
     const stat = this.stats.find((s) => s.identifier === identifier);
-    if (stat && stat.value !== value) {
-      stat.value = value;
-      this.updatedStatIdentifiers.add(identifier);
+    if (stat) {
+      if (stat.value !== value) {
+        stat.value = value;
+        this.updatedStatIdentifiers.add(identifier);
+      }
     } else {
       this.stats.push({ identifier, value });
       this.updatedStatIdentifiers.add(identifier);
