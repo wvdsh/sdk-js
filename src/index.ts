@@ -89,7 +89,7 @@ class WavedashSDK {
     }
 
     this.logger.debug("Initialized with config:", this.config);
-    // Start heartbeat service (fire and forget)
+    // Start heartbeat service
     this.heartbeatManager.start();
 
     return true;
