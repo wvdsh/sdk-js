@@ -538,32 +538,6 @@ export type PublicApiType = {
       string
     >;
   };
-  gameAchievements: {
-    getAchievement: FunctionReference<
-      "query",
-      "public",
-      { identifier: string },
-      boolean
-    >;
-    getStat: FunctionReference<
-      "query",
-      "public",
-      { identifier: string },
-      number
-    >;
-    setAchievement: FunctionReference<
-      "mutation",
-      "public",
-      { identifier: string },
-      any
-    >;
-    setStat: FunctionReference<
-      "mutation",
-      "public",
-      { identifier: string; value: number },
-      any
-    >;
-  };
   presence: {
     heartbeat: FunctionReference<
       "mutation",
@@ -572,6 +546,32 @@ export type PublicApiType = {
       any
     >;
     endUserPresence: FunctionReference<"mutation", "public", any, any>;
+  };
+  gameAchievements: {
+    getMyAchievementsForGame: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      Array<string>
+    >;
+    getMyStatsForGame: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      Array<{ identifier: string; value: number }>
+    >;
+    setUserGameAchievements: FunctionReference<
+      "mutation",
+      "public",
+      { achievements: Array<string> },
+      any
+    >;
+    setUserGameStats: FunctionReference<
+      "mutation",
+      "public",
+      { stats: Array<{ identifier: string; value: number }> },
+      any
+    >;
   };
 };
 export type InternalApiType = {};

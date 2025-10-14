@@ -1,6 +1,6 @@
 /**
  * Leaderboard service
- * 
+ *
  * Implements each of the leaderboard methods of the Wavedash SDK
  */
 
@@ -11,10 +11,10 @@ import type {
   Leaderboard,
   LeaderboardEntries,
   WavedashResponse,
-  UpsertedLeaderboardEntry
-} from '../types';
-import { api } from '../_generated/convex_api';
-import type { WavedashSDK } from '../index';
+  UpsertedLeaderboardEntry,
+} from "../types";
+import { api } from "../_generated/convex_api";
+import type { WavedashSDK } from "../index";
 
 // Once a leaderboard is fetched, we cache it here
 // Mainly used to cache the totalEntries value for each leaderboard
@@ -28,7 +28,7 @@ class LeaderboardCache {
       this.cache.set(leaderboardId, { ...cachedLeaderboard, totalEntries });
     }
   }
-  
+
   set(leaderboardId: Id<"leaderboards">, leaderboard: Leaderboard): void {
     this.cache.set(leaderboardId, leaderboard);
   }
@@ -41,7 +41,10 @@ class LeaderboardCache {
 // Assuming we only have one WavedashSDK instance at a time, we can use a global variable to store the leaderboard cache
 const leaderboardCache = new LeaderboardCache();
 
-export async function getLeaderboard(this: WavedashSDK, name: string): Promise<WavedashResponse<Leaderboard>> {
+export async function getLeaderboard(
+  this: WavedashSDK,
+  name: string
+): Promise<WavedashResponse<Leaderboard>> {
   const args = { name };
 
   try {
@@ -53,7 +56,7 @@ export async function getLeaderboard(this: WavedashSDK, name: string): Promise<W
     return {
       success: true,
       data: leaderboard,
-      args: args
+      args: args,
     };
   } catch (error) {
     this.logger.error(`Failed to get leaderboard ${name}`, error);
@@ -61,12 +64,17 @@ export async function getLeaderboard(this: WavedashSDK, name: string): Promise<W
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error)
+      message: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
-export async function getOrCreateLeaderboard(this: WavedashSDK, name: string, sortOrder: LeaderboardSortOrder, displayType: LeaderboardDisplayType): Promise<WavedashResponse<Leaderboard>> {
+export async function getOrCreateLeaderboard(
+  this: WavedashSDK,
+  name: string,
+  sortOrder: LeaderboardSortOrder,
+  displayType: LeaderboardDisplayType
+): Promise<WavedashResponse<Leaderboard>> {
   const args = { name, sortOrder, displayType };
 
   try {
@@ -78,7 +86,7 @@ export async function getOrCreateLeaderboard(this: WavedashSDK, name: string, so
     return {
       success: true,
       data: leaderboard,
-      args: args
+      args: args,
     };
   } catch (error) {
     this.logger.error(`Failed to get or create leaderboard ${name}`, error);
@@ -86,17 +94,23 @@ export async function getOrCreateLeaderboard(this: WavedashSDK, name: string, so
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error)
+      message: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
-export function getLeaderboardEntryCount(this: WavedashSDK, leaderboardId: Id<"leaderboards">): number {
+export function getLeaderboardEntryCount(
+  this: WavedashSDK,
+  leaderboardId: Id<"leaderboards">
+): number {
   const cachedLeaderboard = leaderboardCache.get(leaderboardId);
   return cachedLeaderboard ? cachedLeaderboard.totalEntries : -1;
 }
 
-export async function getMyLeaderboardEntries(this: WavedashSDK, leaderboardId: Id<"leaderboards">): Promise<WavedashResponse<LeaderboardEntries>> {
+export async function getMyLeaderboardEntries(
+  this: WavedashSDK,
+  leaderboardId: Id<"leaderboards">
+): Promise<WavedashResponse<LeaderboardEntries>> {
   const args = { leaderboardId };
 
   try {
@@ -108,11 +122,13 @@ export async function getMyLeaderboardEntries(this: WavedashSDK, leaderboardId: 
       const totalEntries = result.totalEntries;
       leaderboardCache.update(leaderboardId, totalEntries);
     }
-    const entry = result.entry ? {
-      ...result.entry,
-      userId: this.wavedashUser.id,
-      username: this.wavedashUser.username
-    } : null;
+    const entry = result.entry
+      ? {
+          ...result.entry,
+          userId: this.wavedashUser.id,
+          username: this.wavedashUser.username,
+        }
+      : null;
 
     // TODO: Kind of weird to return a list when it will only ever have 0 or 1 entries
     // But this allows all get entries functions to share the same return type which the game SDK expects
@@ -121,20 +137,28 @@ export async function getMyLeaderboardEntries(this: WavedashSDK, leaderboardId: 
     return {
       success: true,
       data: entries,
-      args: args
+      args: args,
     };
   } catch (error) {
-    this.logger.error(`Failed to get my leaderboard entries for leaderboard ${leaderboardId}`, error);
+    this.logger.error(
+      `Failed to get my leaderboard entries for leaderboard ${leaderboardId}`,
+      error
+    );
     return {
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error)
+      message: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
-export async function listLeaderboardEntriesAroundUser(this: WavedashSDK, leaderboardId: Id<"leaderboards">, countAhead: number, countBehind: number): Promise<WavedashResponse<LeaderboardEntries>> {
+export async function listLeaderboardEntriesAroundUser(
+  this: WavedashSDK,
+  leaderboardId: Id<"leaderboards">,
+  countAhead: number,
+  countBehind: number
+): Promise<WavedashResponse<LeaderboardEntries>> {
   const args = { leaderboardId, countAhead, countBehind };
 
   try {
@@ -149,20 +173,28 @@ export async function listLeaderboardEntriesAroundUser(this: WavedashSDK, leader
     return {
       success: true,
       data: result.entries,
-      args: args
+      args: args,
     };
   } catch (error) {
-    this.logger.error(`Failed to list leaderboard entries around user for leaderboard ${leaderboardId}`, error);
+    this.logger.error(
+      `Failed to list leaderboard entries around user for leaderboard ${leaderboardId}`,
+      error
+    );
     return {
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error)
+      message: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
-export async function listLeaderboardEntries(this: WavedashSDK, leaderboardId: Id<"leaderboards">, offset: number, limit: number): Promise<WavedashResponse<LeaderboardEntries>> {
+export async function listLeaderboardEntries(
+  this: WavedashSDK,
+  leaderboardId: Id<"leaderboards">,
+  offset: number,
+  limit: number
+): Promise<WavedashResponse<LeaderboardEntries>> {
   const args = { leaderboardId, offset, limit };
 
   try {
@@ -177,20 +209,29 @@ export async function listLeaderboardEntries(this: WavedashSDK, leaderboardId: I
     return {
       success: true,
       data: result.entries,
-      args: args
+      args: args,
     };
   } catch (error) {
-    this.logger.error(`Failed to list leaderboard entries for leaderboard ${leaderboardId}`, error);
+    this.logger.error(
+      `Failed to list leaderboard entries for leaderboard ${leaderboardId}`,
+      error
+    );
     return {
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error)
+      message: error instanceof Error ? error.message : String(error),
     };
   }
 }
 
-export async function uploadLeaderboardScore(this: WavedashSDK, leaderboardId: Id<"leaderboards">, score: number, keepBest: boolean, ugcId?: Id<"userGeneratedContent">): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
+export async function uploadLeaderboardScore(
+  this: WavedashSDK,
+  leaderboardId: Id<"leaderboards">,
+  score: number,
+  keepBest: boolean,
+  ugcId?: Id<"userGeneratedContent">
+): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
   const args = { leaderboardId, score, keepBest, ugcId };
 
   try {
@@ -205,22 +246,24 @@ export async function uploadLeaderboardScore(this: WavedashSDK, leaderboardId: I
     const entry = {
       ...result.entry,
       userId: this.wavedashUser.id,
-      username: this.wavedashUser.username
+      username: this.wavedashUser.username,
     };
 
     return {
       success: true,
       data: entry,
-      args: args
+      args: args,
     };
   } catch (error) {
-    this.logger.error(`Failed to upload leaderboard score for leaderboard ${leaderboardId}`, error);
+    this.logger.error(
+      `Failed to upload leaderboard score for leaderboard ${leaderboardId}`,
+      error
+    );
     return {
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error)
+      message: error instanceof Error ? error.message : String(error),
     };
   }
 }
-
