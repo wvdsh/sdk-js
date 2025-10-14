@@ -10,7 +10,6 @@ import type { WavedashSDK } from '../index';
 import { Signals } from '../signals';
 import { api } from '../_generated/convex_api';
 import type { ConnectionState } from 'convex/browser';
-import { GAMEPLAY_HEARTBEAT } from '../_generated/constants';
 
 export class HeartbeatManager {
   private sdk: WavedashSDK;
@@ -18,16 +17,16 @@ export class HeartbeatManager {
   private isConnected: boolean = false;
   private disconnectedTicks: number = 0;
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
+  private readonly DISCONNECTED_TIMEOUT_MS = 60_000;
 
   // Number of ticks before considering ourselves disconnected
-  private readonly DISCONNECTED_THRESHOLD_TICKS = GAMEPLAY_HEARTBEAT.TIMEOUT_MS / this.TEST_CONNECTION_INTERVAL_MS;
+  private readonly DISCONNECTED_THRESHOLD_TICKS = this.DISCONNECTED_TIMEOUT_MS / this.TEST_CONNECTION_INTERVAL_MS;
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
   }
 
   start(): void {
-    this.sdk.logger.debug('Starting heartbeat');
     // Stop any existing heartbeat
     this.stop();
 
