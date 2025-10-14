@@ -1,15 +1,15 @@
 /**
  * Heartbeat service
- * 
+ *
  * Polls connection state and allows the game to update rich user presence
  * Lets the game know if backend connection ever changes.
  * Lets the game update userPresence in the backend
  */
 
-import type { WavedashSDK } from '../index';
-import { Signals } from '../signals';
-import { api } from '../_generated/convex_api';
-import type { ConnectionState } from 'convex/browser';
+import type { WavedashSDK } from "../index";
+import { Signals } from "../signals";
+import { api } from "../_generated/convex_api";
+import type { ConnectionState } from "convex/browser";
 
 export class HeartbeatManager {
   private sdk: WavedashSDK;
@@ -20,7 +20,8 @@ export class HeartbeatManager {
   private readonly DISCONNECTED_TIMEOUT_MS = 60_000;
 
   // Number of ticks before considering ourselves disconnected
-  private readonly DISCONNECTED_THRESHOLD_TICKS = this.DISCONNECTED_TIMEOUT_MS / this.TEST_CONNECTION_INTERVAL_MS;
+  private readonly DISCONNECTED_THRESHOLD_TICKS =
+    this.DISCONNECTED_TIMEOUT_MS / this.TEST_CONNECTION_INTERVAL_MS;
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
@@ -31,8 +32,8 @@ export class HeartbeatManager {
     this.stop();
 
     // Populate initial connection state
-    // @ts-ignore - connectionState exists but may not be in type definitions
-    this.isConnected = this.sdk.convexClient.connectionState().isWebSocketConnected;
+    this.isConnected =
+      this.sdk.convexClient.client.connectionState().isWebSocketConnected;
 
     // Let the backend know we've started the game
     this.updateUserPresence();
@@ -59,7 +60,9 @@ export class HeartbeatManager {
     try {
       // Add a default value to guarantee that the presence is updated
       const dataToSend = data ?? { forceUpdate: true };
-      await this.sdk.convexClient.mutation(api.presence.heartbeat, { data: dataToSend });
+      await this.sdk.convexClient.mutation(api.presence.heartbeat, {
+        data: dataToSend,
+      });
       return true;
     } catch (error) {
       this.sdk.logger.error(`Error updating presence: ${error}`);
@@ -70,19 +73,19 @@ export class HeartbeatManager {
   /**
    * Tests the connection to the backend
    */
-  private async testConnection(): Promise<void> {
+  private testConnection(): void {
     try {
       // Check local connection state
       const wasConnected = this.isConnected;
-      // @ts-ignore - connectionState exists but may not be in type definitions
-      const state: ConnectionState = this.sdk.convexClient.connectionState() as ConnectionState;
+      const state: ConnectionState =
+        this.sdk.convexClient.client.connectionState() as ConnectionState;
       this.isConnected = navigator.onLine && state.isWebSocketConnected;
       const connection = {
         isConnected: this.isConnected,
         hasEverConnected: state.hasEverConnected,
         connectionCount: state.connectionCount,
-        connectionRetries: state.connectionRetries
-      }
+        connectionRetries: state.connectionRetries,
+      };
 
       // Handle connection state changes
       if (this.isConnected && !wasConnected) {
@@ -92,7 +95,9 @@ export class HeartbeatManager {
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedTicks = 1;
-        this.sdk.logger.warn('Backend disconnected - attempting to reconnect...');
+        this.sdk.logger.warn(
+          "Backend disconnected - attempting to reconnect..."
+        );
         this.sdk.notifyGame(Signals.BACKEND_RECONNECTING, connection);
       } else if (!this.isConnected && !wasConnected) {
         // Still disconnected - increment counter
@@ -106,7 +111,7 @@ export class HeartbeatManager {
         this.disconnectedTicks = 0;
       }
     } catch (error) {
-      this.sdk.logger.error('Error testing connection:', error);
+      this.sdk.logger.error("Error testing connection:", error);
     }
   }
 
@@ -114,4 +119,3 @@ export class HeartbeatManager {
     return this.isConnected;
   }
 }
-
