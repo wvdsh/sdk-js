@@ -5,7 +5,7 @@ import unionBy from "lodash.unionby";
 type Stats = Array<{ identifier: string; value: number }>;
 type Achievements = Set<string>;
 
-export class AchievementsManager {
+export class StatsManager {
   private sdk: WavedashSDK;
   private stats: Stats = [];
   private achievements: Achievements = new Set();
@@ -22,52 +22,102 @@ export class AchievementsManager {
     this.sdk = sdk;
   }
 
-  async requestStats() {
-    this.unsubscribeStats = this.sdk.convexClient.onUpdate(
-      api.gameAchievements.getMyStatsForGame,
-      {},
-      (newStats) => {
-        this.hasLoadedStats = true;
-        this.stats = unionBy(this.stats, newStats, "identifier");
-      }
-    );
-
-    this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
-      api.gameAchievements.getMyAchievementsForGame,
-      {},
-      (achievements) => {
-        this.hasLoadedAchievements = true;
-        this.achievements = new Set([...this.achievements, ...achievements]);
-      }
-    );
+  ensureLoaded(): void {
+    if (!this.hasLoadedStats || !this.hasLoadedAchievements) {
+      throw new Error(
+        "Stats and achievements not loaded, make sure to call requestStats() first"
+      );
+    }
   }
 
-  async storeStats() {
-    const updatedStats = this.stats.filter((stat) =>
-      this.updatedStatIdentifiers.has(stat.identifier)
-    );
-    if (updatedStats.length > 0) {
-      await this.sdk.convexClient.mutation(
-        api.gameAchievements.setUserGameStats,
-        { stats: updatedStats }
-      );
+  async requestStats(): Promise<WavedashResponse<void>> {
+    try {
+      await Promise.all([
+        new Promise((resolve, reject) => {
+          this.unsubscribeStats = this.sdk.convexClient.onUpdate(
+            api.gameAchievements.getMyStatsForGame,
+            {},
+            (newStats) => {
+              this.hasLoadedStats = true;
+              this.stats = unionBy(this.stats, newStats, "identifier");
+              resolve(undefined);
+            }
+          );
+        }),
+        new Promise((resolve, reject) => {
+          this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
+            api.gameAchievements.getMyAchievementsForGame,
+            {},
+            (achievements) => {
+              this.hasLoadedAchievements = true;
+              this.achievements = new Set([
+                ...this.achievements,
+                ...achievements,
+              ]);
+              resolve(undefined);
+            }
+          );
+        }),
+      ]);
+      return {
+        success: true,
+        data: undefined,
+        args: {},
+      };
+    } catch (error) {
+      this.sdk.logger.error(`Error requesting stats: ${error}`);
+      return {
+        success: false,
+        data: undefined,
+        args: {},
+        message: error instanceof Error ? error.message : String(error),
+      };
     }
+  }
 
-    const updatedAchievements = Array.from(this.achievements).filter(
-      (achievement) => this.updatedAchievementIdentifiers.has(achievement)
-    );
-    if (updatedAchievements.length > 0) {
-      await this.sdk.convexClient.mutation(
-        api.gameAchievements.setUserGameAchievements,
-        { achievements: updatedAchievements }
+  async storeStats(): Promise<WavedashResponse<void>> {
+    try {
+      this.ensureLoaded();
+      const updatedStats = this.stats.filter((stat) =>
+        this.updatedStatIdentifiers.has(stat.identifier)
       );
-    }
+      if (updatedStats.length > 0) {
+        await this.sdk.convexClient.mutation(
+          api.gameAchievements.setUserGameStats,
+          { stats: updatedStats }
+        );
+      }
 
-    this.updatedStatIdentifiers.clear();
-    this.updatedAchievementIdentifiers.clear();
+      const updatedAchievements = Array.from(this.achievements).filter(
+        (achievement) => this.updatedAchievementIdentifiers.has(achievement)
+      );
+      if (updatedAchievements.length > 0) {
+        await this.sdk.convexClient.mutation(
+          api.gameAchievements.setUserGameAchievements,
+          { achievements: updatedAchievements }
+        );
+      }
+
+      this.updatedStatIdentifiers.clear();
+      this.updatedAchievementIdentifiers.clear();
+      return {
+        success: true,
+        data: undefined,
+        args: {},
+      };
+    } catch (error) {
+      this.sdk.logger.error(`Error storing stats: ${error}`);
+      return {
+        success: false,
+        data: undefined,
+        args: {},
+        message: error instanceof Error ? error.message : String(error),
+      };
+    }
   }
 
   setAchievement(identifier: string): void {
+    this.ensureLoaded();
     if (!this.achievements.has(identifier)) {
       this.achievements.add(identifier);
       this.updatedAchievementIdentifiers.add(identifier);
@@ -75,10 +125,12 @@ export class AchievementsManager {
   }
 
   getAchievement(identifier: string): boolean {
+    this.ensureLoaded();
     return this.achievements.has(identifier);
   }
 
   setStat(identifier: string, value: number): void {
+    this.ensureLoaded();
     const stat = this.stats.find((s) => s.identifier === identifier);
     if (stat && stat.value !== value) {
       stat.value = value;
@@ -90,6 +142,7 @@ export class AchievementsManager {
   }
 
   getStat(identifier: string): number {
+    this.ensureLoaded();
     const stat = this.stats.find((s) => s.identifier === identifier);
     const value = stat ? stat.value : -1;
     return value;
