@@ -34,6 +34,9 @@ export class HeartbeatManager {
     // @ts-ignore - connectionState exists but may not be in type definitions
     this.isConnected = this.sdk.convexClient.connectionState().isWebSocketConnected;
 
+    // Let the backend know we've started the game
+    this.updateUserPresence();
+
     // Check connection interval
     this.testConnectionInterval = setInterval(() => {
       this.testConnection();

@@ -545,6 +545,36 @@ export type PublicApiType = {
       { data?: Record<string, any> },
       any
     >;
+    myActivePresence: FunctionReference<
+      "query",
+      "public",
+      any,
+      {
+        avatarUrl?: string;
+        browsingSection?: string;
+        currentlyActive: boolean;
+        gameName?: string;
+        lastActiveAt: number;
+        presenceType: 5 | 10;
+        userId: Id<"users">;
+        username: string;
+      }
+    >;
+    listOnlineFriendPresences: FunctionReference<
+      "query",
+      "public",
+      any,
+      Array<{
+        avatarUrl?: string;
+        browsingSection?: string;
+        currentlyActive: boolean;
+        gameName?: string;
+        lastActiveAt: number;
+        presenceType: 5 | 10;
+        userId: Id<"users">;
+        username: string;
+      }>
+    >;
     endUserPresence: FunctionReference<"mutation", "public", any, any>;
   };
   gameAchievements: {
