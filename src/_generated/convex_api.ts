@@ -163,7 +163,7 @@ export type PublicApiType = {
         any
       >;
     };
-    sessions: {
+    sessionTokens: {
       logout: FunctionReference<
         "mutation",
         "public",
@@ -545,14 +545,50 @@ export type PublicApiType = {
       { data?: Record<string, any> },
       any
     >;
+    myActivePresence: FunctionReference<
+      "query",
+      "public",
+      any,
+      {
+        avatarUrl?: string;
+        browsingSection?: string;
+        currentlyActive: boolean;
+        gameName?: string;
+        presenceType: 5 | 10;
+        userId: Id<"users">;
+        username: string;
+      }
+    >;
+    listOnlineFriendPresences: FunctionReference<
+      "query",
+      "public",
+      any,
+      Array<{
+        avatarUrl?: string;
+        browsingSection?: string;
+        currentlyActive: boolean;
+        gameName?: string;
+        presenceType: 5 | 10;
+        userId: Id<"users">;
+        username: string;
+      }>
+    >;
     endUserPresence: FunctionReference<"mutation", "public", any, any>;
   };
   gameAchievements: {
     getMyAchievementsForGame: FunctionReference<
       "query",
       "public",
-      Record<string, never>,
-      Array<string>
+      { since?: number },
+      Array<{
+        achievement: {
+          description: string;
+          displayName: string;
+          identifier: string;
+          image: string;
+        };
+        completedAt: number;
+      }>
     >;
     getMyStatsForGame: FunctionReference<
       "query",

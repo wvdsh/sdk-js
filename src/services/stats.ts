@@ -8,7 +8,7 @@ type Achievements = Set<string>;
 export class StatsManager {
   private sdk: WavedashSDK;
   private stats: Stats = [];
-  private achievements: Achievements = new Set();
+  private achievementIdentifiers: Achievements = new Set();
 
   private updatedStatIdentifiers: Set<string> = new Set();
   private updatedAchievementIdentifiers: Set<string> = new Set();
@@ -53,9 +53,11 @@ export class StatsManager {
             {},
             (achievements) => {
               this.hasLoadedAchievements = true;
-              this.achievements = new Set([
-                ...this.achievements,
-                ...achievements,
+              this.achievementIdentifiers = new Set([
+                ...this.achievementIdentifiers,
+                ...achievements.map(
+                  ({ achievement }) => achievement.identifier
+                ),
               ]);
               resolve(undefined);
             },
@@ -94,8 +96,10 @@ export class StatsManager {
         );
       }
 
-      const updatedAchievements = Array.from(this.achievements).filter(
-        (achievement) => this.updatedAchievementIdentifiers.has(achievement)
+      const updatedAchievements = Array.from(
+        this.achievementIdentifiers
+      ).filter((achievement) =>
+        this.updatedAchievementIdentifiers.has(achievement)
       );
       if (updatedAchievements.length > 0) {
         await this.sdk.convexClient.mutation(
@@ -124,15 +128,15 @@ export class StatsManager {
 
   setAchievement(identifier: string): void {
     this.ensureLoaded();
-    if (!this.achievements.has(identifier)) {
-      this.achievements.add(identifier);
+    if (!this.achievementIdentifiers.has(identifier)) {
+      this.achievementIdentifiers.add(identifier);
       this.updatedAchievementIdentifiers.add(identifier);
     }
   }
 
   getAchievement(identifier: string): boolean {
     this.ensureLoaded();
-    return this.achievements.has(identifier);
+    return this.achievementIdentifiers.has(identifier);
   }
 
   setStat(identifier: string, value: number): void {
