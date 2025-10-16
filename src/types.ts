@@ -79,6 +79,7 @@ export interface EngineInstance {
       data: string | ArrayBufferView,
       opts?: Record<string, any>
     ): void;
+    mkdirTree(path: string, mode?: number): void;
     syncfs(populate: boolean, callback?: (err: any) => void): void;
     analyzePath(path: string): { exists: boolean };
     // ... other functions
