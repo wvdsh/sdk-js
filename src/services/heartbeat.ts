@@ -15,13 +15,10 @@ export class HeartbeatManager {
   private sdk: WavedashSDK;
   private testConnectionInterval: ReturnType<typeof setInterval> | null = null;
   private isConnected: boolean = false;
-  private disconnectedTicks: number = 0;
+  private sentDisconnectedSignal: boolean = false;
+  private disconnectedAt: number | null = null;
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
-  private readonly DISCONNECTED_TIMEOUT_MS = 60_000;
-
-  // Number of ticks before considering ourselves disconnected
-  private readonly DISCONNECTED_THRESHOLD_TICKS =
-    this.DISCONNECTED_TIMEOUT_MS / this.TEST_CONNECTION_INTERVAL_MS;
+  private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
@@ -90,25 +87,31 @@ export class HeartbeatManager {
       // Handle connection state changes
       if (this.isConnected && !wasConnected) {
         // Reconnected
-        this.disconnectedTicks = 0;
+        this.disconnectedAt = null;
+        this.sentDisconnectedSignal = false;
         this.sdk.notifyGame(Signals.BACKEND_CONNECTED, connection);
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
-        this.disconnectedTicks = 1;
+        this.disconnectedAt = Date.now();
         this.sdk.logger.warn(
           "Backend disconnected - attempting to reconnect..."
         );
         this.sdk.notifyGame(Signals.BACKEND_RECONNECTING, connection);
       } else if (!this.isConnected && !wasConnected) {
-        // Still disconnected - increment counter
-        this.disconnectedTicks++;
+        // Still disconnected
         // After threshold, notify as truly disconnected
-        if (this.disconnectedTicks === this.DISCONNECTED_THRESHOLD_TICKS) {
+        if (
+          this.disconnectedAt &&
+          !this.sentDisconnectedSignal &&
+          Date.now() - this.disconnectedAt > this.DISCONNECTED_TIMEOUT_MS
+        ) {
           this.sdk.notifyGame(Signals.BACKEND_DISCONNECTED, connection);
+          this.sentDisconnectedSignal = true;
         }
       } else if (this.isConnected && wasConnected) {
-        // Still connected - reset counter
-        this.disconnectedTicks = 0;
+        // Still connected
+        this.disconnectedAt = null;
+        this.sentDisconnectedSignal = false;
       }
     } catch (error) {
       this.sdk.logger.error("Error testing connection:", error);
