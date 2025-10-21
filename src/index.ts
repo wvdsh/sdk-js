@@ -32,7 +32,7 @@ import type {
 
 class WavedashSDK {
   private initialized: boolean = false;
-  private pendingLobbyJoinId: Id<"lobbies"> | null = null;
+  private onInitCallback?: () => Promise<void>;
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: WavedashUser;
@@ -51,18 +51,16 @@ class WavedashSDK {
   constructor(
     convexClient: ConvexClient,
     wavedashUser: WavedashUser,
-    joinLobbyIdOnInit?: Id<"lobbies">
+    onInitCallback?: () => Promise<void>
   ) {
     this.convexClient = convexClient;
     this.wavedashUser = wavedashUser;
+    this.onInitCallback = onInitCallback;
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
     this.heartbeatManager = new HeartbeatManager(this);
-    if (joinLobbyIdOnInit) {
-      this.pendingLobbyJoinId = joinLobbyIdOnInit;
-    }
   }
 
   // =============
@@ -100,17 +98,23 @@ class WavedashSDK {
     // Start heartbeat service
     this.heartbeatManager.start();
 
-    if (this.pendingLobbyJoinId) {
-      this.joinLobby(this.pendingLobbyJoinId)
-        .catch((error) => {
-          this.logger.error("Error joining lobby on init:", error);
-        })
-        .finally(() => {
-          this.pendingLobbyJoinId = null;
-        });
+    if (this.onInitCallback) {
+      this.onInitCallback().catch((error) => {
+        this.logger.error("Error in onInitCallback:", error);
+      });
     }
 
     return true;
+  }
+
+  onInit(callback: () => Promise<void>): void {
+    if (this.initialized) {
+      callback().catch((error) => {
+        this.logger.error("Error in onInit callback:", error);
+      });
+    } else {
+      this.onInitCallback = callback;
+    }
   }
 
   /**

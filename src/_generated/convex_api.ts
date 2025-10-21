@@ -542,7 +542,7 @@ export type PublicApiType = {
     heartbeat: FunctionReference<
       "mutation",
       "public",
-      { data?: Record<string, any> },
+      { browsingSection?: string | null; data?: Record<string, any> },
       any
     >;
     myActivePresence: FunctionReference<
@@ -554,12 +554,13 @@ export type PublicApiType = {
         browsingSection?: string;
         currentlyActive: boolean;
         gameName?: string;
+        lastActiveAt?: number;
         presenceType: 5 | 10;
         userId: Id<"users">;
         username: string;
       }
     >;
-    listOnlineFriendPresences: FunctionReference<
+    listOnlineFriends: FunctionReference<
       "query",
       "public",
       any,
@@ -568,6 +569,22 @@ export type PublicApiType = {
         browsingSection?: string;
         currentlyActive: boolean;
         gameName?: string;
+        lastActiveAt?: number;
+        presenceType: 5 | 10;
+        userId: Id<"users">;
+        username: string;
+      }>
+    >;
+    listOfflineFriends: FunctionReference<
+      "query",
+      "public",
+      any,
+      Array<{
+        avatarUrl?: string;
+        browsingSection?: string;
+        currentlyActive: boolean;
+        gameName?: string;
+        lastActiveAt?: number;
         presenceType: 5 | 10;
         userId: Id<"users">;
         username: string;
