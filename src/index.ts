@@ -32,6 +32,7 @@ import type {
 
 class WavedashSDK {
   private initialized: boolean = false;
+  private pendingLobbyJoinId: Id<"lobbies"> | null = null;
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: WavedashUser;
@@ -47,7 +48,11 @@ class WavedashSDK {
 
   Constants = Constants;
 
-  constructor(convexClient: ConvexClient, wavedashUser: WavedashUser) {
+  constructor(
+    convexClient: ConvexClient,
+    wavedashUser: WavedashUser,
+    joinLobbyIdOnInit?: Id<"lobbies">
+  ) {
     this.convexClient = convexClient;
     this.wavedashUser = wavedashUser;
     this.logger = new WavedashLogger();
@@ -55,6 +60,9 @@ class WavedashSDK {
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
     this.heartbeatManager = new HeartbeatManager(this);
+    if (joinLobbyIdOnInit) {
+      this.pendingLobbyJoinId = joinLobbyIdOnInit;
+    }
   }
 
   // =============
@@ -91,6 +99,16 @@ class WavedashSDK {
     this.logger.debug("Initialized with config:", this.config);
     // Start heartbeat service
     this.heartbeatManager.start();
+
+    if (this.pendingLobbyJoinId) {
+      this.joinLobby(this.pendingLobbyJoinId)
+        .catch((error) => {
+          this.logger.error("Error joining lobby on init:", error);
+        })
+        .finally(() => {
+          this.pendingLobbyJoinId = null;
+        });
+    }
 
     return true;
   }
@@ -512,6 +530,12 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  /**
+   * Join a lobby
+   * @param lobbyId - The ID of the lobby to join
+   * @returns A WavedashResponse containing the lobby ID
+   * @emits LOBBY_JOINED signal to the game engine
+   */
   async joinLobby(
     lobbyId: Id<"lobbies">
   ): Promise<string | WavedashResponse<Id<"lobbies">>> {
