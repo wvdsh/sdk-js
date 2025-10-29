@@ -573,6 +573,11 @@ export class P2PManager {
       this.sdk.logger.error(
         `No ICE servers available for peer ${remoteUserId}`
       );
+      this.sdk.notifyGame(Signals.P2P_CONNECTION_FAILED, {
+        userId: remoteUserId,
+        username: connection.peers[remoteUserId]?.username || "",
+        error: "No ICE servers available",
+      });
       return false;
     }
     const pc = new RTCPeerConnection({
