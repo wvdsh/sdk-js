@@ -76,7 +76,7 @@ export type PublicApiType = {
     consumePlayKey: FunctionReference<
       "mutation",
       "public",
-      { playKeyId: Id<"playKeys"> },
+      { playKeyIdOrCode: Id<"playKeys"> | string },
       any
     >;
   };
@@ -593,6 +593,22 @@ export type PublicApiType = {
     endUserPresence: FunctionReference<"mutation", "public", any, any>;
   };
   gameAchievements: {
+    getAllAchievementsWithProgress: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      Array<{
+        achievement: {
+          description: string;
+          displayName: string;
+          image: string;
+        };
+        completedAt?: number;
+        currentValue?: number;
+        isCompleted: boolean;
+        targetValue?: number;
+      }>
+    >;
     getMyAchievementsForGame: FunctionReference<
       "query",
       "public",
@@ -625,6 +641,28 @@ export type PublicApiType = {
       "mutation",
       "public",
       { stats: Array<{ identifier: string; value: number }> },
+      any
+    >;
+  };
+  turnCredentials: {
+    getTurnCredentials: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      {
+        expiresAt: number;
+        iceServers: Array<{
+          credential?: string;
+          url?: string;
+          urls: string | Array<string>;
+          username?: string;
+        }>;
+      } | null
+    >;
+    refreshTurnCredentials: FunctionReference<
+      "action",
+      "public",
+      Record<string, never>,
       any
     >;
   };
