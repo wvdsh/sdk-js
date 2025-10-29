@@ -486,7 +486,7 @@ export class P2PManager {
     this.sdk.logger.debug("Establishing WebRTC connections to peers...");
 
     const currentUserId = this.sdk.getUserId();
-    const connectionPromises: Promise<void>[] = [];
+    const connectionPromises: Promise<boolean>[] = [];
 
     // Create peer connections to all other peers
     (Object.entries(connection.peers) as [Id<"users">, P2PPeer][]).forEach(
@@ -567,8 +567,14 @@ export class P2PManager {
     remoteUserId: Id<"users">,
     connection: P2PConnection,
     shouldCreateChannels: boolean = false
-  ): Promise<void> {
+  ): Promise<boolean> {
     const iceServers = await this.getIceServers();
+    if (!iceServers) {
+      this.sdk.logger.error(
+        `No ICE servers available for peer ${remoteUserId}`
+      );
+      return false;
+    }
     const pc = new RTCPeerConnection({
       iceServers: iceServers,
       // Start gathering ICE candidates in the background as soon as the RTCPeerConnection is created
@@ -695,6 +701,7 @@ export class P2PManager {
     };
 
     this.peerConnections.set(remoteUserId, pc);
+    return true;
   }
 
   private setupDataChannelHandlers(
