@@ -15,7 +15,6 @@ import type {
   LeaderboardSortOrder,
   LeaderboardDisplayType,
   WavedashConfig,
-  WavedashUser,
   EngineInstance,
   Leaderboard,
   LeaderboardEntries,
@@ -35,7 +34,7 @@ class WavedashSDK {
   private onInitCallback?: () => Promise<void>;
 
   protected config: WavedashConfig | null = null;
-  protected wavedashUser: WavedashUser;
+  protected wavedashUser: Constants.SDKUser;
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
@@ -50,7 +49,7 @@ class WavedashSDK {
 
   constructor(
     convexClient: ConvexClient,
-    wavedashUser: WavedashUser,
+    wavedashUser: Constants.SDKUser,
     onInitCallback?: () => Promise<void>
   ) {
     this.convexClient = convexClient;
@@ -134,7 +133,7 @@ class WavedashSDK {
   // User methods
   // ============
 
-  getUser(): string | WavedashUser {
+  getUser(): string | Constants.SDKUser {
     this.ensureReady();
     return this.formatResponse(this.wavedashUser);
   }
@@ -619,6 +618,46 @@ class WavedashSDK {
   }
 
   // ==============================
+  // Keyboard Event Forwarding
+  // ==============================
+  /**
+   * Enables forwarding of keyboard events to the parent window
+   * Useful when the SDK is running in an iframe and needs to forward keyboard input
+   */
+  handleKeystrokes(): void {
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Tab" && event.shiftKey) {
+        event.preventDefault();
+      }
+      window.parent.postMessage(
+        {
+          type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_DOWN,
+          key: event.key,
+          shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          altKey: event.altKey,
+          metaKey: event.metaKey,
+        },
+        "*"
+      );
+    });
+
+    window.addEventListener("keyup", (event) => {
+      window.parent.postMessage(
+        {
+          type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_UP,
+          key: event.key,
+          shiftKey: event.shiftKey,
+          ctrlKey: event.ctrlKey,
+          altKey: event.altKey,
+          metaKey: event.metaKey,
+        },
+        "*"
+      );
+    });
+  }
+
+  // ==============================
   // JS -> Game Event Broadcasting
   // ==============================
   notifyGame(
@@ -665,11 +704,48 @@ export { WavedashSDK };
 // Re-export all types
 export type * from "./types";
 
+// Simple map of request types to their response types
+
+async function requestFromParent<T extends keyof Constants.IFrameResponseMap>(
+  requestType: T
+): Promise<Constants.IFrameResponseMap[T]> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`${requestType} request timed out after 5 seconds`));
+    }, 5000);
+
+    const handleMessage = (event: MessageEvent) => {
+      if (
+        event.data?.type === "response" &&
+        event.data?.requestType === requestType
+      ) {
+        clearTimeout(timeout);
+        window.removeEventListener("message", handleMessage);
+        resolve(event.data.data);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    window.parent.postMessage({ type: requestType }, "*");
+  });
+}
+
+const getAuthToken = async (): Promise<string> => {
+  return await requestFromParent(Constants.IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN);
+};
+
 // Type-safe initialization helper
-export function setupWavedashSDK(
-  convexClient: ConvexClient,
-  wavedashUser: WavedashUser
-): WavedashSDK {
+export async function setupWavedashSDK(): Promise<WavedashSDK> {
+  console.log("[WavedashJS] Setting up SDK");
+  const convexCloudUrl = await requestFromParent(
+    Constants.IFRAME_MESSAGE_TYPE.GET_CONVEX_CLOUD_URL
+  );
+  const wavedashUser = await requestFromParent(
+    Constants.IFRAME_MESSAGE_TYPE.GET_USER
+  );
+  const convexClient = new ConvexClient(convexCloudUrl);
+  convexClient.setAuth(getAuthToken);
+
   const sdk = new WavedashSDK(convexClient, wavedashUser);
 
   if (typeof window !== "undefined") {
@@ -679,3 +755,5 @@ export function setupWavedashSDK(
 
   return sdk;
 }
+
+setupWavedashSDK();

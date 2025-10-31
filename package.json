@@ -36,10 +36,8 @@
     "tsup": "^8.0.0",
     "typescript": "^5.8.3"
   },
-  "peerDependencies": {
-    "convex": "^1.27.5"
-  },
   "dependencies": {
+    "convex": "^1.28.0",
     "lodash.unionby": "^4.8.0"
   }
 }
