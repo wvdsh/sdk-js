@@ -653,6 +653,39 @@ class WavedashSDK {
       throw new Error("SDK not initialized");
     }
   }
+
+  // ============
+  // Entrypoint Helpers
+  // ============
+  loadScript(src: string) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.type = "text/javascript";
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  updateLoadProgressZeroToOne(progress: number) {
+    window.parent.postMessage(
+      {
+        type: Constants.IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE,
+        progress,
+      },
+      "*"
+    );
+  }
+
+  loadComplete() {
+    window.parent.postMessage(
+      {
+        type: Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE,
+      },
+      "*"
+    );
+  }
 }
 
 // =======

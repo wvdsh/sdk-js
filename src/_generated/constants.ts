@@ -99,7 +99,9 @@ export const IFRAME_MESSAGE_TYPE = {
 	GET_CONVEX_CLOUD_URL: 'GetConvexCloudUrl',
 	GET_USER: 'GetUser',
 	ON_KEY_DOWN: 'OnKeyDown',
-	ON_KEY_UP: 'OnKeyUp'
+	ON_KEY_UP: 'OnKeyUp',
+	PROGRESS_UPDATE: 'ProgressUpdate',
+	LOADING_COMPLETE: 'LoadingComplete'
 } as const;
 
 export interface IFrameResponse<T> {
