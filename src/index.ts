@@ -618,46 +618,6 @@ class WavedashSDK {
   }
 
   // ==============================
-  // Keyboard Event Forwarding
-  // ==============================
-  /**
-   * Enables forwarding of keyboard events to the parent window
-   * Useful when the SDK is running in an iframe and needs to forward keyboard input
-   */
-  handleKeystrokes(): void {
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "Tab" && event.shiftKey) {
-        event.preventDefault();
-      }
-      window.parent.postMessage(
-        {
-          type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_DOWN,
-          key: event.key,
-          shiftKey: event.shiftKey,
-          ctrlKey: event.ctrlKey,
-          altKey: event.altKey,
-          metaKey: event.metaKey,
-        },
-        "*"
-      );
-    });
-
-    window.addEventListener("keyup", (event) => {
-      window.parent.postMessage(
-        {
-          type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_UP,
-          key: event.key,
-          shiftKey: event.shiftKey,
-          ctrlKey: event.ctrlKey,
-          altKey: event.altKey,
-          metaKey: event.metaKey,
-        },
-        "*"
-      );
-    });
-  }
-
-  // ==============================
   // JS -> Game Event Broadcasting
   // ==============================
   notifyGame(
@@ -704,7 +664,45 @@ export { WavedashSDK };
 // Re-export all types
 export type * from "./types";
 
-// Simple map of request types to their response types
+// ==============================
+// Keyboard Event Forwarding
+// ==============================
+/**
+ * Enables forwarding of keyboard events to the parent window
+ * Useful when the SDK is running in an iframe and needs to forward keyboard input
+ */
+function handleKeystrokes(): void {
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Tab" && event.shiftKey) {
+      event.preventDefault();
+    }
+    window.parent.postMessage(
+      {
+        type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_DOWN,
+        key: event.key,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+      },
+      "*"
+    );
+  });
+
+  window.addEventListener("keyup", (event) => {
+    window.parent.postMessage(
+      {
+        type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_UP,
+        key: event.key,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+      },
+      "*"
+    );
+  });
+}
 
 async function requestFromParent<T extends keyof Constants.IFrameResponseMap>(
   requestType: T
@@ -752,6 +750,7 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
     (window as any).WavedashJS = sdk;
     console.log("[WavedashJS] SDK attached to window");
   }
+  handleKeystrokes();
 
   return sdk;
 }
