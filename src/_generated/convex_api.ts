@@ -48,6 +48,7 @@ export type PublicApiType = {
           maximumRowsRead?: number;
           numItems: number;
         };
+        sortType?: "alphabetical" | "most-played" | "recently-played";
       },
       any
     >;
@@ -642,6 +643,32 @@ export type PublicApiType = {
       "public",
       { stats: Array<{ identifier: string; value: number }> },
       any
+    >;
+  };
+  userTracking: {
+    getLastPlayedAt: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId: Id<"gameClouds">; userId: Id<"users"> },
+      number | null
+    >;
+    getTotalPlaytimeByGame: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId: Id<"gameClouds"> },
+      number
+    >;
+    getTotalPlaytimeByUser: FunctionReference<
+      "query",
+      "public",
+      { userId: Id<"users"> },
+      number
+    >;
+    getTotalPlaytimeByUserAndGame: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId: Id<"gameClouds">; userId: Id<"users"> },
+      number
     >;
   };
   turnCredentials: {
