@@ -48,6 +48,7 @@ export type PublicApiType = {
           maximumRowsRead?: number;
           numItems: number;
         };
+        sortType?: "alphabetical" | "most-played" | "recently-played";
       },
       any
     >;
@@ -76,7 +77,7 @@ export type PublicApiType = {
     consumePlayKey: FunctionReference<
       "mutation",
       "public",
-      { playKeyId: Id<"playKeys"> },
+      { playKeyIdOrCode: Id<"playKeys"> | string },
       any
     >;
   };
@@ -593,6 +594,22 @@ export type PublicApiType = {
     endUserPresence: FunctionReference<"mutation", "public", any, any>;
   };
   gameAchievements: {
+    getAllAchievementsWithProgress: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      Array<{
+        achievement: {
+          description: string;
+          displayName: string;
+          image: string;
+        };
+        completedAt?: number;
+        currentValue?: number;
+        isCompleted: boolean;
+        targetValue?: number;
+      }>
+    >;
     getMyAchievementsForGame: FunctionReference<
       "query",
       "public",
@@ -625,6 +642,54 @@ export type PublicApiType = {
       "mutation",
       "public",
       { stats: Array<{ identifier: string; value: number }> },
+      any
+    >;
+  };
+  userTracking: {
+    getLastPlayedAt: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId: Id<"gameClouds">; userId: Id<"users"> },
+      number | null
+    >;
+    getTotalPlaytimeByGame: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId: Id<"gameClouds"> },
+      number
+    >;
+    getTotalPlaytimeByUser: FunctionReference<
+      "query",
+      "public",
+      { userId: Id<"users"> },
+      number
+    >;
+    getTotalPlaytimeByUserAndGame: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId: Id<"gameClouds">; userId: Id<"users"> },
+      number
+    >;
+  };
+  turnCredentials: {
+    getTurnCredentials: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      {
+        expiresAt: number;
+        iceServers: Array<{
+          credential?: string;
+          url?: string;
+          urls: string | Array<string>;
+          username?: string;
+        }>;
+      } | null
+    >;
+    refreshTurnCredentials: FunctionReference<
+      "action",
+      "public",
+      Record<string, never>,
       any
     >;
   };
