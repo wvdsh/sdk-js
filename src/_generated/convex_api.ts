@@ -68,7 +68,7 @@ export type PublicApiType = {
     consumePlayKey: FunctionReference<
       "mutation",
       "public",
-      { playKeyId: Id<"playKeys"> },
+      { playKeyIdOrCode: Id<"playKeys"> | string },
       any
     >;
   };
@@ -174,12 +174,6 @@ export type PublicApiType = {
     };
   };
   ugcAccess: {
-    getUGCDownloadUrl: FunctionReference<
-      "query",
-      "public",
-      { ugcId: Id<"userGeneratedContent"> },
-      { isPublic: boolean; url: string } | null
-    >;
     getUGCMetadata: FunctionReference<
       "query",
       "public",
@@ -593,6 +587,22 @@ export type PublicApiType = {
     endUserPresence: FunctionReference<"mutation", "public", any, any>;
   };
   gameAchievements: {
+    getAllAchievementsWithProgress: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      Array<{
+        achievement: {
+          description: string;
+          displayName: string;
+          image: string;
+        };
+        completedAt?: number;
+        currentValue?: number;
+        isCompleted: boolean;
+        targetValue?: number;
+      }>
+    >;
     getMyAchievementsForGame: FunctionReference<
       "query",
       "public",

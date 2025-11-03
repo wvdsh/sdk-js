@@ -29,7 +29,8 @@
     "build:browser": "tsup --format iife --global-name WavedashSDK",
     "dev": "tsup --watch",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "r2-publish": "./scripts/r2-publish.sh"
   },
   "devDependencies": {
     "@types/lodash.unionby": "^4.8.9",

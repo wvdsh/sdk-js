@@ -31,10 +31,11 @@ import type {
 
 class WavedashSDK {
   private initialized: boolean = false;
-  private onInitCallback?: () => Promise<void>;
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: Constants.SDKUser;
+  protected gameCloudId: string;
+  protected ugcHost: string;
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
@@ -49,12 +50,12 @@ class WavedashSDK {
 
   constructor(
     convexClient: ConvexClient,
-    wavedashUser: Constants.SDKUser,
-    onInitCallback?: () => Promise<void>
+    sdkConfig: Constants.SDKConfig
   ) {
     this.convexClient = convexClient;
-    this.wavedashUser = wavedashUser;
-    this.onInitCallback = onInitCallback;
+    this.wavedashUser = sdkConfig.wavedashUser;
+    this.gameCloudId = sdkConfig.gameCloudId;
+    this.ugcHost = sdkConfig.ugcHost;
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
@@ -97,23 +98,7 @@ class WavedashSDK {
     // Start heartbeat service
     this.heartbeatManager.start();
 
-    if (this.onInitCallback) {
-      this.onInitCallback().catch((error) => {
-        this.logger.error("Error in onInitCallback:", error);
-      });
-    }
-
     return true;
-  }
-
-  onInit(callback: () => Promise<void>): void {
-    if (this.initialized) {
-      callback().catch((error) => {
-        this.logger.error("Error in onInit callback:", error);
-      });
-    } else {
-      this.onInitCallback = callback;
-    }
   }
 
   /**
@@ -768,16 +753,14 @@ const getAuthToken = async (): Promise<string> => {
 // Type-safe initialization helper
 export async function setupWavedashSDK(): Promise<WavedashSDK> {
   console.log("[WavedashJS] Setting up SDK");
-  const convexCloudUrl = await requestFromParent(
-    Constants.IFRAME_MESSAGE_TYPE.GET_CONVEX_CLOUD_URL
+  const sdkConfig = await requestFromParent(
+    Constants.IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
   );
-  const wavedashUser = await requestFromParent(
-    Constants.IFRAME_MESSAGE_TYPE.GET_USER
-  );
-  const convexClient = new ConvexClient(convexCloudUrl);
+
+  const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
   convexClient.setAuth(getAuthToken);
 
-  const sdk = new WavedashSDK(convexClient, wavedashUser);
+  const sdk = new WavedashSDK(convexClient, sdkConfig);
 
   if (typeof window !== "undefined") {
     (window as any).WavedashJS = sdk;

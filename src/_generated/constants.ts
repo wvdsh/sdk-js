@@ -96,8 +96,7 @@ export const STAT_TYPE = {
 
 export const IFRAME_MESSAGE_TYPE = {
 	GET_AUTH_TOKEN: 'GetAuthToken',
-	GET_CONVEX_CLOUD_URL: 'GetConvexCloudUrl',
-	GET_USER: 'GetUser',
+	GET_SDK_CONFIG: 'GetSDKConfig',
 	ON_KEY_DOWN: 'OnKeyDown',
 	ON_KEY_UP: 'OnKeyUp',
 	PROGRESS_UPDATE: 'ProgressUpdate',
@@ -115,8 +114,14 @@ export interface SDKUser {
 	username: string;
 }
 
+export interface SDKConfig {
+	convexCloudUrl: string;
+	wavedashUser: SDKUser;
+	gameCloudId: GenericId<'gameClouds'>;
+	ugcHost: string;
+}
+
 export type IFrameResponseMap = {
 	[IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN]: string;
-	[IFRAME_MESSAGE_TYPE.GET_CONVEX_CLOUD_URL]: string;
-	[IFRAME_MESSAGE_TYPE.GET_USER]: SDKUser;
+	[IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG]: SDKConfig;
 };
