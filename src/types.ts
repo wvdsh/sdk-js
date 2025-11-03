@@ -36,6 +36,10 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<
   username: string;
 };
 
+export type P2PTurnCredentials = FunctionReturnType<
+  typeof api.turnCredentials.getTurnCredentials
+>;
+
 // Type helper to get signal values as a union type
 export type Signal = (typeof Signals)[keyof typeof Signals];
 
@@ -129,7 +133,6 @@ export interface P2PSignalingMessage {
 
 // P2P Configuration
 export interface P2PConfig {
-  iceServers: RTCIceServer[];
   maxPeers: number;
   enableReliableChannel: boolean;
   enableUnreliableChannel: boolean;

@@ -11,6 +11,7 @@ import type {
   P2PConnection,
   P2PMessage,
   P2PConfig,
+  P2PTurnCredentials,
 } from "../types";
 import { Signals } from "../signals";
 import { api } from "../_generated/convex_api";
@@ -19,17 +20,6 @@ import { P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "../_generated/constants";
 
 // Default P2P configuration
 const DEFAULT_P2P_CONFIG: P2PConfig = {
-  iceServers: [
-    { urls: "stun:stun.l.google.com:19302" },
-    { urls: "stun:stun1.l.google.com:19302" },
-    // v1 basic coturn server running on a t2.micro for development
-    // TODO: production should scale this to more global edge TURN servers or use a TURN server provider
-    {
-      urls: "turn:turn.wavedash.gg:3478",
-      username: "webrtc",
-      credential: "wavedashturnsecret123",
-    },
-  ],
   maxPeers: 8,
   enableReliableChannel: true,
   enableUnreliableChannel: true,
@@ -45,6 +35,8 @@ export class P2PManager {
   private processedSignalingMessages = new Set<string>(); // Track processed message IDs
   private connectionStateCheckInterval: ReturnType<typeof setInterval> | null =
     null;
+
+  private turnCredentials: P2PTurnCredentials | null = null; // Cached TURN server credentials for WebRTC relay
 
   // SharedArrayBuffer message queues - one per channel for performance
   // Only incoming queue is used (P2P network → Game engine)
@@ -137,6 +129,29 @@ export class P2PManager {
         message: error instanceof Error ? error.message : String(error),
       };
     }
+  }
+
+  private async getIceServers(): Promise<RTCIceServer[]> {
+    const CREDENTIALS_EXPIRY_BUFFER_MS = 1000 * 60 * 60; // 1 hour from now
+    if (!this.turnCredentials) {
+      this.turnCredentials = await this.sdk.convexClient.query(
+        api.turnCredentials.getTurnCredentials,
+        {}
+      );
+    }
+    if (
+      this.turnCredentials &&
+      this.turnCredentials.expiresAt > Date.now() + CREDENTIALS_EXPIRY_BUFFER_MS
+    ) {
+      return this.turnCredentials.iceServers;
+    }
+
+    const newTurnCredentials = await this.sdk.convexClient.action(
+      api.turnCredentials.refreshTurnCredentials,
+      {}
+    );
+    this.turnCredentials = newTurnCredentials;
+    return newTurnCredentials.iceServers;
   }
 
   private async updateP2PConnection(
@@ -470,7 +485,7 @@ export class P2PManager {
     this.sdk.logger.debug("Establishing WebRTC connections to peers...");
 
     const currentUserId = this.sdk.getUserId();
-    const connectionPromises: Promise<void>[] = [];
+    const connectionPromises: Promise<boolean>[] = [];
 
     // Create peer connections to all other peers
     (Object.entries(connection.peers) as [Id<"users">, P2PPeer][]).forEach(
@@ -551,11 +566,23 @@ export class P2PManager {
     remoteUserId: Id<"users">,
     connection: P2PConnection,
     shouldCreateChannels: boolean = false
-  ): Promise<void> {
+  ): Promise<boolean> {
+    const iceServers = await this.getIceServers();
+    if (!iceServers) {
+      this.sdk.logger.error(
+        `No ICE servers available for peer ${remoteUserId}`
+      );
+      this.sdk.notifyGame(Signals.P2P_CONNECTION_FAILED, {
+        userId: remoteUserId,
+        username: connection.peers[remoteUserId]?.username || "",
+        error: "No ICE servers available",
+      });
+      return false;
+    }
     const pc = new RTCPeerConnection({
-      iceServers: this.config.iceServers,
-      // Enable more aggressive ICE gathering for local testing
-      iceCandidatePoolSize: 10,
+      iceServers: iceServers,
+      // Start gathering ICE candidates in the background as soon as the RTCPeerConnection is created
+      iceCandidatePoolSize: 5,
       // Allow all IP addresses (helpful for same-device testing)
       bundlePolicy: "max-bundle",
       rtcpMuxPolicy: "require",
@@ -678,6 +705,7 @@ export class P2PManager {
     };
 
     this.peerConnections.set(remoteUserId, pc);
+    return true;
   }
 
   private setupDataChannelHandlers(

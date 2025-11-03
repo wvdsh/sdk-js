@@ -6,6 +6,12 @@ export const internal: InternalApiType = anyApi as unknown as InternalApiType;
 
 export type PublicApiType = {
   games: {
+    createCheckoutSession: FunctionReference<
+      "action",
+      "public",
+      { gameId: Id<"games">; returnUrl: string },
+      any
+    >;
     list: FunctionReference<
       "query",
       "public",
@@ -40,17 +46,12 @@ export type PublicApiType = {
           maximumRowsRead?: number;
           numItems: number;
         };
+        sortType?: "alphabetical" | "most-played" | "recently-played";
       },
       any
     >;
     getPurchasedGameOrThrow: FunctionReference<
       "query",
-      "public",
-      { gameId: Id<"games"> },
-      any
-    >;
-    purchaseGame: FunctionReference<
-      "mutation",
       "public",
       { gameId: Id<"games"> },
       any
@@ -635,6 +636,64 @@ export type PublicApiType = {
       "mutation",
       "public",
       { stats: Array<{ identifier: string; value: number }> },
+      any
+    >;
+  };
+  userTracking: {
+    getLastPlayedAt: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId: Id<"gameClouds">; userId: Id<"users"> },
+      number | null
+    >;
+    getTotalPlaytimeByGame: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId: Id<"gameClouds"> },
+      number
+    >;
+    getTotalPlaytimeByUser: FunctionReference<
+      "query",
+      "public",
+      { userId: Id<"users"> },
+      number
+    >;
+    getTotalPlaytimeByUserAndGame: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId: Id<"gameClouds">; userId: Id<"users"> },
+      number
+    >;
+  };
+  stripe: {
+    checkout: {
+      createCheckoutSession: FunctionReference<
+        "action",
+        "public",
+        { gameId: Id<"games">; returnUrl: string },
+        any
+      >;
+    };
+  };
+  turnCredentials: {
+    getTurnCredentials: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      {
+        expiresAt: number;
+        iceServers: Array<{
+          credential?: string;
+          url?: string;
+          urls: string | Array<string>;
+          username?: string;
+        }>;
+      } | null
+    >;
+    refreshTurnCredentials: FunctionReference<
+      "action",
+      "public",
+      Record<string, never>,
       any
     >;
   };
