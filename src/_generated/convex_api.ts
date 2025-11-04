@@ -348,6 +348,44 @@ export type PublicApiType = {
         any
       >;
     };
+    emailPassword: {
+      signUp: FunctionReference<
+        "mutation",
+        "public",
+        { email: string; password: string },
+        any
+      >;
+      signIn: FunctionReference<
+        "mutation",
+        "public",
+        { email: string; password: string },
+        any
+      >;
+      verifyEmail: FunctionReference<
+        "mutation",
+        "public",
+        { token: string },
+        any
+      >;
+      sendVerificationEmail: FunctionReference<
+        "mutation",
+        "public",
+        { email: string },
+        any
+      >;
+      requestPasswordReset: FunctionReference<
+        "mutation",
+        "public",
+        { email: string },
+        any
+      >;
+      resetPassword: FunctionReference<
+        "mutation",
+        "public",
+        { newPassword: string; token: string },
+        any
+      >;
+    };
   };
   developers: {
     games: {
