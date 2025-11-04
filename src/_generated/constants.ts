@@ -8,6 +8,8 @@
  * We use int values here rather than strings to speed up data marshalling in SDK calls
  */
 
+import type { GenericId } from 'convex/values';
+
 // ========== GAME ENGINE ==========
 export const GAME_ENGINE = {
 	GODOT: 'GODOT',
@@ -91,3 +93,35 @@ export const STAT_TYPE = {
 	FLOAT: 1,
 	AVG_RATE: 2
 } as const;
+
+export const IFRAME_MESSAGE_TYPE = {
+	GET_AUTH_TOKEN: 'GetAuthToken',
+	GET_SDK_CONFIG: 'GetSDKConfig',
+	ON_KEY_DOWN: 'OnKeyDown',
+	ON_KEY_UP: 'OnKeyUp',
+	PROGRESS_UPDATE: 'ProgressUpdate',
+	LOADING_COMPLETE: 'LoadingComplete'
+} as const;
+
+export interface IFrameResponse<T> {
+	type: 'response';
+	requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE];
+	data: T;
+}
+
+export interface SDKUser {
+	id: GenericId<'users'>;
+	username: string;
+}
+
+export interface SDKConfig {
+	convexCloudUrl: string;
+	wavedashUser: SDKUser;
+	gameCloudId: GenericId<'gameClouds'>;
+	ugcHost: string;
+}
+
+export type IFrameResponseMap = {
+	[IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN]: string;
+	[IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG]: SDKConfig;
+};

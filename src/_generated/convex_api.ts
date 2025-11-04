@@ -9,6 +9,12 @@ export type PublicApiType = {
     me: FunctionReference<"query", "public", Record<string, never>, any>;
   };
   games: {
+    createCheckoutSession: FunctionReference<
+      "action",
+      "public",
+      { gameId: Id<"games">; returnUrl: string },
+      any
+    >;
     list: FunctionReference<
       "query",
       "public",
@@ -24,12 +30,7 @@ export type PublicApiType = {
       },
       any
     >;
-    getBySubdomain: FunctionReference<
-      "query",
-      "public",
-      { subdomain: string },
-      any
-    >;
+    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
     getGameOrgAndAccess: FunctionReference<
       "query",
       "public",
@@ -58,19 +59,13 @@ export type PublicApiType = {
       { gameId: Id<"games"> },
       any
     >;
-    purchaseGame: FunctionReference<
-      "mutation",
-      "public",
-      { gameId: Id<"games"> },
-      any
-    >;
     createPlayKey: FunctionReference<
       "mutation",
       "public",
       {
         gameBranchId?: Id<"gameBranches">;
         gameBuildId?: Id<"gameBuilds">;
-        gameSubdomain: string;
+        slug: string;
       },
       any
     >;
@@ -156,12 +151,6 @@ export type PublicApiType = {
     >;
   };
   ugcAccess: {
-    getUGCDownloadUrl: FunctionReference<
-      "query",
-      "public",
-      { ugcId: Id<"userGeneratedContent"> },
-      { isPublic: boolean; url: string } | null
-    >;
     getUGCMetadata: FunctionReference<
       "query",
       "public",
@@ -335,6 +324,17 @@ export type PublicApiType = {
       >;
     };
     sessionTokens: {
+      authenticateUserForGame: FunctionReference<
+        "mutation",
+        "public",
+        {
+          gameBranchId?: Id<"gameBranches">;
+          gameBuildId?: Id<"gameBuilds">;
+          gameSlug: string;
+          isSandbox?: boolean;
+        },
+        any
+      >;
       logout: FunctionReference<
         "mutation",
         "public",
@@ -345,6 +345,44 @@ export type PublicApiType = {
         "mutation",
         "public",
         { sessionToken: string },
+        any
+      >;
+    };
+    emailPassword: {
+      signUp: FunctionReference<
+        "mutation",
+        "public",
+        { email: string; password: string },
+        any
+      >;
+      signIn: FunctionReference<
+        "mutation",
+        "public",
+        { email: string; password: string },
+        any
+      >;
+      verifyEmail: FunctionReference<
+        "mutation",
+        "public",
+        { token: string },
+        any
+      >;
+      sendVerificationEmail: FunctionReference<
+        "mutation",
+        "public",
+        { email: string },
+        any
+      >;
+      requestPasswordReset: FunctionReference<
+        "mutation",
+        "public",
+        { email: string },
+        any
+      >;
+      resetPassword: FunctionReference<
+        "mutation",
+        "public",
+        { newPassword: string; token: string },
         any
       >;
     };
@@ -488,20 +526,6 @@ export type PublicApiType = {
         any
       >;
     };
-  };
-  gameBuilds: {
-    getBuildAndBranchFromJwt: FunctionReference<
-      "query",
-      "public",
-      Record<string, never>,
-      any
-    >;
-    getOrCreateSandboxBuildId: FunctionReference<
-      "mutation",
-      "public",
-      { gameBranchId: Id<"gameBranches"> },
-      any
-    >;
   };
   organizations: {
     getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
@@ -692,6 +716,16 @@ export type PublicApiType = {
       Record<string, never>,
       any
     >;
+  };
+  stripe: {
+    checkout: {
+      createCheckoutSession: FunctionReference<
+        "action",
+        "public",
+        { gameId: Id<"games">; returnUrl: string },
+        any
+      >;
+    };
   };
 };
 export type InternalApiType = {};

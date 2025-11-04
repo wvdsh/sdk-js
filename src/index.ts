@@ -15,7 +15,6 @@ import type {
   LeaderboardSortOrder,
   LeaderboardDisplayType,
   WavedashConfig,
-  WavedashUser,
   EngineInstance,
   Leaderboard,
   LeaderboardEntries,
@@ -32,10 +31,11 @@ import type {
 
 class WavedashSDK {
   private initialized: boolean = false;
-  private onInitCallback?: () => Promise<void>;
 
   protected config: WavedashConfig | null = null;
-  protected wavedashUser: WavedashUser;
+  protected wavedashUser: Constants.SDKUser;
+  protected gameCloudId: string;
+  protected ugcHost: string;
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
@@ -50,12 +50,12 @@ class WavedashSDK {
 
   constructor(
     convexClient: ConvexClient,
-    wavedashUser: WavedashUser,
-    onInitCallback?: () => Promise<void>
+    sdkConfig: Constants.SDKConfig
   ) {
     this.convexClient = convexClient;
-    this.wavedashUser = wavedashUser;
-    this.onInitCallback = onInitCallback;
+    this.wavedashUser = sdkConfig.wavedashUser;
+    this.gameCloudId = sdkConfig.gameCloudId;
+    this.ugcHost = sdkConfig.ugcHost;
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
@@ -98,23 +98,7 @@ class WavedashSDK {
     // Start heartbeat service
     this.heartbeatManager.start();
 
-    if (this.onInitCallback) {
-      this.onInitCallback().catch((error) => {
-        this.logger.error("Error in onInitCallback:", error);
-      });
-    }
-
     return true;
-  }
-
-  onInit(callback: () => Promise<void>): void {
-    if (this.initialized) {
-      callback().catch((error) => {
-        this.logger.error("Error in onInit callback:", error);
-      });
-    } else {
-      this.onInitCallback = callback;
-    }
   }
 
   /**
@@ -134,7 +118,7 @@ class WavedashSDK {
   // User methods
   // ============
 
-  getUser(): string | WavedashUser {
+  getUser(): string | Constants.SDKUser {
     this.ensureReady();
     return this.formatResponse(this.wavedashUser);
   }
@@ -654,6 +638,39 @@ class WavedashSDK {
       throw new Error("SDK not initialized");
     }
   }
+
+  // ============
+  // Entrypoint Helpers
+  // ============
+  loadScript(src: string) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.type = "text/javascript";
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  updateLoadProgressZeroToOne(progress: number) {
+    window.parent.postMessage(
+      {
+        type: Constants.IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE,
+        progress,
+      },
+      "*"
+    );
+  }
+
+  loadComplete() {
+    window.parent.postMessage(
+      {
+        type: Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE,
+      },
+      "*"
+    );
+  }
 }
 
 // =======
@@ -665,17 +682,93 @@ export { WavedashSDK };
 // Re-export all types
 export type * from "./types";
 
+// ==============================
+// Keyboard Event Forwarding
+// ==============================
+/**
+ * Enables forwarding of keyboard events to the parent window
+ * Useful when the SDK is running in an iframe and needs to forward keyboard input
+ */
+function handleKeystrokes(): void {
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Tab" && event.shiftKey) {
+      event.preventDefault();
+    }
+    window.parent.postMessage(
+      {
+        type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_DOWN,
+        key: event.key,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+      },
+      "*"
+    );
+  });
+
+  window.addEventListener("keyup", (event) => {
+    window.parent.postMessage(
+      {
+        type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_UP,
+        key: event.key,
+        shiftKey: event.shiftKey,
+        ctrlKey: event.ctrlKey,
+        altKey: event.altKey,
+        metaKey: event.metaKey,
+      },
+      "*"
+    );
+  });
+}
+
+async function requestFromParent<T extends keyof Constants.IFrameResponseMap>(
+  requestType: T
+): Promise<Constants.IFrameResponseMap[T]> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      reject(new Error(`${requestType} request timed out after 5 seconds`));
+    }, 5000);
+
+    const handleMessage = (event: MessageEvent) => {
+      if (
+        event.data?.type === "response" &&
+        event.data?.requestType === requestType
+      ) {
+        clearTimeout(timeout);
+        window.removeEventListener("message", handleMessage);
+        resolve(event.data.data);
+      }
+    };
+
+    window.addEventListener("message", handleMessage);
+    window.parent.postMessage({ type: requestType }, "*");
+  });
+}
+
+const getAuthToken = async (): Promise<string> => {
+  return await requestFromParent(Constants.IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN);
+};
+
 // Type-safe initialization helper
-export function setupWavedashSDK(
-  convexClient: ConvexClient,
-  wavedashUser: WavedashUser
-): WavedashSDK {
-  const sdk = new WavedashSDK(convexClient, wavedashUser);
+export async function setupWavedashSDK(): Promise<WavedashSDK> {
+  console.log("[WavedashJS] Setting up SDK");
+  const sdkConfig = await requestFromParent(
+    Constants.IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
+  );
+
+  const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
+  convexClient.setAuth(getAuthToken);
+
+  const sdk = new WavedashSDK(convexClient, sdkConfig);
 
   if (typeof window !== "undefined") {
     (window as any).WavedashJS = sdk;
     console.log("[WavedashJS] SDK attached to window");
   }
+  handleKeystrokes();
 
   return sdk;
 }
+
+setupWavedashSDK();

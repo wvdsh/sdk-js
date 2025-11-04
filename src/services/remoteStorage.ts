@@ -31,7 +31,7 @@ function getRemoteStorageOrigin(this: WavedashSDK): string {
     const hostname = window.location.hostname;
     const parts = hostname.split(".");
     REMOTE_STORAGE_ORIGIN =
-      `${window.location.protocol}//ugc.` + parts.slice(1).join(".");
+      `${window.location.protocol}//ugc.` + parts.slice(2).join(".");
     return REMOTE_STORAGE_ORIGIN;
   }
 
@@ -41,7 +41,7 @@ function getRemoteStorageOrigin(this: WavedashSDK): string {
 function getRemoteStorageUrl(this: WavedashSDK, filePath: string): string {
   const ORIGIN = getRemoteStorageOrigin.call(this);
   const relativePath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
-  return `${ORIGIN}/${REMOTE_STORAGE_FOLDER}/${this.wavedashUser.id}/${relativePath}`;
+  return `${ORIGIN}/${this.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.wavedashUser.id}/${relativePath}`;
 }
 
 async function uploadFromIndexedDb(

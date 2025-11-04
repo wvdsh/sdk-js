@@ -1,6 +1,6 @@
 {
   "name": "@wvdsh/js",
-  "version": "0.0.28",
+  "version": "0.0.29",
   "description": "Wavedash JavaScript SDK",
   "main": "./dist/index.js",
   "module": "./dist/index.mjs",
@@ -29,17 +29,16 @@
     "build:browser": "tsup --format iife --global-name WavedashSDK",
     "dev": "tsup --watch",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run build"
+    "prepublishOnly": "npm run build",
+    "r2-publish": "./scripts/r2-publish.sh"
   },
   "devDependencies": {
     "@types/lodash.unionby": "^4.8.9",
     "tsup": "^8.0.0",
     "typescript": "^5.8.3"
   },
-  "peerDependencies": {
-    "convex": "^1.27.5"
-  },
   "dependencies": {
+    "convex": "^1.28.0",
     "lodash.unionby": "^4.8.0"
   }
 }

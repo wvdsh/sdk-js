@@ -11,13 +11,12 @@ import type {
   P2PConnection,
   P2PMessage,
   P2PConfig,
-  WavedashUser,
   P2PTurnCredentials,
 } from "../types";
 import { Signals } from "../signals";
 import { api } from "../_generated/convex_api";
 import type { WavedashSDK } from "../index";
-import { P2P_SIGNALING_MESSAGE_TYPE } from "../_generated/constants";
+import { P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "../_generated/constants";
 
 // Default P2P configuration
 const DEFAULT_P2P_CONFIG: P2PConfig = {
@@ -79,7 +78,7 @@ export class P2PManager {
 
   async initializeP2PForCurrentLobby(
     lobbyId: Id<"lobbies">,
-    members: WavedashUser[]
+    members: SDKUser[]
   ): Promise<WavedashResponse<P2PConnection>> {
     try {
       // If we already have a connection, update it instead of replacing
@@ -156,7 +155,7 @@ export class P2PManager {
   }
 
   private async updateP2PConnection(
-    members: WavedashUser[]
+    members: SDKUser[]
   ): Promise<WavedashResponse<P2PConnection>> {
     try {
       if (!this.currentConnection) {

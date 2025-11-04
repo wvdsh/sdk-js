@@ -51,11 +51,6 @@ export interface WavedashConfig {
   p2p?: Partial<P2PConfig>;
 }
 
-export interface WavedashUser {
-  id: Id<"users">;
-  username: string;
-}
-
 export interface RemoteFileMetadata {
   exists: boolean; // Whether the entry exists
   key: string; // R2 Key of the entry

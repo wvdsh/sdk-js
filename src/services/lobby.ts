@@ -11,12 +11,11 @@ import type {
   LobbyVisibility,
   LobbyUser,
   LobbyMessage,
-  WavedashUser,
 } from "../types";
 import { Signals } from "../signals";
 import { api } from "../_generated/convex_api";
 import type { WavedashSDK } from "../index";
-import { LOBBY_MESSAGE_MAX_LENGTH } from "../_generated/constants";
+import { LOBBY_MESSAGE_MAX_LENGTH, SDKUser } from "../_generated/constants";
 
 export class LobbyManager {
   private sdk: WavedashSDK;
@@ -451,7 +450,7 @@ export class LobbyManager {
       }
 
       // Convert to WavedashUser format
-      const wavedashUsers: WavedashUser[] = newUsers.map((lobbyUser) => ({
+      const wavedashUsers: SDKUser[] = newUsers.map((lobbyUser) => ({
         id: lobbyUser.userId,
         username: lobbyUser.username,
       }));
