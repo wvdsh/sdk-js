@@ -21,7 +21,8 @@ function deriveParentOrigin(): string {
     const parentDomain = match[1];
     return `${window.location.protocol}//${parentDomain}`;
   }
-  throw new Error(`Invalid iframe hostname pattern: ${iframeHost}`);
+  console.error(`Invalid iframe hostname pattern: ${iframeHost}`);
+  return "";
 }
 
 const PARENT_ORIGIN = deriveParentOrigin();
@@ -29,9 +30,10 @@ const PARENT_ORIGIN = deriveParentOrigin();
 export function postToParent(
   requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE],
   data: Record<string, string | number | boolean>
-): void {
-  if (typeof window === "undefined") return;
+): boolean {
+  if (typeof window === "undefined") return false;
   window.parent.postMessage({ type: requestType, ...data }, PARENT_ORIGIN);
+  return true;
 }
 
 export async function requestFromParent<T extends keyof IFrameResponseMap>(
@@ -52,21 +54,20 @@ export async function requestFromParent<T extends keyof IFrameResponseMap>(
     }, RESPONSE_TIMEOUT_MS);
 
     const handleMessage = (event: MessageEvent) => {
-      // Validate origin to prevent JWT spoofing and other attacks
-      if (event.origin !== PARENT_ORIGIN) {
-        reject(
-          new Error(`Ignored message from untrusted origin: ${event.origin}`)
-        );
-        return;
-      }
-
       if (
         event.data?.type === "response" &&
         event.data?.requestType === requestType
       ) {
         clearTimeout(timeout);
         window.removeEventListener("message", handleMessage);
-        resolve(event.data.data);
+        // Validate origin to prevent JWT spoofing and other attacks
+        if (event.origin === PARENT_ORIGIN) {
+          resolve(event.data.data);
+        } else {
+          reject(
+            new Error(`Ignored message from untrusted origin: ${event.origin}`)
+          );
+        }
       }
     };
 
