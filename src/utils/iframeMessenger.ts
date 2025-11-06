@@ -31,7 +31,7 @@ export function postToParent(
   requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE],
   data: Record<string, string | number | boolean>
 ): boolean {
-  if (typeof window === "undefined") return false;
+  if (typeof window === "undefined" || !PARENT_ORIGIN) return false;
   window.parent.postMessage({ type: requestType, ...data }, PARENT_ORIGIN);
   return true;
 }
