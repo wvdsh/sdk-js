@@ -32,6 +32,7 @@ import type {
 
 class WavedashSDK {
   private initialized: boolean = false;
+  private lobbyIdToJoinOnInit?: Id<"lobbies">;
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: Constants.SDKUser;
@@ -61,6 +62,8 @@ class WavedashSDK {
     this.heartbeatManager = new HeartbeatManager(this);
 
     this.setupOverlayListener();
+
+    this.lobbyIdToJoinOnInit = sdkConfig.lobbyIdToJoin;
   }
 
   // =============
@@ -97,6 +100,13 @@ class WavedashSDK {
     this.logger.debug("Initialized with config:", this.config);
     // Start heartbeat service
     this.heartbeatManager.start();
+
+    // Join a lobby on startup if provided
+    if (this.lobbyIdToJoinOnInit) {
+      this.lobbyManager.joinLobby(this.lobbyIdToJoinOnInit).catch((error) => {
+        this.logger.error("Could not join lobby on startup:", error);
+      });
+    }
 
     return true;
   }

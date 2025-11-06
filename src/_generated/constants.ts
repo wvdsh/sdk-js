@@ -118,6 +118,7 @@ export interface SDKConfig {
 	wavedashUser: SDKUser;
 	gameCloudId: GenericId<'gameClouds'>;
 	ugcHost: string;
+	lobbyIdToJoin?: GenericId<'lobbies'>;
 }
 
 export type IFrameResponseMap = {
