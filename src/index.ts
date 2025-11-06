@@ -9,6 +9,7 @@ import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
+import { requestFromParent, postToParent } from "./utils/iframeMessenger";
 import type {
   Id,
   LobbyVisibility,
@@ -48,10 +49,7 @@ class WavedashSDK {
 
   Constants = Constants;
 
-  constructor(
-    convexClient: ConvexClient,
-    sdkConfig: Constants.SDKConfig
-  ) {
+  constructor(convexClient: ConvexClient, sdkConfig: Constants.SDKConfig) {
     this.convexClient = convexClient;
     this.wavedashUser = sdkConfig.wavedashUser;
     this.gameCloudId = sdkConfig.gameCloudId;
@@ -654,22 +652,11 @@ class WavedashSDK {
   }
 
   updateLoadProgressZeroToOne(progress: number) {
-    window.parent.postMessage(
-      {
-        type: Constants.IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE,
-        progress,
-      },
-      "*"
-    );
+    postToParent(Constants.IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE, { progress });
   }
 
   loadComplete() {
-    window.parent.postMessage(
-      {
-        type: Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE,
-      },
-      "*"
-    );
+    postToParent(Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
   }
 }
 
@@ -694,55 +681,23 @@ function handleKeystrokes(): void {
     if (event.key === "Tab" && event.shiftKey) {
       event.preventDefault();
     }
-    window.parent.postMessage(
-      {
-        type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_DOWN,
-        key: event.key,
-        shiftKey: event.shiftKey,
-        ctrlKey: event.ctrlKey,
-        altKey: event.altKey,
-        metaKey: event.metaKey,
-      },
-      "*"
-    );
+    postToParent(Constants.IFRAME_MESSAGE_TYPE.ON_KEY_DOWN, {
+      key: event.key,
+      shiftKey: event.shiftKey,
+      ctrlKey: event.ctrlKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+    });
   });
 
   window.addEventListener("keyup", (event) => {
-    window.parent.postMessage(
-      {
-        type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_UP,
-        key: event.key,
-        shiftKey: event.shiftKey,
-        ctrlKey: event.ctrlKey,
-        altKey: event.altKey,
-        metaKey: event.metaKey,
-      },
-      "*"
-    );
-  });
-}
-
-async function requestFromParent<T extends keyof Constants.IFrameResponseMap>(
-  requestType: T
-): Promise<Constants.IFrameResponseMap[T]> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error(`${requestType} request timed out after 5 seconds`));
-    }, 5000);
-
-    const handleMessage = (event: MessageEvent) => {
-      if (
-        event.data?.type === "response" &&
-        event.data?.requestType === requestType
-      ) {
-        clearTimeout(timeout);
-        window.removeEventListener("message", handleMessage);
-        resolve(event.data.data);
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    window.parent.postMessage({ type: requestType }, "*");
+    postToParent(Constants.IFRAME_MESSAGE_TYPE.ON_KEY_UP, {
+      key: event.key,
+      shiftKey: event.shiftKey,
+      ctrlKey: event.ctrlKey,
+      altKey: event.altKey,
+      metaKey: event.metaKey,
+    });
   });
 }
 
