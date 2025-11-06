@@ -59,6 +59,8 @@ class WavedashSDK {
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
     this.heartbeatManager = new HeartbeatManager(this);
+
+    this.setupOverlayListener();
   }
 
   // =============
@@ -110,6 +112,19 @@ class WavedashSDK {
 
   isReady(): boolean {
     return this.initialized;
+  }
+
+  toggleOverlay(): void {
+    postToParent(Constants.IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY, {});
+  }
+
+  private setupOverlayListener(): void {
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Tab" && event.shiftKey) {
+        event.preventDefault();
+        this.toggleOverlay();
+      }
+    });
   }
 
   // ============
@@ -669,38 +684,6 @@ export { WavedashSDK };
 // Re-export all types
 export type * from "./types";
 
-// ==============================
-// Keyboard Event Forwarding
-// ==============================
-/**
- * Enables forwarding of keyboard events to the parent window
- * Useful when the SDK is running in an iframe and needs to forward keyboard input
- */
-function handleKeystrokes(): void {
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "Tab" && event.shiftKey) {
-      event.preventDefault();
-    }
-    postToParent(Constants.IFRAME_MESSAGE_TYPE.ON_KEY_DOWN, {
-      key: event.key,
-      shiftKey: event.shiftKey,
-      ctrlKey: event.ctrlKey,
-      altKey: event.altKey,
-      metaKey: event.metaKey,
-    });
-  });
-
-  window.addEventListener("keyup", (event) => {
-    postToParent(Constants.IFRAME_MESSAGE_TYPE.ON_KEY_UP, {
-      key: event.key,
-      shiftKey: event.shiftKey,
-      ctrlKey: event.ctrlKey,
-      altKey: event.altKey,
-      metaKey: event.metaKey,
-    });
-  });
-}
-
 const getAuthToken = async (): Promise<string> => {
   return await requestFromParent(Constants.IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN);
 };
@@ -721,7 +704,6 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
     (window as any).WavedashJS = sdk;
     console.log("[WavedashJS] SDK attached to window");
   }
-  handleKeystrokes();
 
   return sdk;
 }

@@ -100,7 +100,8 @@ export const IFRAME_MESSAGE_TYPE = {
 	ON_KEY_DOWN: 'OnKeyDown',
 	ON_KEY_UP: 'OnKeyUp',
 	PROGRESS_UPDATE: 'ProgressUpdate',
-	LOADING_COMPLETE: 'LoadingComplete'
+	LOADING_COMPLETE: 'LoadingComplete',
+	TOGGLE_OVERLAY: 'ToggleOverlay'
 } as const;
 
 export interface IFrameResponse<T> {
