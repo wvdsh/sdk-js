@@ -58,14 +58,14 @@ export async function requestFromParent<T extends keyof IFrameResponseMap>(
         event.data?.type === "response" &&
         event.data?.requestType === requestType
       ) {
-        clearTimeout(timeout);
-        window.removeEventListener("message", handleMessage);
         // Validate origin to prevent JWT spoofing and other attacks
         if (event.origin === PARENT_ORIGIN) {
           resolve(event.data.data);
+          clearTimeout(timeout);
+          window.removeEventListener("message", handleMessage);
         } else {
-          reject(
-            new Error(`Ignored message from untrusted origin: ${event.origin}`)
+          console.error(
+            `Ignored message from untrusted origin: ${event.origin}`
           );
         }
       }
