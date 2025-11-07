@@ -103,7 +103,7 @@ export const IFRAME_MESSAGE_TYPE = {
 } as const;
 
 export interface IFrameResponse<T> {
-	type: 'response';
+	requestId: string;
 	requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE];
 	data: T;
 }

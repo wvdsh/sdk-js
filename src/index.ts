@@ -9,7 +9,10 @@ import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
-import { requestFromParent, postToParent } from "./utils/iframeMessenger";
+import { IFrameMessenger } from "./utils/iframeMessenger";
+
+// Create singleton instance for iframe messaging
+const iframeMessenger = new IFrameMessenger();
 import type {
   Id,
   LobbyVisibility,
@@ -125,7 +128,10 @@ class WavedashSDK {
   }
 
   toggleOverlay(): void {
-    postToParent(Constants.IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY, {});
+    iframeMessenger.postToParent(
+      Constants.IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY,
+      {}
+    );
   }
 
   private setupOverlayListener(): void {
@@ -677,11 +683,17 @@ class WavedashSDK {
   }
 
   updateLoadProgressZeroToOne(progress: number) {
-    postToParent(Constants.IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE, { progress });
+    iframeMessenger.postToParent(
+      Constants.IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE,
+      { progress }
+    );
   }
 
   loadComplete() {
-    postToParent(Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
+    iframeMessenger.postToParent(
+      Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE,
+      {}
+    );
   }
 }
 
@@ -695,13 +707,15 @@ export { WavedashSDK };
 export type * from "./types";
 
 const getAuthToken = async (): Promise<string> => {
-  return await requestFromParent(Constants.IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN);
+  return await iframeMessenger.requestFromParent(
+    Constants.IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN
+  );
 };
 
 // Type-safe initialization helper
 export async function setupWavedashSDK(): Promise<WavedashSDK> {
   console.log("[WavedashJS] Setting up SDK");
-  const sdkConfig = await requestFromParent(
+  const sdkConfig = await iframeMessenger.requestFromParent(
     Constants.IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
   );
 
