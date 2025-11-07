@@ -15,26 +15,20 @@ export type PublicApiType = {
       { gameId: Id<"games">; returnUrl: string },
       any
     >;
-    list: FunctionReference<
-      "query",
+    createPlayKey: FunctionReference<
+      "mutation",
       "public",
       {
-        paginationOpts: {
-          cursor: string | null;
-          endCursor?: string | null;
-          id?: number;
-          maximumBytesRead?: number;
-          maximumRowsRead?: number;
-          numItems: number;
-        };
+        gameBranchId?: Id<"gameBranches">;
+        gameBuildId?: Id<"gameBuilds">;
+        slug: string;
       },
       any
     >;
-    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
-    getGameOrgAndAccess: FunctionReference<
+    getPurchasedGameOrThrow: FunctionReference<
       "query",
       "public",
-      { orgSlug: string; slug: string },
+      { gameId: Id<"games"> },
       any
     >;
     listPurchased: FunctionReference<
@@ -53,20 +47,26 @@ export type PublicApiType = {
       },
       any
     >;
-    getPurchasedGameOrThrow: FunctionReference<
+    list: FunctionReference<
       "query",
       "public",
-      { gameId: Id<"games"> },
+      {
+        paginationOpts: {
+          cursor: string | null;
+          endCursor?: string | null;
+          id?: number;
+          maximumBytesRead?: number;
+          maximumRowsRead?: number;
+          numItems: number;
+        };
+      },
       any
     >;
-    createPlayKey: FunctionReference<
-      "mutation",
+    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
+    getGameAndAccess: FunctionReference<
+      "query",
       "public",
-      {
-        gameBranchId?: Id<"gameBranches">;
-        gameBuildId?: Id<"gameBuilds">;
-        slug: string;
-      },
+      { slug: string },
       any
     >;
     consumePlayKey: FunctionReference<
@@ -229,6 +229,18 @@ export type PublicApiType = {
       "public",
       { name: string },
       { id: Id<"leaderboards">; name: string; totalEntries: number }
+    >;
+    getLeaderboardEntries: FunctionReference<
+      "query",
+      "public",
+      { leaderboardId: Id<"leaderboards">; limit?: number },
+      any
+    >;
+    getLeaderboardsForGame: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
     >;
     getMyLeaderboardEntry: FunctionReference<
       "query",
@@ -529,6 +541,12 @@ export type PublicApiType = {
   };
   organizations: {
     getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
+    get: FunctionReference<
+      "query",
+      "public",
+      { orgId: Id<"organizations"> },
+      any
+    >;
   };
   remoteFileStorage: {
     getUploadUrl: FunctionReference<
@@ -621,12 +639,14 @@ export type PublicApiType = {
     getAllAchievementsWithProgress: FunctionReference<
       "query",
       "public",
-      Record<string, never>,
+      { gameCloudId: Id<"gameClouds"> },
       Array<{
         achievement: {
+          _id: Id<"gameAchievements">;
           description: string;
           displayName: string;
           image: string;
+          points: number;
         };
         completedAt?: number;
         currentValue?: number;
@@ -646,6 +666,7 @@ export type PublicApiType = {
           displayName: string;
           identifier: string;
           image: string;
+          points: number;
         };
         completedAt: number;
       }>
@@ -655,6 +676,12 @@ export type PublicApiType = {
       "public",
       Record<string, never>,
       Array<{ identifier: string; value: number }>
+    >;
+    getTotalPointsForUserAndGame: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      number
     >;
     setUserGameAchievements: FunctionReference<
       "mutation",
@@ -667,6 +694,18 @@ export type PublicApiType = {
       "public",
       { stats: Array<{ identifier: string; value: number }> },
       any
+    >;
+    getAchievementsForGame: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
+    getTotalPointsForUser: FunctionReference<
+      "query",
+      "public",
+      { userId: Id<"users"> },
+      number
     >;
   };
   userTracking: {
@@ -726,6 +765,50 @@ export type PublicApiType = {
         any
       >;
     };
+  };
+  gameReviews: {
+    getReviewStats: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
+    getReviewsForGame: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
+  };
+  wishlist: {
+    add: FunctionReference<"mutation", "public", { gameId: Id<"games"> }, any>;
+    isInWishlist: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
+    list: FunctionReference<
+      "query",
+      "public",
+      {
+        paginationOpts: {
+          cursor: string | null;
+          endCursor?: string | null;
+          id?: number;
+          maximumBytesRead?: number;
+          maximumRowsRead?: number;
+          numItems: number;
+        };
+      },
+      any
+    >;
+    remove: FunctionReference<
+      "mutation",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
   };
 };
 export type InternalApiType = {};

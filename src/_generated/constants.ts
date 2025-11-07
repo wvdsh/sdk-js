@@ -97,14 +97,13 @@ export const STAT_TYPE = {
 export const IFRAME_MESSAGE_TYPE = {
 	GET_AUTH_TOKEN: 'GetAuthToken',
 	GET_SDK_CONFIG: 'GetSDKConfig',
-	ON_KEY_DOWN: 'OnKeyDown',
-	ON_KEY_UP: 'OnKeyUp',
 	PROGRESS_UPDATE: 'ProgressUpdate',
-	LOADING_COMPLETE: 'LoadingComplete'
+	LOADING_COMPLETE: 'LoadingComplete',
+	TOGGLE_OVERLAY: 'ToggleOverlay'
 } as const;
 
 export interface IFrameResponse<T> {
-	type: 'response';
+	requestId: string;
 	requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE];
 	data: T;
 }
@@ -119,6 +118,7 @@ export interface SDKConfig {
 	wavedashUser: SDKUser;
 	gameCloudId: GenericId<'gameClouds'>;
 	ugcHost: string;
+	lobbyIdToJoin?: GenericId<'lobbies'>;
 }
 
 export type IFrameResponseMap = {
