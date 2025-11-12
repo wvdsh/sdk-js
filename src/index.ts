@@ -9,6 +9,10 @@ import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
+import { IFrameMessenger } from "./utils/iframeMessenger";
+
+// Create singleton instance for iframe messaging
+const iframeMessenger = new IFrameMessenger();
 import type {
   Id,
   LobbyVisibility,
@@ -31,6 +35,7 @@ import type {
 
 class WavedashSDK {
   private initialized: boolean = false;
+  private lobbyIdToJoinOnInit?: Id<"lobbies">;
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: Constants.SDKUser;
@@ -58,6 +63,10 @@ class WavedashSDK {
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
     this.heartbeatManager = new HeartbeatManager(this);
+
+    this.setupOverlayListener();
+
+    this.lobbyIdToJoinOnInit = sdkConfig.lobbyIdToJoin;
   }
 
   // =============
@@ -95,6 +104,13 @@ class WavedashSDK {
     // Start heartbeat service
     this.heartbeatManager.start();
 
+    // Join a lobby on startup if provided
+    if (this.lobbyIdToJoinOnInit) {
+      this.lobbyManager.joinLobby(this.lobbyIdToJoinOnInit).catch((error) => {
+        this.logger.error("Could not join lobby on startup:", error);
+      });
+    }
+
     return true;
   }
 
@@ -109,6 +125,22 @@ class WavedashSDK {
 
   isReady(): boolean {
     return this.initialized;
+  }
+
+  toggleOverlay(): void {
+    iframeMessenger.postToParent(
+      Constants.IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY,
+      {}
+    );
+  }
+
+  private setupOverlayListener(): void {
+    window.addEventListener("keydown", (event) => {
+      if (event.key === "Tab" && event.shiftKey) {
+        event.preventDefault();
+        this.toggleOverlay();
+      }
+    });
   }
 
   // ============
@@ -651,21 +683,16 @@ class WavedashSDK {
   }
 
   updateLoadProgressZeroToOne(progress: number) {
-    window.parent.postMessage(
-      {
-        type: Constants.IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE,
-        progress,
-      },
-      "*"
+    iframeMessenger.postToParent(
+      Constants.IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE,
+      { progress }
     );
   }
 
   loadComplete() {
-    window.parent.postMessage(
-      {
-        type: Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE,
-      },
-      "*"
+    iframeMessenger.postToParent(
+      Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE,
+      {}
     );
   }
 }
@@ -679,78 +706,16 @@ export { WavedashSDK };
 // Re-export all types
 export type * from "./types";
 
-// ==============================
-// Keyboard Event Forwarding
-// ==============================
-/**
- * Enables forwarding of keyboard events to the parent window
- * Useful when the SDK is running in an iframe and needs to forward keyboard input
- */
-function handleKeystrokes(): void {
-  window.addEventListener("keydown", (event) => {
-    if (event.key === "Tab" && event.shiftKey) {
-      event.preventDefault();
-    }
-    window.parent.postMessage(
-      {
-        type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_DOWN,
-        key: event.key,
-        shiftKey: event.shiftKey,
-        ctrlKey: event.ctrlKey,
-        altKey: event.altKey,
-        metaKey: event.metaKey,
-      },
-      "*"
-    );
-  });
-
-  window.addEventListener("keyup", (event) => {
-    window.parent.postMessage(
-      {
-        type: Constants.IFRAME_MESSAGE_TYPE.ON_KEY_UP,
-        key: event.key,
-        shiftKey: event.shiftKey,
-        ctrlKey: event.ctrlKey,
-        altKey: event.altKey,
-        metaKey: event.metaKey,
-      },
-      "*"
-    );
-  });
-}
-
-async function requestFromParent<T extends keyof Constants.IFrameResponseMap>(
-  requestType: T
-): Promise<Constants.IFrameResponseMap[T]> {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      reject(new Error(`${requestType} request timed out after 5 seconds`));
-    }, 5000);
-
-    const handleMessage = (event: MessageEvent) => {
-      if (
-        event.data?.type === "response" &&
-        event.data?.requestType === requestType
-      ) {
-        clearTimeout(timeout);
-        window.removeEventListener("message", handleMessage);
-        resolve(event.data.data);
-      }
-    };
-
-    window.addEventListener("message", handleMessage);
-    window.parent.postMessage({ type: requestType }, "*");
-  });
-}
-
 const getAuthToken = async (): Promise<string> => {
-  return await requestFromParent(Constants.IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN);
+  return await iframeMessenger.requestFromParent(
+    Constants.IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN
+  );
 };
 
 // Type-safe initialization helper
 export async function setupWavedashSDK(): Promise<WavedashSDK> {
   console.log("[WavedashJS] Setting up SDK");
-  const sdkConfig = await requestFromParent(
+  const sdkConfig = await iframeMessenger.requestFromParent(
     Constants.IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
   );
 
@@ -760,7 +725,6 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
   const sdk = new WavedashSDK(convexClient, sdkConfig);
 
   (window as any).WavedashJS = sdk;
-  handleKeystrokes();
 
   return sdk;
 }
