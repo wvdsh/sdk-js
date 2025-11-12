@@ -12,26 +12,20 @@ export type PublicApiType = {
       { gameId: Id<"games">; returnUrl: string },
       any
     >;
-    list: FunctionReference<
-      "query",
+    createPlayKey: FunctionReference<
+      "mutation",
       "public",
       {
-        paginationOpts: {
-          cursor: string | null;
-          endCursor?: string | null;
-          id?: number;
-          maximumBytesRead?: number;
-          maximumRowsRead?: number;
-          numItems: number;
-        };
+        gameBranchId?: Id<"gameBranches">;
+        gameBuildId?: Id<"gameBuilds">;
+        slug: string;
       },
       any
     >;
-    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
-    getGameOrgAndAccess: FunctionReference<
+    getPurchasedGameOrThrow: FunctionReference<
       "query",
       "public",
-      { orgSlug: string; slug: string },
+      { gameId: Id<"games"> },
       any
     >;
     listPurchased: FunctionReference<
@@ -50,20 +44,26 @@ export type PublicApiType = {
       },
       any
     >;
-    getPurchasedGameOrThrow: FunctionReference<
+    list: FunctionReference<
       "query",
       "public",
-      { gameId: Id<"games"> },
+      {
+        paginationOpts: {
+          cursor: string | null;
+          endCursor?: string | null;
+          id?: number;
+          maximumBytesRead?: number;
+          maximumRowsRead?: number;
+          numItems: number;
+        };
+      },
       any
     >;
-    createPlayKey: FunctionReference<
-      "mutation",
+    getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
+    getGameAndAccess: FunctionReference<
+      "query",
       "public",
-      {
-        gameBranchId?: Id<"gameBranches">;
-        gameBuildId?: Id<"gameBuilds">;
-        slug: string;
-      },
+      { slug: string },
       any
     >;
     consumePlayKey: FunctionReference<
@@ -155,11 +155,22 @@ export type PublicApiType = {
       googleOAuthCallback: FunctionReference<
         "action",
         "public",
-        { code: string; origin: string },
+        { allowAccountCreation: boolean; code: string; origin: string },
         any
       >;
     };
     sessionTokens: {
+      authenticateUserForGame: FunctionReference<
+        "mutation",
+        "public",
+        {
+          gameBranchId?: Id<"gameBranches">;
+          gameBuildId?: Id<"gameBuilds">;
+          gameSlug: string;
+          isSandbox?: boolean;
+        },
+        any
+      >;
       logout: FunctionReference<
         "mutation",
         "public",
@@ -170,6 +181,80 @@ export type PublicApiType = {
         "mutation",
         "public",
         { sessionToken: string },
+        any
+      >;
+    };
+    emailPassword: {
+      changePassword: FunctionReference<
+        "mutation",
+        "public",
+        { currentPassword: string; newPassword: string },
+        any
+      >;
+      sendVerificationEmail: FunctionReference<
+        "mutation",
+        "public",
+        Record<string, never>,
+        any
+      >;
+      signUp: FunctionReference<
+        "mutation",
+        "public",
+        { email: string; password: string },
+        any
+      >;
+      signIn: FunctionReference<
+        "mutation",
+        "public",
+        { email: string; password: string },
+        any
+      >;
+      verifyEmail: FunctionReference<
+        "mutation",
+        "public",
+        { token: string },
+        any
+      >;
+      requestPasswordReset: FunctionReference<
+        "mutation",
+        "public",
+        { email: string },
+        any
+      >;
+      resetPassword: FunctionReference<
+        "mutation",
+        "public",
+        { newPassword: string; token: string },
+        any
+      >;
+    };
+    linking: {
+      getLinkedAuthMethods: FunctionReference<
+        "query",
+        "public",
+        Record<string, never>,
+        any
+      >;
+      linkEmailPassword: FunctionReference<
+        "mutation",
+        "public",
+        { email: string; password: string },
+        any
+      >;
+      linkOAuthAccount: FunctionReference<
+        "mutation",
+        "public",
+        {
+          provider: "google";
+          providerAccountId: string;
+          providerEmail: string;
+        },
+        any
+      >;
+      unlinkAuthMethod: FunctionReference<
+        "mutation",
+        "public",
+        { method: "email_password" | string },
         any
       >;
     };
@@ -253,6 +338,18 @@ export type PublicApiType = {
       "public",
       { name: string },
       { id: Id<"leaderboards">; name: string; totalEntries: number }
+    >;
+    getLeaderboardEntries: FunctionReference<
+      "query",
+      "public",
+      { leaderboardId: Id<"leaderboards">; limit?: number },
+      any
+    >;
+    getLeaderboardsForGame: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
     >;
     getMyLeaderboardEntry: FunctionReference<
       "query",
@@ -478,27 +575,14 @@ export type PublicApiType = {
       >;
     };
   };
-  gameBuilds: {
-    createGameplayJwt: FunctionReference<
-      "mutation",
-      "public",
-      {
-        gameBranchId?: Id<"gameBranches">;
-        gameBuildId?: Id<"gameBuilds">;
-        gameSlug: string;
-        isSandbox?: boolean;
-      },
-      any
-    >;
-    getBuildAndBranchFromJwt: FunctionReference<
-      "query",
-      "public",
-      Record<string, never>,
-      any
-    >;
-  };
   organizations: {
     getBySlug: FunctionReference<"query", "public", { slug: string }, any>;
+    get: FunctionReference<
+      "query",
+      "public",
+      { orgId: Id<"organizations"> },
+      any
+    >;
   };
   p2pSignaling: {
     sendSignalingMessage: FunctionReference<
@@ -537,7 +621,11 @@ export type PublicApiType = {
     heartbeat: FunctionReference<
       "mutation",
       "public",
-      { browsingSection?: string | null; data?: Record<string, any> },
+      {
+        browsingSection?: string | null;
+        data?: Record<string, any>;
+        gameCloudId?: Id<"gameClouds">;
+      },
       any
     >;
     myActivePresence: FunctionReference<
@@ -585,18 +673,25 @@ export type PublicApiType = {
         username: string;
       }>
     >;
-    endUserPresence: FunctionReference<"mutation", "public", any, any>;
+    endUserPresence: FunctionReference<
+      "mutation",
+      "public",
+      { gameCloudId?: Id<"gameClouds"> },
+      any
+    >;
   };
   gameAchievements: {
     getAllAchievementsWithProgress: FunctionReference<
       "query",
       "public",
-      Record<string, never>,
+      { gameCloudId: Id<"gameClouds"> },
       Array<{
         achievement: {
+          _id: Id<"gameAchievements">;
           description: string;
           displayName: string;
           image: string;
+          points: number;
         };
         completedAt?: number;
         currentValue?: number;
@@ -604,27 +699,17 @@ export type PublicApiType = {
         targetValue?: number;
       }>
     >;
-    getMyAchievementsForGame: FunctionReference<
-      "query",
-      "public",
-      { since?: number },
-      Array<{
-        achievement: {
-          _creationTime: number;
-          _id: Id<"gameAchievements">;
-          description: string;
-          displayName: string;
-          identifier: string;
-          image: string;
-        };
-        completedAt: number;
-      }>
-    >;
     getMyStatsForGame: FunctionReference<
       "query",
       "public",
       Record<string, never>,
       Array<{ identifier: string; value: number }>
+    >;
+    getTotalPointsForUserAndGame: FunctionReference<
+      "query",
+      "public",
+      Record<string, never>,
+      number
     >;
     setUserGameAchievements: FunctionReference<
       "mutation",
@@ -637,6 +722,35 @@ export type PublicApiType = {
       "public",
       { stats: Array<{ identifier: string; value: number }> },
       any
+    >;
+    getMyAchievementsForGame: FunctionReference<
+      "query",
+      "public",
+      { gameCloudId?: Id<"gameClouds">; since?: number },
+      Array<{
+        achievement: {
+          _creationTime: number;
+          _id: Id<"gameAchievements">;
+          description: string;
+          displayName: string;
+          identifier: string;
+          image: string;
+          points: number;
+        };
+        completedAt: number;
+      }>
+    >;
+    getAchievementsForGame: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
+    getTotalPointsForUser: FunctionReference<
+      "query",
+      "public",
+      { userId: Id<"users"> },
+      number
     >;
   };
   userTracking: {
@@ -694,6 +808,88 @@ export type PublicApiType = {
       "action",
       "public",
       Record<string, never>,
+      any
+    >;
+  };
+  gameReviews: {
+    getReviewStats: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
+    getReviewsForGame: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
+  };
+  wishlist: {
+    add: FunctionReference<"mutation", "public", { gameId: Id<"games"> }, any>;
+    isInWishlist: FunctionReference<
+      "query",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
+    list: FunctionReference<
+      "query",
+      "public",
+      {
+        paginationOpts: {
+          cursor: string | null;
+          endCursor?: string | null;
+          id?: number;
+          maximumBytesRead?: number;
+          maximumRowsRead?: number;
+          numItems: number;
+        };
+      },
+      any
+    >;
+    remove: FunctionReference<
+      "mutation",
+      "public",
+      { gameId: Id<"games"> },
+      any
+    >;
+  };
+  account: {
+    cancelEmailChange: FunctionReference<
+      "mutation",
+      "public",
+      Record<string, never>,
+      any
+    >;
+    deleteAccount: FunctionReference<
+      "mutation",
+      "public",
+      Record<string, never>,
+      any
+    >;
+    resendEmailChangeVerification: FunctionReference<
+      "mutation",
+      "public",
+      Record<string, never>,
+      any
+    >;
+    updateEmail: FunctionReference<
+      "mutation",
+      "public",
+      { newEmail: string },
+      any
+    >;
+    updateUsername: FunctionReference<
+      "mutation",
+      "public",
+      { newUsername: string },
+      any
+    >;
+    verifyEmailChange: FunctionReference<
+      "mutation",
+      "public",
+      { token: string },
       any
     >;
   };

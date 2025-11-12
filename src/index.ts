@@ -48,10 +48,7 @@ class WavedashSDK {
 
   Constants = Constants;
 
-  constructor(
-    convexClient: ConvexClient,
-    sdkConfig: Constants.SDKConfig
-  ) {
+  constructor(convexClient: ConvexClient, sdkConfig: Constants.SDKConfig) {
     this.convexClient = convexClient;
     this.wavedashUser = sdkConfig.wavedashUser;
     this.gameCloudId = sdkConfig.gameCloudId;
@@ -762,10 +759,7 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
 
   const sdk = new WavedashSDK(convexClient, sdkConfig);
 
-  if (typeof window !== "undefined") {
-    (window as any).WavedashJS = sdk;
-    console.log("[WavedashJS] SDK attached to window");
-  }
+  (window as any).WavedashJS = sdk;
   handleKeystrokes();
 
   return sdk;

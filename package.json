@@ -1,5 +1,5 @@
 {
-  "name": "@wvdsh/js",
+  "name": "sdk-js",
   "version": "0.0.28",
   "description": "Wavedash JavaScript SDK",
   "main": "./dist/index.js",
@@ -7,7 +7,6 @@
   "types": "./dist/index.d.ts",
   "files": [
     "dist",
-    "src",
     "README.md"
   ],
   "repository": {
@@ -15,7 +14,8 @@
     "url": "git+https://github.com/wvdsh/sdk-js.git"
   },
   "publishConfig": {
-    "registry": "https://npm.pkg.github.com"
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
   },
   "exports": {
     ".": {

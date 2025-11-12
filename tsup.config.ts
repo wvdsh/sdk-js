@@ -12,7 +12,7 @@ export default defineConfig({
     },
   },
   splitting: false,
-  sourcemap: true,
+  sourcemap: false,
   clean: true,
   external: [],
   noExternal: ["convex", "lodash.unionby"],
