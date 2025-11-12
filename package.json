@@ -1,10 +1,8 @@
 {
   "name": "@wvdsh/sdk-js",
-  "version": "0.0.33",
+  "version": "0.0.34",
   "description": "Wavedash JavaScript SDK",
   "main": "./dist/index.js",
-  "module": "./dist/index.mjs",
-  "types": "./dist/index.d.ts",
   "files": [
     "dist",
     "README.md"
@@ -17,20 +15,11 @@
     "access": "public",
     "registry": "https://registry.npmjs.org"
   },
-  "exports": {
-    ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.mjs",
-      "require": "./dist/index.js"
-    }
-  },
   "scripts": {
     "build": "tsup",
-    "build:browser": "tsup --format iife --global-name WavedashSDK",
     "dev": "tsup --watch",
     "prepare": "npm run build",
-    "prepublishOnly": "npm run build",
-    "r2-publish": "./scripts/r2-publish.sh"
+    "prepublishOnly": "npm run build"
   },
   "devDependencies": {
     "@types/lodash.unionby": "^4.8.9",
