@@ -65,6 +65,25 @@ export class IFrameMessenger {
         this.pendingRequests.delete(event.data.requestId);
         pending.resolve(event.data.data);
       }
+    } else if (event.data?.type === IFRAME_MESSAGE_TYPE.TAKE_FOCUS) {
+      console.log("[IFRAME MESSENGER] Taking focus");
+      if (typeof document !== "undefined") {
+        const gameFocusTargets =
+          document.getElementsByClassName("game-focus-target");
+        if (gameFocusTargets.length > 0) {
+          console.log("[IFRAME MESSENGER] Focusing on game focus target");
+          (gameFocusTargets[0] as HTMLElement).focus();
+        } else {
+          // Fallback: focus the first focusable element (canvas, input, button, etc.)
+          const focusableElement = document.querySelector(
+            "canvas, input, button, [tabindex]:not([tabindex='-1'])"
+          ) as HTMLElement;
+          if (focusableElement) {
+            console.log("[IFRAME MESSENGER] Focusing on fallback target");
+            focusableElement.focus();
+          }
+        }
+      }
     }
   };
 

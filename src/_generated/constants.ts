@@ -99,7 +99,8 @@ export const IFRAME_MESSAGE_TYPE = {
 	GET_SDK_CONFIG: 'GetSDKConfig',
 	PROGRESS_UPDATE: 'ProgressUpdate',
 	LOADING_COMPLETE: 'LoadingComplete',
-	TOGGLE_OVERLAY: 'ToggleOverlay'
+	TOGGLE_OVERLAY: 'ToggleOverlay',
+	TAKE_FOCUS: 'TakeFocus'
 } as const;
 
 export interface IFrameResponse<T> {
