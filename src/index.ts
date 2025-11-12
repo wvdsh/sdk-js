@@ -724,10 +724,7 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
 
   const sdk = new WavedashSDK(convexClient, sdkConfig);
 
-  if (typeof window !== "undefined") {
-    (window as any).WavedashJS = sdk;
-    console.log("[WavedashJS] SDK attached to window");
-  }
+  (window as any).WavedashJS = sdk;
 
   return sdk;
 }
