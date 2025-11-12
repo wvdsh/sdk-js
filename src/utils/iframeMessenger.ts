@@ -65,6 +65,11 @@ export class IFrameMessenger {
         this.pendingRequests.delete(event.data.requestId);
         pending.resolve(event.data.data);
       }
+    } else if (event.data?.type === IFRAME_MESSAGE_TYPE.TAKE_FOCUS) {
+      console.log("[IFRAME MESSENGER] Taking focus");
+      if (typeof document !== "undefined") {
+        document.getElementById("wavedash-target")?.focus();
+      }
     }
   };
 

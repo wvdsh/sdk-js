@@ -435,6 +435,79 @@ export type PublicApiType = {
       }
     >;
   };
+  auth: {
+    oauth: {
+      googleOAuthCallback: FunctionReference<
+        "action",
+        "public",
+        { allowAccountCreation: boolean; code: string; origin: string },
+        any
+      >;
+    };
+    sessionTokens: {
+      authenticateUserForGame: FunctionReference<
+        "mutation",
+        "public",
+        {
+          gameBranchId?: Id<"gameBranches">;
+          gameBuildId?: Id<"gameBuilds">;
+          gameSlug: string;
+          isSandbox?: boolean;
+        },
+        any
+      >;
+      logout: FunctionReference<
+        "mutation",
+        "public",
+        { sessionToken: string },
+        any
+      >;
+      refresh: FunctionReference<
+        "mutation",
+        "public",
+        { sessionToken: string },
+        any
+      >;
+    };
+    emailPassword: {
+      sendVerificationEmail: FunctionReference<
+        "mutation",
+        "public",
+        Record<string, never>,
+        any
+      >;
+      signUp: FunctionReference<
+        "mutation",
+        "public",
+        { email: string; password: string },
+        any
+      >;
+      signIn: FunctionReference<
+        "mutation",
+        "public",
+        { email: string; password: string },
+        any
+      >;
+      verifyEmail: FunctionReference<
+        "mutation",
+        "public",
+        { token: string },
+        any
+      >;
+      requestPasswordReset: FunctionReference<
+        "mutation",
+        "public",
+        { email: string },
+        any
+      >;
+      resetPassword: FunctionReference<
+        "mutation",
+        "public",
+        { newPassword: string; token: string },
+        any
+      >;
+    };
+  };
   developers: {
     organizations: {
       list: FunctionReference<"query", "public", any, any>;
