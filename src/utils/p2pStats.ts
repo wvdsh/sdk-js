@@ -134,18 +134,22 @@ export class P2PStatsManager {
 
   // Called when an invalid message is encountered during dequeue
   trackInvalidMessage(channel: number): void {
-    if (!this.enabled) return;
+    // Check if we have metadata for this channel (stats were enabled during enqueue)
+    const packets = this.packetMetadata.get(channel);
+    const hasMetadata = packets && packets.length > 0;
     
-    this.totalInvalidMessages++;
+    // If no metadata exists, stats were disabled during enqueue, so nothing to track
+    if (!hasMetadata) return;
     
-    // Decrement channel message count to keep it in sync with actual queue
+    // Clean up metadata and counts to stay in sync with actual queue
+    // This happens even if stats are currently disabled (they may have been enabled during enqueue)
+    packets.shift();
     const currentCount = this.channelMessageCounts.get(channel) || 0;
     this.channelMessageCounts.set(channel, Math.max(0, currentCount - 1));
     
-    // Remove the invalid packet from metadata queue if it exists
-    const packets = this.packetMetadata.get(channel);
-    if (packets && packets.length > 0) {
-      packets.shift();
+    // Only increment invalid message counter if stats are currently enabled
+    if (this.enabled) {
+      this.totalInvalidMessages++;
     }
   }
 
