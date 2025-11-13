@@ -70,8 +70,6 @@ The stats object includes:
 - **Counters**: Total packets sent/received, bytes received
 - **Per-channel stats**: Queue status for each channel
 
-See `example/test-p2p-stats.html` for a complete example.
-
 If running a Unity game, we also need to give WavedashJS a reference to the Unity instance:
 ```javascript
 createUnityInstance(canvas, config, (progress: number) => {
