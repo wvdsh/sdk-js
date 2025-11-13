@@ -12,11 +12,13 @@ import type {
   P2PMessage,
   P2PConfig,
   P2PTurnCredentials,
+  P2PStats,
 } from "../types";
 import { Signals } from "../signals";
 import { api } from "../_generated/convex_api";
 import type { WavedashSDK } from "../index";
 import { P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "../_generated/constants";
+import { P2PStatsManager } from "./p2pStats";
 
 // Default P2P configuration
 const DEFAULT_P2P_CONFIG: P2PConfig = {
@@ -57,6 +59,9 @@ export class P2PManager {
   private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
   private readonly DEFAULT_NUM_CHANNELS = 4; // Default number of channels to pre-allocate
 
+  // Stats tracking
+  private statsManager: P2PStatsManager;
+
   // Binary message format offsets
   private readonly USERID_SIZE = 32; // TODO: Switch to int handles so this can be 4 bytes instead of 32
   private readonly CHANNEL_SIZE = 4;
@@ -69,6 +74,7 @@ export class P2PManager {
   constructor(sdk: WavedashSDK, config?: Partial<P2PConfig>) {
     this.sdk = sdk;
     this.config = { ...DEFAULT_P2P_CONFIG, ...config };
+    this.statsManager = new P2PStatsManager(this.QUEUE_SIZE, this.MAX_CHANNELS);
     this.initializeMessageQueue();
   }
 
@@ -796,11 +802,17 @@ export class P2PManager {
 
       if (toUserId === undefined) {
         // Broadcast to all peers
+        let sentCount = 0;
         channelMap.forEach((channel) => {
           if (channel.readyState === "open") {
             channel.send(messageData as Uint8Array<ArrayBuffer>);
+            sentCount++;
           }
         });
+        // Track each successful send
+        for (let i = 0; i < sentCount; i++) {
+          this.statsManager.trackSend(messageData.byteLength);
+        }
       } else {
         // Send to specific peer
         const channel = channelMap.get(toUserId);
@@ -808,6 +820,8 @@ export class P2PManager {
           throw new Error(`No open channel to peer ${toUserId}`);
         }
         channel.send(messageData as Uint8Array<ArrayBuffer>);
+        // Track send
+        this.statsManager.trackSend(messageData.byteLength);
       }
 
       return true;
@@ -1091,6 +1105,9 @@ export class P2PManager {
       Atomics.store(queue.incomingHeaderView, 0, nextWriteIndex); // writeIndex
       Atomics.add(queue.incomingHeaderView, 2, 1); // messageCount++
 
+      // Track enqueue for stats
+      this.statsManager.trackEnqueue(channel, binaryData.byteLength);
+
       // Notify waiting readers (Only matters if we have another thread also reading directly from this queue, which we don't yet)
       Atomics.notify(queue.incomingHeaderView, 2, 1);
     } catch (error) {
@@ -1166,6 +1183,9 @@ export class P2PManager {
     const nextReadIndex = (readIndex + 1) % this.QUEUE_SIZE;
     Atomics.store(queue.incomingHeaderView, 1, nextReadIndex); // readIndex
     Atomics.sub(queue.incomingHeaderView, 2, 1); // messageCount--
+
+    // Track dequeue for stats
+    this.statsManager.trackDequeue(appChannel);
 
     // Engine gets the raw binary, JS gets the decoded P2PMessage
     return this.sdk.engineInstance
@@ -1258,5 +1278,25 @@ export class P2PManager {
       }
       return uint8View;
     }
+  }
+
+  // ================
+  // Stats Methods
+  // ================
+
+  enableStats(): void {
+    this.statsManager.enable();
+  }
+
+  disableStats(): void {
+    this.statsManager.disable();
+  }
+
+  getStats(): P2PStats {
+    return this.statsManager.getStats();
+  }
+
+  resetStats(): void {
+    this.statsManager.reset();
   }
 }

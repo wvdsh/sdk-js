@@ -49,6 +49,7 @@ export interface WavedashConfig {
   debug?: boolean;
   remoteStorageOrigin?: string;
   p2p?: Partial<P2PConfig>;
+  enableP2PStats?: boolean; // Enable P2P networking stats tracking for debugging
 }
 
 export interface RemoteFileMetadata {
@@ -136,6 +137,32 @@ export interface P2PConfig {
   maxPeers: number;
   enableReliableChannel: boolean;
   enableUnreliableChannel: boolean;
+}
+
+// P2P Stats (for debugging)
+export interface P2PStats {
+  enabled: boolean;
+  // Queue wait times
+  averageQueueWaitTimeMs: number;
+  maxQueueWaitTimeMs: number;
+  minQueueWaitTimeMs: number;
+  // Queue utilization
+  currentQueueSize: number; // Total messages across all channels
+  maxQueueSize: number; // Total capacity across all channels
+  queueUtilizationPercent: number; // currentQueueSize / maxQueueSize * 100
+  // Packet sizes
+  averagePacketSizeBytes: number;
+  maxPacketSizeBytes: number;
+  minPacketSizeBytes: number;
+  // Counters
+  totalPacketsSent: number;
+  totalPacketsReceived: number;
+  totalBytesReceived: number;
+  // Per-channel stats
+  channelStats: Record<number, {
+    messagesInQueue: number;
+    queueCapacity: number;
+  }>;
 }
 
 // Re-export Id for convenience

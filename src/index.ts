@@ -100,6 +100,12 @@ class WavedashSDK {
       this.p2pManager.updateConfig(this.config.p2p);
     }
 
+    // Enable P2P stats if requested
+    if (this.config.enableP2PStats) {
+      this.p2pManager.enableStats();
+      this.logger.debug("P2P stats tracking enabled");
+    }
+
     this.logger.debug("Initialized with config:", this.config);
     // Start heartbeat service
     this.heartbeatManager.start();
@@ -526,6 +532,40 @@ class WavedashSDK {
   isBroadcastReady(): boolean {
     this.ensureReady();
     return this.p2pManager.isBroadcastReady();
+  }
+
+  /**
+   * Get P2P networking stats for debugging
+   * Stats tracking must be enabled in init config with enableP2PStats: true
+   */
+  getP2PStats(): string | import("./types").P2PStats {
+    this.ensureReady();
+    const stats = this.p2pManager.getStats();
+    return this.formatResponse(stats);
+  }
+
+  /**
+   * Reset P2P networking stats
+   */
+  resetP2PStats(): void {
+    this.ensureReady();
+    this.p2pManager.resetStats();
+  }
+
+  /**
+   * Enable P2P stats tracking at runtime
+   */
+  enableP2PStats(): void {
+    this.ensureReady();
+    this.p2pManager.enableStats();
+  }
+
+  /**
+   * Disable P2P stats tracking at runtime
+   */
+  disableP2PStats(): void {
+    this.ensureReady();
+    this.p2pManager.disableStats();
   }
 
   // ============
