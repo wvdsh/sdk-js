@@ -60,7 +60,7 @@ export class P2PManager {
   private readonly DEFAULT_NUM_CHANNELS = 4; // Default number of channels to pre-allocate
 
   // Stats tracking
-  private statsManager: P2PStatsManager;
+  private p2pStatsManager: P2PStatsManager;
 
   // Binary message format offsets
   private readonly USERID_SIZE = 32; // TODO: Switch to int handles so this can be 4 bytes instead of 32
@@ -74,7 +74,7 @@ export class P2PManager {
   constructor(sdk: WavedashSDK, config?: Partial<P2PConfig>) {
     this.sdk = sdk;
     this.config = { ...DEFAULT_P2P_CONFIG, ...config };
-    this.statsManager = new P2PStatsManager(this.QUEUE_SIZE, this.MAX_CHANNELS);
+    this.p2pStatsManager = new P2PStatsManager(this.QUEUE_SIZE, this.MAX_CHANNELS);
     this.initializeMessageQueue();
   }
 
@@ -811,7 +811,7 @@ export class P2PManager {
         });
         // Track each successful send
         for (let i = 0; i < sentCount; i++) {
-          this.statsManager.trackSend(messageData.byteLength);
+          this.p2pStatsManager.trackSend(messageData.byteLength);
         }
       } else {
         // Send to specific peer
@@ -821,7 +821,7 @@ export class P2PManager {
         }
         channel.send(messageData as Uint8Array<ArrayBuffer>);
         // Track send
-        this.statsManager.trackSend(messageData.byteLength);
+        this.p2pStatsManager.trackSend(messageData.byteLength);
       }
 
       return true;
@@ -1106,7 +1106,7 @@ export class P2PManager {
       Atomics.add(queue.incomingHeaderView, 2, 1); // messageCount++
 
       // Track enqueue for stats
-      this.statsManager.trackEnqueue(channel, binaryData.byteLength);
+      this.p2pStatsManager.trackEnqueue(channel, binaryData.byteLength);
 
       // Notify waiting readers (Only matters if we have another thread also reading directly from this queue, which we don't yet)
       Atomics.notify(queue.incomingHeaderView, 2, 1);
@@ -1185,7 +1185,7 @@ export class P2PManager {
     Atomics.sub(queue.incomingHeaderView, 2, 1); // messageCount--
 
     // Track dequeue for stats
-    this.statsManager.trackDequeue(appChannel);
+    this.p2pStatsManager.trackDequeue(appChannel);
 
     // Engine gets the raw binary, JS gets the decoded P2PMessage
     return this.sdk.engineInstance
@@ -1285,18 +1285,18 @@ export class P2PManager {
   // ================
 
   enableStats(): void {
-    this.statsManager.enable();
+    this.p2pStatsManager.enable();
   }
 
   disableStats(): void {
-    this.statsManager.disable();
+    this.p2pStatsManager.disable();
   }
 
   getStats(): P2PStats {
-    return this.statsManager.getStats();
+    return this.p2pStatsManager.getStats();
   }
 
   resetStats(): void {
-    this.statsManager.reset();
+    this.p2pStatsManager.reset();
   }
 }
