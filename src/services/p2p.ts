@@ -18,7 +18,7 @@ import { Signals } from "../signals";
 import { api } from "../_generated/convex_api";
 import type { WavedashSDK } from "../index";
 import { P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "../_generated/constants";
-import { P2PStatsManager } from "./p2pStats";
+import { P2PStatsManager } from "../utils/p2pStats";
 
 // Default P2P configuration
 const DEFAULT_P2P_CONFIG: P2PConfig = {
@@ -74,7 +74,10 @@ export class P2PManager {
   constructor(sdk: WavedashSDK, config?: Partial<P2PConfig>) {
     this.sdk = sdk;
     this.config = { ...DEFAULT_P2P_CONFIG, ...config };
-    this.p2pStatsManager = new P2PStatsManager(this.QUEUE_SIZE, this.MAX_CHANNELS);
+    this.p2pStatsManager = new P2PStatsManager(
+      this.QUEUE_SIZE,
+      this.MAX_CHANNELS
+    );
     this.initializeMessageQueue();
   }
 

@@ -28,6 +28,7 @@ import type {
   UGCVisibility,
   RemoteFileMetadata,
   P2PMessage,
+  P2PStats,
   LobbyUser,
   Signal,
   Lobby,
@@ -538,7 +539,7 @@ class WavedashSDK {
    * Get P2P networking stats for debugging
    * Stats tracking must be enabled in init config with enableP2PStats: true
    */
-  getP2PStats(): string | import("./types").P2PStats {
+  getP2PStats(): string | P2PStats {
     this.ensureReady();
     const stats = this.p2pManager.getStats();
     return this.formatResponse(stats);
