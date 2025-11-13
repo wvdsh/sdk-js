@@ -35,15 +35,15 @@ export class IFrameMessenger {
 
   /**
    * Derive parent origin from iframe URL pattern
-   * iframe: [gameSlug].builds.[parentDomain]
+   * iframe: [gameSlug].builds.[parentDomain] or [gameSlug].sandbox.[parentDomain]
    * parent: [parentDomain]
    */
   private deriveParentOrigin(): string {
     if (typeof window === "undefined") return "";
     const iframeHost = window.location.hostname;
-    const match = iframeHost.match(/^[\w-]+\.builds\.(.+)$/);
+    const match = iframeHost.match(/^[\w-]+\.(builds|sandbox)\.(.+)$/);
     if (match) {
-      const parentDomain = match[1];
+      const parentDomain = match[2];
       return `${window.location.protocol}//${parentDomain}`;
     }
     console.error(`Invalid iframe hostname pattern: ${iframeHost}`);
@@ -66,12 +66,10 @@ export class IFrameMessenger {
         pending.resolve(event.data.data);
       }
     } else if (event.data?.type === IFRAME_MESSAGE_TYPE.TAKE_FOCUS) {
-      console.log("[IFRAME MESSENGER] Taking focus");
       if (typeof document !== "undefined") {
         const gameFocusTargets =
           document.getElementsByClassName("game-focus-target");
         if (gameFocusTargets.length > 0) {
-          console.log("[IFRAME MESSENGER] Focusing on game focus target");
           (gameFocusTargets[0] as HTMLElement).focus();
         } else {
           // Fallback: focus the first focusable element (canvas, input, button, etc.)
@@ -79,7 +77,6 @@ export class IFrameMessenger {
             "canvas, input, button, [tabindex]:not([tabindex='-1'])"
           ) as HTMLElement;
           if (focusableElement) {
-            console.log("[IFRAME MESSENGER] Focusing on fallback target");
             focusableElement.focus();
           }
         }
