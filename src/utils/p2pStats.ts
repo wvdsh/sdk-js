@@ -31,6 +31,8 @@ export class P2PStatsManager {
   private totalPacketsSent: number = 0;
   private totalPacketsReceived: number = 0;
   private totalBytesReceived: number = 0;
+  private totalBytesSent: number = 0;
+  private totalInvalidMessages: number = 0;
 
   // Per-channel tracking
   private channelMessageCounts: Map<number, number> = new Map();
@@ -119,6 +121,32 @@ export class P2PStatsManager {
   trackSend(sizeBytes: number): void {
     if (!this.enabled) return;
     this.totalPacketsSent++;
+    this.totalBytesSent += sizeBytes;
+    
+    // Track sent packet sizes
+    this.packetSizes.push(sizeBytes);
+    if (this.packetSizes.length > this.MAX_SAMPLES) {
+      this.packetSizes.shift();
+    }
+    this.maxPacketSize = Math.max(this.maxPacketSize, sizeBytes);
+    this.minPacketSize = Math.min(this.minPacketSize, sizeBytes);
+  }
+
+  // Called when an invalid message is encountered during dequeue
+  trackInvalidMessage(channel: number): void {
+    if (!this.enabled) return;
+    
+    this.totalInvalidMessages++;
+    
+    // Decrement channel message count to keep it in sync with actual queue
+    const currentCount = this.channelMessageCounts.get(channel) || 0;
+    this.channelMessageCounts.set(channel, Math.max(0, currentCount - 1));
+    
+    // Remove the invalid packet from metadata queue if it exists
+    const packets = this.packetMetadata.get(channel);
+    if (packets && packets.length > 0) {
+      packets.shift();
+    }
   }
 
   // Get current stats snapshot
@@ -166,6 +194,8 @@ export class P2PStatsManager {
       totalPacketsSent: this.totalPacketsSent,
       totalPacketsReceived: this.totalPacketsReceived,
       totalBytesReceived: this.totalBytesReceived,
+      totalBytesSent: this.totalBytesSent,
+      totalInvalidMessages: this.totalInvalidMessages,
       channelStats,
     };
   }
@@ -181,6 +211,8 @@ export class P2PStatsManager {
     this.totalPacketsSent = 0;
     this.totalPacketsReceived = 0;
     this.totalBytesReceived = 0;
+    this.totalBytesSent = 0;
+    this.totalInvalidMessages = 0;
     this.channelMessageCounts.clear();
     this.packetMetadata.clear();
   }

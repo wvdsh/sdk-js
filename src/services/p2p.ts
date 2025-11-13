@@ -1173,6 +1173,10 @@ export class P2PManager {
       const nextReadIndex = (readIndex + 1) % this.QUEUE_SIZE;
       Atomics.store(queue.incomingHeaderView, 1, nextReadIndex); // readIndex
       Atomics.sub(queue.incomingHeaderView, 2, 1); // messageCount--
+      
+      // Track invalid message to keep stats in sync
+      this.p2pStatsManager.trackInvalidMessage(appChannel);
+      
       return this.sdk.engineInstance ? new Uint8Array(0) : null;
     }
 

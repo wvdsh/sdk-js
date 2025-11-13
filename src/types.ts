@@ -158,6 +158,8 @@ export interface P2PStats {
   totalPacketsSent: number;
   totalPacketsReceived: number;
   totalBytesReceived: number;
+  totalBytesSent: number;
+  totalInvalidMessages: number;
   // Per-channel stats
   channelStats: Record<number, {
     messagesInQueue: number;
