@@ -805,17 +805,18 @@ export class P2PManager {
 
       if (toUserId === undefined) {
         // Broadcast to all peers
-        let sentCount = 0;
         channelMap.forEach((channel) => {
           if (channel.readyState === "open") {
-            channel.send(messageData as Uint8Array<ArrayBuffer>);
-            sentCount++;
+            try {
+              channel.send(messageData as Uint8Array<ArrayBuffer>);
+              // Track send immediately after success
+              this.p2pStatsManager.trackSend(messageData.byteLength);
+            } catch (error) {
+              // Log error but continue to other peers
+              this.sdk.logger.error(`Error broadcasting to peer:`, error);
+            }
           }
         });
-        // Track each successful send
-        for (let i = 0; i < sentCount; i++) {
-          this.p2pStatsManager.trackSend(messageData.byteLength);
-        }
       } else {
         // Send to specific peer
         const channel = channelMap.get(toUserId);
