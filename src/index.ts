@@ -10,6 +10,7 @@ import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
+import { takeFocus } from "./utils/focusManager";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
@@ -694,6 +695,8 @@ class WavedashSDK {
       Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE,
       {}
     );
+    // Take focus when loading is complete
+    takeFocus();
   }
 }
 
