@@ -6,9 +6,9 @@
  */
 
 import type { WavedashResponse, RemoteFileMetadata } from "../types";
-import { api } from "../_generated/convex_api";
 import type { WavedashSDK } from "../index";
 import * as indexedDBUtils from "../utils/indexedDB";
+import { api } from "@wvdsh/types";
 
 let REMOTE_STORAGE_ORIGIN: string | undefined;
 

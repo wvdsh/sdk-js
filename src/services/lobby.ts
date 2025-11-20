@@ -13,9 +13,8 @@ import type {
   LobbyMessage,
 } from "../types";
 import { Signals } from "../signals";
-import { api } from "../_generated/convex_api";
 import type { WavedashSDK } from "../index";
-import { LOBBY_MESSAGE_MAX_LENGTH, SDKUser } from "../_generated/constants";
+import { api, LOBBY_MESSAGE_MAX_LENGTH, SDKUser } from "@wvdsh/types";
 
 export class LobbyManager {
   private sdk: WavedashSDK;

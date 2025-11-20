@@ -1,5 +1,4 @@
 import { ConvexClient } from "convex/browser";
-import * as Constants from "./_generated/constants";
 import * as remoteStorage from "./services/remoteStorage";
 import * as leaderboards from "./services/leaderboards";
 import * as ugc from "./services/ugc";
@@ -33,13 +32,19 @@ import type {
   Signal,
   Lobby,
 } from "./types";
+import {
+  GAME_ENGINE,
+  IFRAME_MESSAGE_TYPE,
+  SDKConfig,
+  SDKUser,
+} from "@wvdsh/types";
 
 class WavedashSDK {
   private initialized: boolean = false;
   private lobbyIdToJoinOnInit?: Id<"lobbies">;
 
   protected config: WavedashConfig | null = null;
-  protected wavedashUser: Constants.SDKUser;
+  protected wavedashUser: SDKUser;
   protected gameCloudId: string;
   protected ugcHost: string;
   protected lobbyManager: LobbyManager;
@@ -52,9 +57,7 @@ class WavedashSDK {
   logger: WavedashLogger;
   p2pManager: P2PManager;
 
-  Constants = Constants;
-
-  constructor(convexClient: ConvexClient, sdkConfig: Constants.SDKConfig) {
+  constructor(convexClient: ConvexClient, sdkConfig: SDKConfig) {
     this.convexClient = convexClient;
     this.wavedashUser = sdkConfig.wavedashUser;
     this.gameCloudId = sdkConfig.gameCloudId;
@@ -129,10 +132,7 @@ class WavedashSDK {
   }
 
   toggleOverlay(): void {
-    iframeMessenger.postToParent(
-      Constants.IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY,
-      {}
-    );
+    iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY, {});
   }
 
   private setupOverlayListener(): void {
@@ -148,7 +148,7 @@ class WavedashSDK {
   // User methods
   // ============
 
-  getUser(): string | Constants.SDKUser {
+  getUser(): string | SDKUser {
     this.ensureReady();
     return this.formatResponse(this.wavedashUser);
   }
@@ -651,7 +651,7 @@ class WavedashSDK {
   private isGodot(): boolean {
     return (
       this.engineInstance !== null &&
-      this.engineInstance.type === Constants.GAME_ENGINE.GODOT
+      this.engineInstance.type === GAME_ENGINE.GODOT
     );
   }
 
@@ -685,17 +685,13 @@ class WavedashSDK {
   }
 
   updateLoadProgressZeroToOne(progress: number) {
-    iframeMessenger.postToParent(
-      Constants.IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE,
-      { progress }
-    );
+    iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE, {
+      progress,
+    });
   }
 
   loadComplete() {
-    iframeMessenger.postToParent(
-      Constants.IFRAME_MESSAGE_TYPE.LOADING_COMPLETE,
-      {}
-    );
+    iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
     // Take focus when loading is complete
     takeFocus();
   }
@@ -712,7 +708,7 @@ export type * from "./types";
 
 const getAuthToken = async (): Promise<string> => {
   return await iframeMessenger.requestFromParent(
-    Constants.IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN
+    IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN
   );
 };
 
@@ -720,7 +716,7 @@ const getAuthToken = async (): Promise<string> => {
 export async function setupWavedashSDK(): Promise<WavedashSDK> {
   console.log("[WavedashJS] Setting up SDK");
   const sdkConfig = await iframeMessenger.requestFromParent(
-    Constants.IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
+    IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
   );
 
   const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);

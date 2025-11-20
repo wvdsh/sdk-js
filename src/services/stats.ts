@@ -1,5 +1,5 @@
+import { api } from "@wvdsh/types";
 import { WavedashResponse, WavedashSDK } from "..";
-import { api } from "../_generated/convex_api";
 import unionBy from "lodash.unionby";
 
 type Stats = Array<{ identifier: string; value: number }>;

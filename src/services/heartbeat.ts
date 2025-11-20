@@ -6,9 +6,9 @@
  * Lets the game update userPresence in the backend
  */
 
+import { api } from "@wvdsh/types";
 import type { WavedashSDK } from "../index";
 import { Signals } from "../signals";
-import { api } from "../_generated/convex_api";
 import type { ConnectionState } from "convex/browser";
 
 export class HeartbeatManager {

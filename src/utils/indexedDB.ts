@@ -2,12 +2,17 @@
  * Utility functions to interact with IndexedDB
  */
 
-
-export async function writeToIndexedDB(dbName: string, storeName: string, key: string, data: Uint8Array): Promise<void> {
+export async function writeToIndexedDB(
+  dbName: string,
+  storeName: string,
+  key: string,
+  data: Uint8Array
+): Promise<void> {
   return new Promise((resolve, reject) => {
     const openReq = indexedDB.open(dbName);
     openReq.onerror = () => reject(openReq.error);
-    openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+    openReq.onupgradeneeded = () =>
+      reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
     openReq.onsuccess = () => {
       const db = openReq.result;
       const tx = db.transaction(storeName, "readwrite");
@@ -17,7 +22,7 @@ export async function writeToIndexedDB(dbName: string, storeName: string, key: s
       const value = {
         contents: data,
         timestamp: Date.now(),
-        mode: 33206  // Standard file permissions (rw-rw-rw-)
+        mode: 33206, // Standard file permissions (rw-rw-rw-)
       };
 
       const putReq = store.put(value, key);
@@ -28,11 +33,16 @@ export async function writeToIndexedDB(dbName: string, storeName: string, key: s
   });
 }
 
-export async function getRecordFromIndexedDB(dbName: string, storeName: string, key: string): Promise<Record<string, any> | null> {
+export async function getRecordFromIndexedDB(
+  dbName: string,
+  storeName: string,
+  key: string
+): Promise<Record<string, any> | null> {
   return new Promise((resolve, reject) => {
     const openReq = indexedDB.open(dbName);
     openReq.onerror = () => reject(openReq.error);
-    openReq.onupgradeneeded = () => reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+    openReq.onupgradeneeded = () =>
+      reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
     openReq.onsuccess = () => {
       const db = openReq.result;
       const tx = db.transaction(storeName, "readonly");
@@ -52,16 +62,23 @@ export function toBlobFromIndexedDBValue(value: any): Blob {
   // - Blob
   // - ArrayBuffer / Uint8Array / Int8Array
   if (value.contents != null) {
-    const buf = (value.contents instanceof Uint8Array || value.contents instanceof Int8Array)
-      ? value.contents
-      : new Uint8Array(value.contents);
+    const buf =
+      value.contents instanceof Uint8Array ||
+      value.contents instanceof Int8Array
+        ? value.contents
+        : new Uint8Array(value.contents);
     return new Blob([buf], { type: "application/octet-stream" });
   }
   if (value instanceof Blob) return value;
-  if (value instanceof Uint8Array || value instanceof Int8Array) return new Blob([value], { type: "application/octet-stream" });
-  if (value instanceof ArrayBuffer) return new Blob([value], { type: "application/octet-stream" });
+  if (value instanceof Uint8Array || value instanceof Int8Array)
+    return new Blob([value as unknown as BlobPart], {
+      type: "application/octet-stream",
+    });
+  if (value instanceof ArrayBuffer)
+    return new Blob([value], { type: "application/octet-stream" });
   // Fallback for shapes like { data: ArrayBuffer } or { blob: Blob }
-  if (value.data instanceof ArrayBuffer) return new Blob([value.data], { type: "application/octet-stream" });
+  if (value.data instanceof ArrayBuffer)
+    return new Blob([value.data], { type: "application/octet-stream" });
   if (value.blob instanceof Blob) return value.blob;
   throw new Error("Unrecognized value shape from IndexedDB");
 }

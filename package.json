@@ -1,6 +1,6 @@
 {
   "name": "@wvdsh/sdk-js",
-  "version": "0.0.38",
+  "version": "0.0.39",
   "description": "Wavedash JavaScript SDK",
   "main": "./dist/index.js",
   "files": [
@@ -10,10 +10,6 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wvdsh/sdk-js.git"
-  },
-  "publishConfig": {
-    "access": "public",
-    "registry": "https://registry.npmjs.org"
   },
   "scripts": {
     "build": "tsup",
@@ -27,6 +23,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
+    "@wvdsh/types": "^1.0.16",
     "convex": "^1.28.0",
     "lodash.unionby": "^4.8.0"
   }

@@ -13,8 +13,8 @@ import type {
   WavedashResponse,
   UpsertedLeaderboardEntry,
 } from "../types";
-import { api } from "../_generated/convex_api";
 import type { WavedashSDK } from "../index";
+import { api } from "@wvdsh/types";
 
 // Once a leaderboard is fetched, we cache it here
 // Mainly used to cache the totalEntries value for each leaderboard

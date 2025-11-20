@@ -14,9 +14,8 @@ import type {
   P2PTurnCredentials,
 } from "../types";
 import { Signals } from "../signals";
-import { api } from "../_generated/convex_api";
 import type { WavedashSDK } from "../index";
-import { P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "../_generated/constants";
+import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/types";
 
 // Default P2P configuration
 const DEFAULT_P2P_CONFIG: P2PConfig = {

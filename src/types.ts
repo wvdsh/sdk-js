@@ -1,11 +1,13 @@
 import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
-import { api, PublicApiType } from "./_generated/convex_api";
+
+import { Signals } from "./signals";
 import {
+  api,
   GAME_ENGINE,
   P2P_SIGNALING_MESSAGE_TYPE,
-} from "./_generated/constants";
-import { Signals } from "./signals";
+  PublicApiType,
+} from "@wvdsh/types";
 
 // Extract types from the API
 export type LobbyVisibility =

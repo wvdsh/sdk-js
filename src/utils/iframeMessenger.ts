@@ -5,8 +5,7 @@
  * TODO: Look into Vercel's BIDC for this https://github.com/vercel/bidc
  */
 
-import type { IFrameResponseMap } from "../_generated/constants";
-import { IFRAME_MESSAGE_TYPE } from "../_generated/constants";
+import { IFRAME_MESSAGE_TYPE, IFrameResponseMap } from "@wvdsh/types";
 import { takeFocus } from "./focusManager";
 
 const RESPONSE_TIMEOUT_MS = 5_000;
