@@ -86,9 +86,11 @@ async function uploadFromFS(
     const data = this.engineInstance!.FS.readFile(
       filePath
     ) as Uint8Array<ArrayBuffer>;
+    // Convert to Blob for Safari compatibility
+    const blob = new Blob([data], { type: "application/octet-stream" });
     const response = await fetch(presignedUploadUrl, {
       method: "PUT",
-      body: data,
+      body: blob,
       // credentials not needed for presigned upload URL
     });
     return response.ok;
