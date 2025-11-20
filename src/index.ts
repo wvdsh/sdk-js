@@ -677,6 +677,7 @@ class WavedashSDK {
       const script = document.createElement("script");
       script.type = "text/javascript";
       script.src = src;
+      script.crossOrigin = "use-credentials"; // Enable CORS with credentials (cookies, auth)
       script.onload = resolve;
       script.onerror = reject;
       document.head.appendChild(script);
