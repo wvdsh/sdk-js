@@ -2,10 +2,10 @@ import { defineConfig } from "tsup";
 
 export default defineConfig({
   entry: ["src/index.ts"],
-  format: ["iife"],
+  format: ["esm"],
   platform: "browser",
   outExtension: () => ({ js: ".js" }),
-  dts: false,
+  dts: true,
   splitting: false,
   sourcemap: false,
   clean: true,

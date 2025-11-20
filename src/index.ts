@@ -728,5 +728,3 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
 
   return sdk;
 }
-
-setupWavedashSDK();
