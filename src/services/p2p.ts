@@ -155,13 +155,10 @@ export class P2PManager {
     // Start initialization
     this.turnCredentialsInitPromise = (async () => {
       try {
-        this.sdk.logger.debug("Fetching TURN credentials...");
-        // TODO: Replace with api.turnCredentials.getOrCreateTURNCredentials once added to backend
         this.turnCredentials = await this.sdk.convexClient.action(
           api.turnCredentials.getOrCreate,
           {}
         );
-        this.sdk.logger.debug("TURN credentials fetched successfully");
       } finally {
         this.turnCredentialsInitPromise = null;
       }
