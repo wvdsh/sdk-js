@@ -36,6 +36,7 @@ export class P2PManager {
     null;
 
   private turnCredentials: P2PTurnCredentials | null = null; // Cached TURN server credentials for WebRTC relay
+  private turnCredentialsInitPromise: Promise<void> | null = null; // Tracks in-flight initialization
 
   // SharedArrayBuffer message queues - one per channel for performance
   // Only incoming queue is used (P2P network → Game engine)
@@ -130,14 +131,14 @@ export class P2PManager {
     }
   }
 
-  private async getIceServers(): Promise<RTCIceServer[]> {
-    const CREDENTIALS_EXPIRY_BUFFER_MS = 1000 * 60 * 60; // 1 hour from now
-    if (!this.turnCredentials) {
-      this.turnCredentials = await this.sdk.convexClient.query(
-        api.turnCredentials.getTurnCredentials,
-        {}
-      );
-    }
+  /**
+   * Get ICE servers, initializing TURN credentials if necessary.
+   * Uses a promise to debounce concurrent calls and prevent race conditions.
+   */
+  private async getIceServers(): Promise<RTCIceServer[] | null> {
+    const CREDENTIALS_EXPIRY_BUFFER_MS = 1000 * 60 * 60; // 1 hour buffer
+
+    // If already initialized and not expired, return cached
     if (
       this.turnCredentials &&
       this.turnCredentials.expiresAt > Date.now() + CREDENTIALS_EXPIRY_BUFFER_MS
@@ -145,12 +146,26 @@ export class P2PManager {
       return this.turnCredentials.iceServers;
     }
 
-    const newTurnCredentials = await this.sdk.convexClient.action(
-      api.turnCredentials.refreshTurnCredentials,
-      {}
-    );
-    this.turnCredentials = newTurnCredentials;
-    return newTurnCredentials.iceServers;
+    // If initialization is already in progress, wait for it and return cached
+    if (this.turnCredentialsInitPromise) {
+      await this.turnCredentialsInitPromise;
+      return this.turnCredentials?.iceServers ?? null;
+    }
+
+    // Start initialization
+    this.turnCredentialsInitPromise = (async () => {
+      try {
+        this.turnCredentials = await this.sdk.convexClient.action(
+          api.turnCredentials.getOrCreate,
+          {}
+        );
+      } finally {
+        this.turnCredentialsInitPromise = null;
+      }
+    })();
+
+    await this.turnCredentialsInitPromise;
+    return this.turnCredentials?.iceServers ?? null;
   }
 
   private async updateP2PConnection(
