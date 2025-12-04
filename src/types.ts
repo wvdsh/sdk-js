@@ -39,7 +39,7 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<
 };
 
 export type P2PTurnCredentials = FunctionReturnType<
-  typeof api.turnCredentials.getTurnCredentials
+  typeof api.turnCredentials.getOrCreate
 >;
 
 // Type helper to get signal values as a union type

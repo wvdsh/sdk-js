@@ -24,7 +24,7 @@
     "typescript": "^5.8.3"
   },
   "dependencies": {
-    "@wvdsh/types": "^1.0.16",
+    "@wvdsh/types": "^1.0.27",
     "convex": "^1.28.0",
     "lodash.unionby": "^4.8.0"
   }
