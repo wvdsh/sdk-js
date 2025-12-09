@@ -86,7 +86,7 @@ export class StatsManager {
   private debouncedStoreStats = debounce(
     this.storeStatsInternal.bind(this),
     STORE_STATS_DEBOUNCE_MS,
-    { leading: true, trailing: false }
+    { leading: true, trailing: true }
   );
 
   async storeStats(): Promise<WavedashResponse<boolean>> {
