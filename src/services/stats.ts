@@ -159,4 +159,19 @@ export class StatsManager {
     const value = stat ? stat.value : -1;
     return value;
   }
+
+  getPendingData(): { stats: Stats; achievements: string[] } | null {
+    const pendingStats = this.stats.filter((stat) =>
+      this.updatedStatIdentifiers.has(stat.identifier)
+    );
+    const pendingAchievements = Array.from(this.achievementIdentifiers).filter(
+      (id) => this.updatedAchievementIdentifiers.has(id)
+    );
+
+    if (pendingStats.length === 0 && pendingAchievements.length === 0) {
+      return null;
+    }
+
+    return { stats: pendingStats, achievements: pendingAchievements };
+  }
 }

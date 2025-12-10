@@ -70,6 +70,23 @@ export class IFrameMessenger {
     }
   };
 
+  /**
+   * Send a beacon to the parent domain.
+   * Uses navigator.sendBeacon for reliable fire-and-forget during page unload.
+   * Note: Uses text/plain to avoid CORS preflight on cross-origin requests.
+   */
+  sendBeacon(path: string, data: Record<string, unknown>): boolean {
+    if (typeof navigator === "undefined" || !this.expectedParentOrigin) {
+      return false;
+    }
+    const url = `${this.expectedParentOrigin}${path}`;
+    const blob = new Blob([JSON.stringify(data)], { type: "text/plain" });
+
+    // console.log(`SENDING BEACON TO ${url} with data ${data}`)
+
+    return navigator.sendBeacon(url, blob);
+  }
+
   postToParent(
     requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE],
     data: Record<string, string | number | boolean>
