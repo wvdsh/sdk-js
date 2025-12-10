@@ -7,6 +7,7 @@
 
 import { IFRAME_MESSAGE_TYPE, IFrameResponseMap } from "@wvdsh/types";
 import { takeFocus } from "./focusManager";
+import { parentOrigin } from "./parentOrigin";
 
 const RESPONSE_TIMEOUT_MS = 5_000;
 
@@ -18,14 +19,12 @@ type PendingRequest = {
 };
 
 export class IFrameMessenger {
-  private expectedParentOrigin: string;
   private pendingRequests: Map<string, PendingRequest>;
   private requestIdCounter: number;
 
   constructor() {
     this.pendingRequests = new Map();
     this.requestIdCounter = 0;
-    this.expectedParentOrigin = this.deriveParentOrigin();
 
     // Initialize the persistent message listener
     if (typeof window !== "undefined") {
@@ -33,27 +32,10 @@ export class IFrameMessenger {
     }
   }
 
-  /**
-   * Derive parent origin from iframe URL pattern
-   * iframe: [gameSlug].builds.[parentDomain] or [gameSlug].sandbox.[parentDomain]
-   * parent: [parentDomain]
-   */
-  private deriveParentOrigin(): string {
-    if (typeof window === "undefined") return "";
-    const iframeHost = window.location.hostname;
-    const match = iframeHost.match(/^[\w-]+\.(builds|sandbox)\.(.+)$/);
-    if (match) {
-      const parentDomain = match[2];
-      return `${window.location.protocol}//${parentDomain}`;
-    }
-    console.error(`Invalid iframe hostname pattern: ${iframeHost}`);
-    return "";
-  }
-
   // Arrow function automatically captures 'this' from the class instance
   private handleMessage = (event: MessageEvent): void => {
     // Validate origin to prevent JWT spoofing and other attacks
-    if (event.origin !== this.expectedParentOrigin) {
+    if (event.origin !== parentOrigin) {
       console.warn(`Ignored message from untrusted origin: ${event.origin}`);
       return;
     }
@@ -70,32 +52,15 @@ export class IFrameMessenger {
     }
   };
 
-  /**
-   * Send a beacon to the parent domain.
-   * Uses navigator.sendBeacon for reliable fire-and-forget during page unload.
-   * Note: Uses text/plain to avoid CORS preflight on cross-origin requests.
-   */
-  sendBeacon(path: string, data: Record<string, unknown>): boolean {
-    if (typeof navigator === "undefined" || !this.expectedParentOrigin) {
-      return false;
-    }
-    const url = `${this.expectedParentOrigin}${path}`;
-    const blob = new Blob([JSON.stringify(data)], { type: "text/plain" });
-
-    // console.log(`SENDING BEACON TO ${url} with data ${data}`)
-
-    return navigator.sendBeacon(url, blob);
-  }
-
   postToParent(
     requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE],
     data: Record<string, string | number | boolean>
   ): boolean {
-    if (typeof window === "undefined" || !this.expectedParentOrigin)
+    if (typeof window === "undefined" || !parentOrigin)
       return false;
     window.parent.postMessage(
       { type: requestType, ...data },
-      this.expectedParentOrigin
+      parentOrigin
     );
     return true;
   }
@@ -104,7 +69,7 @@ export class IFrameMessenger {
     requestType: T
   ): Promise<IFrameResponseMap[T]> {
     return new Promise((resolve, reject) => {
-      if (typeof window === "undefined" || !this.expectedParentOrigin) {
+      if (typeof window === "undefined" || !parentOrigin) {
         reject(new Error("Parent origin not found"));
         return;
       }
@@ -124,7 +89,7 @@ export class IFrameMessenger {
 
       window.parent.postMessage(
         { type: requestType, requestId },
-        this.expectedParentOrigin
+        parentOrigin
       );
     });
   }

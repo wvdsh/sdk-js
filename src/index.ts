@@ -10,6 +10,7 @@ import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
+import { sendBeacon } from "./utils/beacons";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
@@ -93,7 +94,7 @@ class WavedashSDK {
         beaconData.achievements = pendingData.achievements;
       }
 
-      if (iframeMessenger.sendBeacon(END_SESSION_BEACON_PATH, beaconData)) {
+      if (sendBeacon(END_SESSION_BEACON_PATH, beaconData)) {
         this.sessionEndSent = true;
       }
     };
