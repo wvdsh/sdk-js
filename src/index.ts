@@ -10,9 +10,11 @@ import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
+import { sendBeacon } from "./utils/beacons";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
+const END_SESSION_BEACON_PATH = "/beacons/gameplay/end-session";
 import type {
   Id,
   LobbyVisibility,
@@ -42,6 +44,7 @@ import {
 class WavedashSDK {
   private initialized: boolean = false;
   private lobbyIdToJoinOnInit?: Id<"lobbies">;
+  private sessionEndSent: boolean = false;
 
   protected config: WavedashConfig | null = null;
   protected wavedashUser: SDKUser;
@@ -69,8 +72,40 @@ class WavedashSDK {
     this.heartbeatManager = new HeartbeatManager(this);
 
     this.setupOverlayListener();
+    this.setupSessionEndListeners();
 
     this.lobbyIdToJoinOnInit = sdkConfig.lobbyIdToJoin;
+  }
+
+  /**
+   * Set up listeners for page unload events to send session end beacon.
+   * Uses both beforeunload and visibilitychange for maximum reliability.
+   */
+  private setupSessionEndListeners(): void {
+    const sendSessionEndBeacon = () => {
+      if (this.sessionEndSent) return;
+
+      const pendingData = this.statsManager.getPendingData();
+      const beaconData: Record<string, unknown> = {};
+      if (pendingData?.stats?.length) {
+        beaconData.stats = pendingData.stats;
+      }
+      if (pendingData?.achievements?.length) {
+        beaconData.achievements = pendingData.achievements;
+      }
+
+      if (sendBeacon(END_SESSION_BEACON_PATH, beaconData)) {
+        this.sessionEndSent = true;
+      }
+    };
+
+    window.addEventListener("beforeunload", sendSessionEndBeacon);
+    window.addEventListener("pagehide", sendSessionEndBeacon);
+    // window.addEventListener("visibilitychange", () => {
+    //   if (document.visibilityState === "hidden") {
+    //     sendSessionEndBeacon();
+    //   }
+    // });
   }
 
   // =============

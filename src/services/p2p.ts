@@ -30,6 +30,7 @@ export class P2PManager {
   private peerConnections = new Map<Id<"users">, RTCPeerConnection>();
   private reliableChannels = new Map<Id<"users">, RTCDataChannel>();
   private unreliableChannels = new Map<Id<"users">, RTCDataChannel>();
+  private pendingIceCandidates = new Map<Id<"users">, RTCIceCandidateInit[]>(); // Buffer ICE candidates until remote description is set
   private config: P2PConfig;
   private processedSignalingMessages = new Set<string>(); // Track processed message IDs
   private connectionStateCheckInterval: ReturnType<typeof setInterval> | null =
@@ -259,6 +260,7 @@ export class P2PManager {
           }
           this.reliableChannels.delete(userId);
           this.unreliableChannels.delete(userId);
+          this.pendingIceCandidates.delete(userId);
 
           // Remove from peer list
           delete this.currentConnection.peers[userId];
@@ -458,6 +460,10 @@ export class P2PManager {
         this.sdk.logger.debug(`Processing offer from peer ${remoteUserId}:`);
 
         await pc.setRemoteDescription(new RTCSessionDescription(message.data));
+
+        // Flush any buffered ICE candidates now that remote description is set
+        await this.flushPendingIceCandidates(remoteUserId, pc);
+
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
@@ -479,10 +485,23 @@ export class P2PManager {
 
       case P2P_SIGNALING_MESSAGE_TYPE.ANSWER:
         await pc.setRemoteDescription(new RTCSessionDescription(message.data));
+
+        // Flush any buffered ICE candidates now that remote description is set
+        await this.flushPendingIceCandidates(remoteUserId, pc);
         break;
 
       case P2P_SIGNALING_MESSAGE_TYPE.ICE_CANDIDATE:
-        await pc.addIceCandidate(new RTCIceCandidate(message.data));
+        // Buffer candidates if remote description not yet set (race condition fix)
+        if (!pc.remoteDescription) {
+          const pending = this.pendingIceCandidates.get(remoteUserId) || [];
+          pending.push(message.data);
+          this.pendingIceCandidates.set(remoteUserId, pending);
+          this.sdk.logger.debug(
+            `Buffered ICE candidate for ${remoteUserId} (remote description not yet set, ${pending.length} buffered)`
+          );
+        } else {
+          await pc.addIceCandidate(new RTCIceCandidate(message.data));
+        }
         break;
 
       default:
@@ -490,6 +509,30 @@ export class P2PManager {
           "Unknown signaling message type:",
           message.messageType
         );
+    }
+  }
+
+  /**
+   * Flush any buffered ICE candidates for a peer after remote description is set.
+   * This handles the race condition where ICE candidates arrive before the offer/answer.
+   */
+  private async flushPendingIceCandidates(
+    remoteUserId: Id<"users">,
+    pc: RTCPeerConnection
+  ): Promise<void> {
+    const pending = this.pendingIceCandidates.get(remoteUserId);
+    if (pending && pending.length > 0) {
+      for (const candidate of pending) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (error) {
+          this.sdk.logger.warn(
+            `Failed to add buffered ICE candidate for ${remoteUserId}:`,
+            error
+          );
+        }
+      }
+      this.pendingIceCandidates.delete(remoteUserId);
     }
   }
 
@@ -903,6 +946,7 @@ export class P2PManager {
       // Clear processed message caches
       this.processedSignalingMessages.clear();
       this.pendingProcessedMessageIds.clear();
+      this.pendingIceCandidates.clear();
 
       return {
         success: true,
