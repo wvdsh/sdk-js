@@ -20,8 +20,6 @@ export class StatsManager {
   private hasLoadedStats: boolean = false;
   private hasLoadedAchievements: boolean = false;
 
-  private currentStorePromise: Promise<WavedashResponse<boolean>> | null = null;
-
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
   }
@@ -89,18 +87,10 @@ export class StatsManager {
     { leading: true, trailing: true }
   );
 
-  async storeStats(): Promise<WavedashResponse<boolean>> {
-    const result = this.debouncedStoreStats();
+  storeStats(): boolean {
+    this.debouncedStoreStats();
 
-    if (result) {
-      this.currentStorePromise = result;
-    }
-
-    if (this.currentStorePromise) {
-      return this.currentStorePromise;
-    }
-
-    return { success: true, data: true, args: {} };
+    return true;
   }
 
   private async storeStatsInternal(): Promise<WavedashResponse<boolean>> {
