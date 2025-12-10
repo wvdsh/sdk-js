@@ -19,6 +19,7 @@
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@types/lodash.debounce": "^4.0.9",
     "@types/lodash.unionby": "^4.8.9",
     "tsup": "^8.0.0",
     "typescript": "^5.8.3"
@@ -26,6 +27,7 @@
   "dependencies": {
     "@wvdsh/types": "^1.0.27",
     "convex": "^1.28.0",
+    "lodash.debounce": "^4.0.8",
     "lodash.unionby": "^4.8.0"
   }
 }

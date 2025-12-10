@@ -469,9 +469,9 @@ class WavedashSDK {
     this.ensureReady();
     return this.formatResponse(await this.statsManager.requestStats());
   }
-  async storeStats(): Promise<string | WavedashResponse<boolean>> {
+  storeStats(): boolean {
     this.ensureReady();
-    return this.formatResponse(await this.statsManager.storeStats());
+    return this.statsManager.storeStats();
   }
 
   // ============

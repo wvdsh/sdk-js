@@ -1,9 +1,12 @@
 import { api } from "@wvdsh/types";
 import { WavedashResponse, WavedashSDK } from "..";
 import unionBy from "lodash.unionby";
+import debounce from "lodash.debounce";
 
 type Stats = Array<{ identifier: string; value: number }>;
 type Achievements = Set<string>;
+
+const STORE_STATS_DEBOUNCE_MS = 5000;
 
 export class StatsManager {
   private sdk: WavedashSDK;
@@ -13,7 +16,6 @@ export class StatsManager {
   private updatedStatIdentifiers: Set<string> = new Set();
   private updatedAchievementIdentifiers: Set<string> = new Set();
 
-  private unsubscribeStats?: () => void;
   private unsubscribeAchievements?: () => void;
   private hasLoadedStats: boolean = false;
   private hasLoadedAchievements: boolean = false;
@@ -33,20 +35,16 @@ export class StatsManager {
   async requestStats(): Promise<WavedashResponse<boolean>> {
     try {
       await Promise.all([
-        new Promise((resolve, reject) => {
-          this.unsubscribeStats = this.sdk.convexClient.onUpdate(
+        // One-time fetch for stats (local is source of truth)
+        (async () => {
+          const newStats = await this.sdk.convexClient.query(
             api.gameAchievements.getMyStatsForGame,
-            {},
-            (newStats) => {
-              this.hasLoadedStats = true;
-              this.stats = unionBy(this.stats, newStats, "identifier");
-              resolve(undefined);
-            },
-            (error) => {
-              reject(error);
-            }
+            {}
           );
-        }),
+          this.hasLoadedStats = true;
+          this.stats = unionBy(this.stats, newStats, "identifier");
+        })(),
+        // Subscription for achievements (server can unlock them)
         new Promise((resolve, reject) => {
           this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
             api.gameAchievements.getMyAchievementsForGame,
@@ -83,7 +81,19 @@ export class StatsManager {
     }
   }
 
-  async storeStats(): Promise<WavedashResponse<boolean>> {
+  private debouncedStoreStats = debounce(
+    this.storeStatsInternal.bind(this),
+    STORE_STATS_DEBOUNCE_MS,
+    { leading: true, trailing: true }
+  );
+
+  storeStats(): boolean {
+    this.debouncedStoreStats();
+
+    return true;
+  }
+
+  private async storeStatsInternal(): Promise<WavedashResponse<boolean>> {
     try {
       this.ensureLoaded();
       const updatedStats = this.stats.filter((stat) =>
