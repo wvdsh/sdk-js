@@ -10,11 +10,10 @@ import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
-import { sendBeacon } from "./utils/beacons";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
-const END_SESSION_BEACON_PATH = "/beacons/gameplay/end-session";
+
 import type {
   Id,
   LobbyVisibility,
@@ -54,14 +53,21 @@ class WavedashSDK {
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
 
+  private convexHttpUrl: string;
+
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
   engineInstance: EngineInstance | null = null;
   logger: WavedashLogger;
   p2pManager: P2PManager;
+  gameplayJwt: string | null = null;
 
-  constructor(convexClient: ConvexClient, sdkConfig: SDKConfig) {
+  constructor(sdkConfig: SDKConfig) {
+    const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
+    convexClient.setAuth(() => this.getAuthToken());
     this.convexClient = convexClient;
+    // @ts-ignore will exist in a separate PR
+    this.convexHttpUrl = sdkConfig.convexHttpUrl;
     this.wavedashUser = sdkConfig.wavedashUser;
     this.gameCloudId = sdkConfig.gameCloudId;
     this.ugcHost = sdkConfig.ugcHost;
@@ -77,35 +83,52 @@ class WavedashSDK {
     this.lobbyIdToJoinOnInit = sdkConfig.lobbyIdToJoin;
   }
 
+  private async getAuthToken(): Promise<string> {
+    this.gameplayJwt = await iframeMessenger.requestFromParent(
+      IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN
+    );
+    return this.gameplayJwt;
+  }
+
   /**
-   * Set up listeners for page unload events to send session end beacon.
-   * Uses both beforeunload and visibilitychange for maximum reliability.
+   * Set up listeners for page unload events to end gameplay session.
+   * Uses both beforeunload and pagehide for maximum reliability.
    */
   private setupSessionEndListeners(): void {
-    const sendSessionEndBeacon = () => {
+    // warm up the preflight
+    const endSessionEndpoint = `${this.convexHttpUrl}/gameplay/end-session`;
+    fetch(endSessionEndpoint, {
+      method: "OPTIONS",
+    });
+
+    const endGameplaySession = (
+      _event: PageTransitionEvent | BeforeUnloadEvent
+    ) => {
       if (this.sessionEndSent) return;
+      this.sessionEndSent = true;
 
       const pendingData = this.statsManager.getPendingData();
-      const beaconData: Record<string, unknown> = {};
+      const sessionEndData: Record<string, unknown> = {};
       if (pendingData?.stats?.length) {
-        beaconData.stats = pendingData.stats;
+        sessionEndData.stats = pendingData.stats;
       }
       if (pendingData?.achievements?.length) {
-        beaconData.achievements = pendingData.achievements;
+        sessionEndData.achievements = pendingData.achievements;
       }
 
-      if (sendBeacon(END_SESSION_BEACON_PATH, beaconData)) {
-        this.sessionEndSent = true;
-      }
+      fetch(endSessionEndpoint, {
+        method: "POST",
+        body: JSON.stringify(sessionEndData),
+        keepalive: true,
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${this.gameplayJwt}`,
+        },
+      });
     };
 
-    window.addEventListener("beforeunload", sendSessionEndBeacon);
-    window.addEventListener("pagehide", sendSessionEndBeacon);
-    // window.addEventListener("visibilitychange", () => {
-    //   if (document.visibilityState === "hidden") {
-    //     sendSessionEndBeacon();
-    //   }
-    // });
+    window.addEventListener("beforeunload", endGameplaySession);
+    window.addEventListener("pagehide", endGameplaySession);
   }
 
   // =============
@@ -741,12 +764,6 @@ export { WavedashSDK };
 // Re-export all types
 export type * from "./types";
 
-const getAuthToken = async (): Promise<string> => {
-  return await iframeMessenger.requestFromParent(
-    IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN
-  );
-};
-
 // Type-safe initialization helper
 export async function setupWavedashSDK(): Promise<WavedashSDK> {
   console.log("[WavedashJS] Setting up SDK");
@@ -754,10 +771,7 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
     IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
   );
 
-  const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
-  convexClient.setAuth(getAuthToken);
-
-  const sdk = new WavedashSDK(convexClient, sdkConfig);
+  const sdk = new WavedashSDK(sdkConfig);
 
   (window as any).WavedashJS = sdk;
 
