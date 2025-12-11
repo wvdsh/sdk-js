@@ -95,11 +95,17 @@ class WavedashSDK {
    * Uses both beforeunload and pagehide for maximum reliability.
    */
   private setupSessionEndListeners(): void {
-    // warm up the preflight
+    // warm up the preflight cache
     const endSessionEndpoint = `${this.convexHttpUrl}/gameplay/end-session`;
     fetch(endSessionEndpoint, {
-      method: "OPTIONS",
-    });
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.gameplayJwt}`,
+      },
+      body: JSON.stringify({}),
+      credentials: "include",
+    }).catch(() => {});
 
     const endGameplaySession = (
       _event: PageTransitionEvent | BeforeUnloadEvent
@@ -120,6 +126,7 @@ class WavedashSDK {
         method: "POST",
         body: JSON.stringify(sessionEndData),
         keepalive: true,
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.gameplayJwt}`,
