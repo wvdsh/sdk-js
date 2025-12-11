@@ -93,46 +93,44 @@ export class StatsManager {
     return true;
   }
 
-  private async storeStatsInternal(): Promise<WavedashResponse<boolean>> {
+  private async storeStatsInternal(): Promise<boolean> {
     try {
       this.ensureLoaded();
-      const updatedStats = this.stats.filter((stat) =>
-        this.updatedStatIdentifiers.has(stat.identifier)
-      );
-      if (updatedStats.length > 0) {
-        await this.sdk.convexClient.mutation(
-          api.gameAchievements.setUserGameStats,
-          { stats: updatedStats }
-        );
-      }
 
-      const updatedAchievements = Array.from(
-        this.achievementIdentifiers
-      ).filter((achievement) =>
-        this.updatedAchievementIdentifiers.has(achievement)
+      // Atomically capture and clear identifiers to avoid race conditions
+      const statIdentifiersToStore = new Set(this.updatedStatIdentifiers);
+      const achievementIdentifiersToStore = new Set(
+        this.updatedAchievementIdentifiers
       );
-      if (updatedAchievements.length > 0) {
-        await this.sdk.convexClient.mutation(
-          api.gameAchievements.setUserGameAchievements,
-          { achievements: updatedAchievements }
-        );
-      }
 
       this.updatedStatIdentifiers.clear();
       this.updatedAchievementIdentifiers.clear();
-      return {
-        success: true,
-        data: true,
-        args: {},
-      };
+
+      const updatedStats = this.stats.filter((stat) =>
+        statIdentifiersToStore.has(stat.identifier)
+      );
+      const updatedAchievements = Array.from(
+        this.achievementIdentifiers
+      ).filter((achievement) => achievementIdentifiersToStore.has(achievement));
+
+      await Promise.all([
+        updatedStats.length > 0
+          ? this.sdk.convexClient.mutation(
+              api.gameAchievements.setUserGameStats,
+              { stats: updatedStats }
+            )
+          : Promise.resolve(),
+        updatedAchievements.length > 0
+          ? this.sdk.convexClient.mutation(
+              api.gameAchievements.setUserGameAchievements,
+              { achievements: updatedAchievements }
+            )
+          : Promise.resolve(),
+      ]);
+      return true;
     } catch (error) {
       this.sdk.logger.error(`Error storing stats: ${error}`);
-      return {
-        success: false,
-        data: false,
-        args: {},
-        message: error instanceof Error ? error.message : String(error),
-      };
+      return false;
     }
   }
 
