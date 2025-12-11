@@ -103,7 +103,7 @@ class WavedashSDK {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.gameplayJwt}`,
       },
-      body: JSON.stringify({}),
+      body: JSON.stringify({ _type: "warmup" }),
       credentials: "include",
     }).catch(() => {});
 
