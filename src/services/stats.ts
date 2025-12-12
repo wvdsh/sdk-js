@@ -164,7 +164,7 @@ export class StatsManager {
   getStat(identifier: string): number {
     this.ensureLoaded();
     const stat = this.stats.find((s) => s.identifier === identifier);
-    const value = stat ? stat.value : -1;
+    const value = stat ? stat.value : 0;
     return value;
   }
 
