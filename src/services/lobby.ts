@@ -14,7 +14,12 @@ import type {
 } from "../types";
 import { Signals } from "../signals";
 import type { WavedashSDK } from "../index";
-import { api, LOBBY_MESSAGE_MAX_LENGTH, SDKUser } from "@wvdsh/types";
+import {
+  api,
+  IFRAME_MESSAGE_TYPE,
+  LOBBY_MESSAGE_MAX_LENGTH,
+  SDKUser,
+} from "@wvdsh/types";
 
 export class LobbyManager {
   private sdk: WavedashSDK;
@@ -65,6 +70,10 @@ export class LobbyManager {
       this.lobbyId = lobbyId;
       // P2P will be initialized when processUserUpdates receives the lobby users
 
+      this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
+        lobbyId,
+      });
+
       return {
         success: true,
         data: lobbyId,
@@ -105,6 +114,9 @@ export class LobbyManager {
       };
 
       this.sdk.notifyGame(Signals.LOBBY_JOINED, response);
+      this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
+        lobbyId,
+      });
 
       return response;
     } catch (error) {
@@ -200,6 +212,10 @@ export class LobbyManager {
 
       // Now we can leave the lobby
       await this.sdk.convexClient.mutation(api.gameLobby.leaveLobby, args);
+
+      this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
+        lobbyId,
+      });
 
       return {
         success: true,

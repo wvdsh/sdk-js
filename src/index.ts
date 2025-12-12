@@ -59,6 +59,7 @@ class WavedashSDK {
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
   engineInstance: EngineInstance | null = null;
   logger: WavedashLogger;
+  iframeMessenger: IFrameMessenger;
   p2pManager: P2PManager;
   gameplayJwt: string | null = null;
 
@@ -76,6 +77,7 @@ class WavedashSDK {
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
     this.heartbeatManager = new HeartbeatManager(this);
+    this.iframeMessenger = iframeMessenger;
 
     this.setupOverlayListener();
     this.setupSessionEndListeners();
@@ -175,7 +177,7 @@ class WavedashSDK {
 
     // Join a lobby on startup if provided
     if (this.lobbyIdToJoinOnInit) {
-      this.lobbyManager.joinLobby(this.lobbyIdToJoinOnInit).catch((error) => {
+      this.joinLobby(this.lobbyIdToJoinOnInit).catch((error) => {
         this.logger.error("Could not join lobby on startup:", error);
       });
     }
@@ -778,6 +780,7 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
     IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
   );
 
+  // Pass along iframeManager to the SDK so subclass managers can use it to post messages to the parent
   const sdk = new WavedashSDK(sdkConfig);
 
   (window as any).WavedashJS = sdk;
