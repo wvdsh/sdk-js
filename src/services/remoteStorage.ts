@@ -8,6 +8,7 @@
 import type { WavedashResponse, RemoteFileMetadata } from "../types";
 import type { WavedashSDK } from "../index";
 import * as indexedDBUtils from "../utils/indexedDB";
+import { GAME_DATA_DB, GAME_DATA_STORE } from "../utils/indexedDB";
 import { api } from "@wvdsh/types";
 
 let REMOTE_STORAGE_ORIGIN: string | undefined;
@@ -52,8 +53,8 @@ async function uploadFromIndexedDb(
   try {
     // TODO: Copying Godot's convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
     const record = await indexedDBUtils.getRecordFromIndexedDB(
-      "/userfs",
-      "FILE_DATA",
+      GAME_DATA_DB,
+      GAME_DATA_STORE,
       indexedDBKey
     );
     if (!record) {
@@ -170,8 +171,8 @@ export async function download(
       // Save directly to IndexedDB for non-engine contexts
       // TODO: Just copying the Godot convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
       await indexedDBUtils.writeToIndexedDB(
-        "/userfs",
-        "FILE_DATA",
+        GAME_DATA_DB,
+        GAME_DATA_STORE,
         filePath,
         dataArray
       );

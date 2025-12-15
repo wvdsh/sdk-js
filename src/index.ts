@@ -10,6 +10,7 @@ import { HeartbeatManager } from "./services/heartbeat";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
+import { resetStorageIfIdentityChanged } from "./utils/indexedDB";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
@@ -107,7 +108,7 @@ class WavedashSDK {
       },
       body: JSON.stringify({ _type: "warmup" }),
       credentials: "include",
-    }).catch(() => {});
+    }).catch(() => { });
 
     const endGameplaySession = (
       _event: PageTransitionEvent | BeforeUnloadEvent
@@ -778,6 +779,13 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
   console.log("[WavedashJS] Setting up SDK");
   const sdkConfig = await iframeMessenger.requestFromParent(
     IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
+  );
+
+  // Clear IndexedDB if user or game branch changed
+  // This must happen before the game engine starts to avoid loading stale data
+  await resetStorageIfIdentityChanged(
+    sdkConfig.wavedashUser.id,
+    sdkConfig.gameCloudId
   );
 
   // Pass along iframeManager to the SDK so subclass managers can use it to post messages to the parent
