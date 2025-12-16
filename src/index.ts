@@ -79,7 +79,6 @@ class WavedashSDK {
     this.heartbeatManager = new HeartbeatManager(this);
     this.iframeMessenger = iframeMessenger;
 
-    this.setupOverlayListener();
     this.setupSessionEndListeners();
 
     this.lobbyIdToJoinOnInit = sdkConfig.lobbyIdToJoin;
@@ -200,15 +199,6 @@ class WavedashSDK {
 
   toggleOverlay(): void {
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY, {});
-  }
-
-  private setupOverlayListener(): void {
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "Tab" && event.shiftKey) {
-        event.preventDefault();
-        this.toggleOverlay();
-      }
-    });
   }
 
   // ============
