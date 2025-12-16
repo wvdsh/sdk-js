@@ -51,6 +51,7 @@ export interface WavedashConfig {
   debug?: boolean;
   remoteStorageOrigin?: string;
   p2p?: Partial<P2PConfig>;
+  disableAchievementsAndStats?: boolean; // true for demo games so we don't fill up achievements and stats with live demo data
 }
 
 export interface RemoteFileMetadata {
