@@ -473,26 +473,48 @@ class WavedashSDK {
   // ============
   getAchievement(identifier: string): boolean {
     this.ensureReady();
+    if (this.config?.disableAchievementsAndStats) {
+      return false;
+    }
     return this.statsManager.getAchievement(identifier);
   }
   getStat(identifier: string): number {
     this.ensureReady();
+    if (this.config?.disableAchievementsAndStats) {
+      return 0;
+    }
     return this.statsManager.getStat(identifier);
   }
   setAchievement(identifier: string): void {
     this.ensureReady();
+    if (this.config?.disableAchievementsAndStats) {
+      return;
+    }
     this.statsManager.setAchievement(identifier);
   }
   setStat(identifier: string, value: number): void {
     this.ensureReady();
+    if (this.config?.disableAchievementsAndStats) {
+      return;
+    }
     this.statsManager.setStat(identifier, value);
   }
   async requestStats(): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
+    if (this.config?.disableAchievementsAndStats) {
+      return this.formatResponse({
+        success: false,
+        data: false,
+        args: {},
+      });
+    }
     return this.formatResponse(await this.statsManager.requestStats());
   }
   storeStats(): boolean {
     this.ensureReady();
+    if (this.config?.disableAchievementsAndStats) {
+      return false;
+    }
     return this.statsManager.storeStats();
   }
 
