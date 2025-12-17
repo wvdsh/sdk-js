@@ -330,7 +330,7 @@ export class LobbyManager {
     this.sdk.logger.debug("Subscribed to lobby:", lobbyId);
   }
 
-  private unsubscribeFromCurrentLobby(): void {
+  unsubscribeFromCurrentLobby(): void {
     if (this.unsubscribeLobbyMessages) {
       this.unsubscribeLobbyMessages();
       this.unsubscribeLobbyMessages = null;
