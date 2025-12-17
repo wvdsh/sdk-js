@@ -42,7 +42,7 @@ import {
 
 class WavedashSDK {
   private initialized: boolean = false;
-  private lobbyIdToJoinOnInit?: Id<"lobbies">;
+  private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
 
   protected config: WavedashConfig | null = null;
@@ -81,7 +81,9 @@ class WavedashSDK {
 
     this.setupSessionEndListeners();
 
-    this.lobbyIdToJoinOnInit = sdkConfig.lobbyIdToJoin;
+    // TODO: Add event queueing system to handle events that happen before the game is ready for events
+    // For now this is the only event we need to wait on, so just triggering it as soon as the game is ready
+    this.lobbyIdToJoinOnStartup = sdkConfig.lobbyIdToJoin;
   }
 
   private async getAuthToken(): Promise<string> {
@@ -175,8 +177,8 @@ class WavedashSDK {
     this.heartbeatManager.start();
 
     // Join a lobby on startup if provided
-    if (this.lobbyIdToJoinOnInit) {
-      this.joinLobby(this.lobbyIdToJoinOnInit).catch((error) => {
+    if (this.lobbyIdToJoinOnStartup && !this.config.deferEvents) {
+      this.joinLobby(this.lobbyIdToJoinOnStartup).catch((error) => {
         this.logger.error("Could not join lobby on startup:", error);
       });
     }
@@ -195,6 +197,20 @@ class WavedashSDK {
 
   isReady(): boolean {
     return this.initialized;
+  }
+
+  readyForEvents(): void {
+    this.ensureReady();
+    if (!this.config?.deferEvents) {
+      return;
+    }
+    this.config!.deferEvents = false;
+    // Game is now ready for event messages, join a lobby if provided, SDK will send LOBBY_JOINED signal on success
+    if (this.lobbyIdToJoinOnStartup) {
+      this.joinLobby(this.lobbyIdToJoinOnStartup).catch((error) => {
+        this.logger.error("Could not join lobby on startup:", error);
+      });
+    }
   }
 
   toggleOverlay(): void {
