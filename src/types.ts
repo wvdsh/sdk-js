@@ -52,6 +52,7 @@ export interface WavedashConfig {
   remoteStorageOrigin?: string;
   p2p?: Partial<P2PConfig>;
   disableAchievementsAndStats?: boolean; // true for demo games so we don't fill up achievements and stats with live demo data
+  deferEvents?: boolean; // if true wait until game calls readyForEvents to start sending Signal event messages to game
 }
 
 export interface RemoteFileMetadata {
