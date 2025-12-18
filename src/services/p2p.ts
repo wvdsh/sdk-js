@@ -24,6 +24,14 @@ const DEFAULT_P2P_CONFIG: P2PConfig = {
   enableUnreliableChannel: true,
 };
 
+// Connection retry tracking for exponential backoff
+interface PeerConnectionAttempt {
+  attemptCount: number;
+  lastAttemptTime: number;
+  retryTimeoutId: ReturnType<typeof setTimeout> | null;
+  connectionTimeoutId: ReturnType<typeof setTimeout> | null;
+}
+
 export class P2PManager {
   private sdk: WavedashSDK;
   private currentConnection: P2PConnection | null = null;
@@ -39,6 +47,9 @@ export class P2PManager {
   private turnCredentials: P2PTurnCredentials | null = null; // Cached TURN server credentials for WebRTC relay
   private turnCredentialsInitPromise: Promise<void> | null = null; // Tracks in-flight initialization
 
+  // Connection retry tracking
+  private connectionAttempts = new Map<Id<"users">, PeerConnectionAttempt>();
+
   // SharedArrayBuffer message queues - one per channel for performance
   // Only incoming queue is used (P2P network → Game engine)
   private channelQueues = new Map<
@@ -51,6 +62,12 @@ export class P2PManager {
   >();
 
   private readonly CHECK_CONNECTION_INTERVAL_MS = 1_000; // 1 second
+
+  // Connection retry configuration
+  private readonly CONNECTION_TIMEOUT_MS = 5_000; // 5 seconds to establish connection
+  private readonly MAX_RETRY_ATTEMPTS = 5;
+  private readonly INITIAL_RETRY_DELAY_MS = 1_000; // 1 second initial backoff
+  private readonly MAX_RETRY_DELAY_MS = 30_000; // 30 second max backoff
 
   private readonly QUEUE_SIZE = 1024; // Number of messages per direction per channel
   private readonly MESSAGE_SIZE = 1024; // Max bytes per message
@@ -202,6 +219,9 @@ export class P2PManager {
             username: member.username,
           };
           connectionsToCreate.push(member.id);
+
+          // Initialize retry tracking for new peer
+          this.initConnectionAttempt(member.id);
         }
       }
 
@@ -242,6 +262,11 @@ export class P2PManager {
             `Initiated ${offerPromises.length} offers to new peers`
           );
         }
+
+        // Start connection timeouts for all new peers
+        for (const userId of connectionsToCreate) {
+          this.startConnectionTimeout(userId);
+        }
       }
 
       // Clean up connections to users who left
@@ -261,6 +286,9 @@ export class P2PManager {
           this.reliableChannels.delete(userId);
           this.unreliableChannels.delete(userId);
           this.pendingIceCandidates.delete(userId);
+
+          // Clean up retry tracking
+          this.clearConnectionAttempt(userId);
 
           // Remove from peer list
           delete this.currentConnection.peers[userId];
@@ -456,31 +484,29 @@ export class P2PManager {
 
     switch (message.messageType) {
       case P2P_SIGNALING_MESSAGE_TYPE.OFFER:
-        // Log offer processing details
+        // Check if we're receiving an offer from a peer we already have a connection with
+        // This can happen if they restarted their connection (retry) while we thought we were connected
+        const existingState = pc.connectionState;
+        const existingIceState = pc.iceConnectionState;
+
+        if (
+          existingState === "connected" ||
+          existingState === "connecting" ||
+          existingIceState === "connected" ||
+          existingIceState === "checking"
+        ) {
+          this.sdk.logger.debug(
+            `Received new offer from peer ${remoteUserId} while in state ${existingState}/${existingIceState} - peer likely restarted, recreating our connection`
+          );
+
+          // Close existing connection and recreate to handle the new offer
+          await this.handlePeerReconnectionOffer(remoteUserId, message.data);
+          break;
+        }
+
+        // Normal offer processing
         this.sdk.logger.debug(`Processing offer from peer ${remoteUserId}:`);
-
-        await pc.setRemoteDescription(new RTCSessionDescription(message.data));
-
-        // Flush any buffered ICE candidates now that remote description is set
-        await this.flushPendingIceCandidates(remoteUserId, pc);
-
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
-
-        this.sdk.logger.debug(
-          `  Answer created, waiting for ondatachannel events...`
-        );
-
-        // Convert RTCSessionDescription to plain object for Convex
-        const answerData = {
-          type: answer.type,
-          sdp: answer.sdp,
-        };
-
-        await this.sendSignalingMessage(remoteUserId, {
-          type: P2P_SIGNALING_MESSAGE_TYPE.ANSWER,
-          data: answerData,
-        });
+        await this.processOffer(remoteUserId, pc, message.data);
         break;
 
       case P2P_SIGNALING_MESSAGE_TYPE.ANSWER:
@@ -536,6 +562,418 @@ export class P2PManager {
     }
   }
 
+  // ================
+  // Offer Processing Helpers
+  // ================
+
+  /**
+   * Process a standard WebRTC offer from a peer
+   */
+  private async processOffer(
+    remoteUserId: Id<"users">,
+    pc: RTCPeerConnection,
+    offerData: RTCSessionDescriptionInit
+  ): Promise<void> {
+    await pc.setRemoteDescription(new RTCSessionDescription(offerData));
+
+    // Flush any buffered ICE candidates now that remote description is set
+    await this.flushPendingIceCandidates(remoteUserId, pc);
+
+    const answer = await pc.createAnswer();
+    await pc.setLocalDescription(answer);
+
+    this.sdk.logger.debug(
+      `  Answer created, waiting for ondatachannel events...`
+    );
+
+    // Convert RTCSessionDescription to plain object for Convex
+    const answerData = {
+      type: answer.type,
+      sdp: answer.sdp,
+    };
+
+    await this.sendSignalingMessage(remoteUserId, {
+      type: P2P_SIGNALING_MESSAGE_TYPE.ANSWER,
+      data: answerData,
+    });
+  }
+
+  /**
+   * Handle receiving an offer from a peer when we already have an existing connection.
+   * This happens when the peer has restarted their connection (retry) while we thought
+   * we were connected. We need to recreate our connection to match their new state.
+   */
+  private async handlePeerReconnectionOffer(
+    remoteUserId: Id<"users">,
+    offerData: RTCSessionDescriptionInit
+  ): Promise<void> {
+    if (!this.currentConnection) return;
+
+    const peer = this.currentConnection.peers[remoteUserId];
+    if (!peer) return;
+
+    this.sdk.logger.debug(
+      `Handling reconnection offer from peer ${remoteUserId} (${peer.username})`
+    );
+
+    // Clean up existing connection resources
+    const existingPc = this.peerConnections.get(remoteUserId);
+    if (existingPc) {
+      existingPc.close();
+      this.peerConnections.delete(remoteUserId);
+    }
+    this.reliableChannels.delete(remoteUserId);
+    this.unreliableChannels.delete(remoteUserId);
+    this.pendingIceCandidates.delete(remoteUserId);
+
+    // Clear any pending retry attempts since peer is initiating fresh
+    this.clearConnectionAttempt(remoteUserId);
+    this.initConnectionAttempt(remoteUserId);
+
+    // Recreate peer connection (we're receiving the offer, so don't create channels)
+    const success = await this.createPeerConnection(
+      remoteUserId,
+      this.currentConnection,
+      false // Don't create channels - we're receiving the offer
+    );
+
+    if (!success) {
+      this.sdk.logger.error(
+        `Failed to recreate connection for reconnection offer from ${remoteUserId}`
+      );
+      this.retryPeerConnection(remoteUserId);
+      return;
+    }
+
+    // Now process the offer on the new connection
+    const newPc = this.peerConnections.get(remoteUserId);
+    if (!newPc) {
+      this.sdk.logger.error(
+        `New peer connection not found for ${remoteUserId}`
+      );
+      return;
+    }
+
+    await this.processOffer(remoteUserId, newPc, offerData);
+
+    // Start connection timeout for the new connection
+    this.startConnectionTimeout(remoteUserId);
+  }
+
+  // ================
+  // Connection Retry Logic
+  // ================
+
+  /**
+   * Calculate exponential backoff delay for retry attempts
+   */
+  private getRetryDelay(attemptCount: number): number {
+    const delay = this.INITIAL_RETRY_DELAY_MS * Math.pow(2, attemptCount - 1);
+    // Add jitter (±25%) to prevent thundering herd
+    const jitter = delay * 0.25 * (Math.random() * 2 - 1);
+    return Math.min(delay + jitter, this.MAX_RETRY_DELAY_MS);
+  }
+
+  /**
+   * Initialize or reset connection attempt tracking for a peer
+   */
+  private initConnectionAttempt(userId: Id<"users">): void {
+    const existing = this.connectionAttempts.get(userId);
+    if (existing) {
+      // Clear any existing timeouts
+      if (existing.retryTimeoutId) clearTimeout(existing.retryTimeoutId);
+      if (existing.connectionTimeoutId)
+        clearTimeout(existing.connectionTimeoutId);
+    }
+
+    this.connectionAttempts.set(userId, {
+      attemptCount: 0,
+      lastAttemptTime: 0,
+      retryTimeoutId: null,
+      connectionTimeoutId: null,
+    });
+  }
+
+  /**
+   * Clear all connection attempt tracking for a peer
+   */
+  private clearConnectionAttempt(userId: Id<"users">): void {
+    const attempt = this.connectionAttempts.get(userId);
+    if (attempt) {
+      if (attempt.retryTimeoutId) clearTimeout(attempt.retryTimeoutId);
+      if (attempt.connectionTimeoutId)
+        clearTimeout(attempt.connectionTimeoutId);
+      this.connectionAttempts.delete(userId);
+    }
+  }
+
+  /**
+   * Start a connection timeout that will trigger a retry if connection isn't established
+   */
+  private startConnectionTimeout(userId: Id<"users">): void {
+    const attempt = this.connectionAttempts.get(userId);
+    if (!attempt) return;
+
+    // Clear any existing timeout
+    if (attempt.connectionTimeoutId) {
+      clearTimeout(attempt.connectionTimeoutId);
+    }
+
+    attempt.connectionTimeoutId = setTimeout(() => {
+      // Check if peer is connected
+      if (!this.isPeerReady(userId) && this.currentConnection?.peers[userId]) {
+        const pc = this.peerConnections.get(userId);
+        const connectionState = pc?.connectionState || "unknown";
+        const iceState = pc?.iceConnectionState || "unknown";
+
+        this.sdk.logger.warn(
+          `Connection timeout for peer ${userId} (connection: ${connectionState}, ICE: ${iceState}), will retry...`
+        );
+
+        this.retryPeerConnection(userId);
+      }
+    }, this.CONNECTION_TIMEOUT_MS);
+  }
+
+  /**
+   * Retry connecting to a peer with exponential backoff
+   */
+  private async retryPeerConnection(userId: Id<"users">): Promise<void> {
+    if (!this.currentConnection) return;
+
+    const peer = this.currentConnection.peers[userId];
+    if (!peer) {
+      this.sdk.logger.debug(
+        `Peer ${userId} no longer in lobby, skipping retry`
+      );
+      this.clearConnectionAttempt(userId);
+      return;
+    }
+
+    let attempt = this.connectionAttempts.get(userId);
+    if (!attempt) {
+      this.initConnectionAttempt(userId);
+      attempt = this.connectionAttempts.get(userId)!;
+    }
+
+    attempt.attemptCount++;
+
+    if (attempt.attemptCount > this.MAX_RETRY_ATTEMPTS) {
+      this.sdk.logger.error(
+        `Max retry attempts (${this.MAX_RETRY_ATTEMPTS}) reached for peer ${userId} (${peer.username})`
+      );
+      this.sdk.notifyGame(Signals.P2P_CONNECTION_FAILED, {
+        userId: peer.userId,
+        username: peer.username,
+        error: `Failed to connect after ${this.MAX_RETRY_ATTEMPTS} attempts`,
+      });
+      this.clearConnectionAttempt(userId);
+      return;
+    }
+
+    const delay = this.getRetryDelay(attempt.attemptCount);
+    this.sdk.logger.debug(
+      `Scheduling retry ${attempt.attemptCount}/${this.MAX_RETRY_ATTEMPTS} for peer ${userId} in ${Math.round(delay)}ms`
+    );
+
+    attempt.lastAttemptTime = Date.now();
+    attempt.retryTimeoutId = setTimeout(async () => {
+      if (!this.currentConnection?.peers[userId]) {
+        this.sdk.logger.debug(`Peer ${userId} left before retry could execute`);
+        this.clearConnectionAttempt(userId);
+        return;
+      }
+
+      this.sdk.logger.debug(
+        `Executing retry ${attempt!.attemptCount} for peer ${userId} (${peer.username})`
+      );
+
+      await this.reconnectToPeer(userId);
+    }, delay);
+  }
+
+  /**
+   * Clean up and recreate the connection to a specific peer
+   */
+  private async reconnectToPeer(userId: Id<"users">): Promise<void> {
+    if (!this.currentConnection) return;
+
+    const peer = this.currentConnection.peers[userId];
+    if (!peer) return;
+
+    this.sdk.logger.debug(`Reconnecting to peer ${userId} (${peer.username})`);
+
+    // Clean up existing connection
+    const existingPc = this.peerConnections.get(userId);
+    if (existingPc) {
+      existingPc.close();
+      this.peerConnections.delete(userId);
+    }
+    this.reliableChannels.delete(userId);
+    this.unreliableChannels.delete(userId);
+    this.pendingIceCandidates.delete(userId);
+
+    // Recreate connection
+    const currentUserId = this.sdk.getUserId();
+    const shouldCreateChannels = currentUserId < userId;
+
+    const success = await this.createPeerConnection(
+      userId,
+      this.currentConnection,
+      shouldCreateChannels
+    );
+
+    if (!success) {
+      this.sdk.logger.error(`Failed to recreate peer connection for ${userId}`);
+      this.retryPeerConnection(userId);
+      return;
+    }
+
+    // If we should initiate, create and send offer
+    if (shouldCreateChannels) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      try {
+        await this.createOfferToPeer(userId);
+        this.startConnectionTimeout(userId);
+      } catch (error) {
+        this.sdk.logger.error(
+          `Failed to create offer on retry for ${userId}:`,
+          error
+        );
+        this.retryPeerConnection(userId);
+      }
+    } else {
+      // We're the non-initiating peer (higher userId).
+      // The other peer (initiator) may still think they're connected.
+      // Send an offer anyway to signal we need to reconnect - the other peer's
+      // handlePeerReconnectionOffer will handle receiving an offer from us.
+      this.sdk.logger.debug(
+        `Non-initiating peer sending reconnection signal to ${userId}`
+      );
+
+      // Create data channels temporarily so we can send an offer
+      const pc = this.peerConnections.get(userId);
+      if (pc && this.config.enableReliableChannel) {
+        const reliableChannel = pc.createDataChannel("reliable", {
+          ordered: true,
+          maxRetransmits: undefined,
+        });
+        this.reliableChannels.set(userId, reliableChannel);
+        this.setupDataChannelHandlers(reliableChannel, userId, "reliable");
+      }
+      if (pc && this.config.enableUnreliableChannel) {
+        const unreliableChannel = pc.createDataChannel("unreliable", {
+          ordered: false,
+          maxRetransmits: 0,
+        });
+        this.unreliableChannels.set(userId, unreliableChannel);
+        this.setupDataChannelHandlers(unreliableChannel, userId, "unreliable");
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      try {
+        await this.createOfferToPeer(userId);
+        this.startConnectionTimeout(userId);
+      } catch (error) {
+        this.sdk.logger.error(
+          `Failed to send reconnection signal to ${userId}:`,
+          error
+        );
+        this.retryPeerConnection(userId);
+      }
+    }
+  }
+
+  /**
+   * Handle connection state changes and trigger retries if needed
+   */
+  private handleConnectionStateChange(
+    userId: Id<"users">,
+    pc: RTCPeerConnection
+  ): void {
+    const state = pc.connectionState;
+    const peer = this.currentConnection?.peers[userId];
+
+    this.sdk.logger.debug(`Peer ${userId} connection state: ${state}`);
+
+    switch (state) {
+      case "connected":
+        // Success! Clear retry tracking
+        this.sdk.logger.debug(`Peer ${userId} fully connected`);
+        this.clearConnectionAttempt(userId);
+        break;
+
+      case "failed":
+        // Connection failed, trigger retry
+        this.sdk.logger.warn(`Peer ${userId} connection failed, will retry`);
+        if (peer) {
+          this.retryPeerConnection(userId);
+        }
+        break;
+
+      case "disconnected":
+        // May recover on its own, but set a shorter timeout to retry if it doesn't
+        this.sdk.logger.debug(
+          `Peer ${userId} disconnected, waiting for recovery or will retry`
+        );
+        // Give it a few seconds to recover before retrying
+        const attempt = this.connectionAttempts.get(userId);
+        if (attempt?.connectionTimeoutId) {
+          clearTimeout(attempt.connectionTimeoutId);
+        }
+        const recoveryTimeout = setTimeout(() => {
+          if (
+            pc.connectionState !== "connected" &&
+            this.currentConnection?.peers[userId]
+          ) {
+            this.sdk.logger.warn(
+              `Peer ${userId} did not recover from disconnected state, retrying`
+            );
+            this.retryPeerConnection(userId);
+          }
+        }, 5000); // 5 second recovery window
+
+        if (attempt) {
+          attempt.connectionTimeoutId = recoveryTimeout;
+        }
+        break;
+
+      case "closed":
+        // Connection was closed intentionally, don't retry unless peer is still in lobby
+        if (peer && this.currentConnection) {
+          this.sdk.logger.debug(
+            `Peer ${userId} connection closed but still in lobby, will retry`
+          );
+          this.retryPeerConnection(userId);
+        }
+        break;
+    }
+  }
+
+  /**
+   * Handle ICE connection state changes
+   */
+  private handleIceConnectionStateChange(
+    userId: Id<"users">,
+    pc: RTCPeerConnection
+  ): void {
+    const state = pc.iceConnectionState;
+
+    this.sdk.logger.debug(`Peer ${userId} ICE connection state: ${state}`);
+
+    if (state === "connected" || state === "completed") {
+      this.sdk.logger.debug(
+        `ICE connected to peer ${userId}, data channels should be available...`
+      );
+    } else if (state === "failed") {
+      // ICE failed, trigger connection retry
+      this.sdk.logger.warn(`Peer ${userId} ICE failed, will retry connection`);
+      if (this.currentConnection?.peers[userId]) {
+        this.retryPeerConnection(userId);
+      }
+    }
+  }
+
   private async establishPeerConnections(
     connection: P2PConnection
   ): Promise<void> {
@@ -547,6 +985,9 @@ export class P2PManager {
     // Create peer connections to all other peers
     (Object.entries(connection.peers) as [Id<"users">, P2PPeer][]).forEach(
       ([userId, peer]) => {
+        // Initialize retry tracking for each peer
+        this.initConnectionAttempt(userId);
+
         const shouldCreateChannels = currentUserId < userId;
         this.sdk.logger.debug(
           `Creating connection to peer ${userId} (${peer.username}), shouldCreateChannels: ${shouldCreateChannels}`
@@ -584,6 +1025,11 @@ export class P2PManager {
       this.sdk.logger.debug(
         `Created ${connectionPromises.length} peer connections, no offers to initiate`
       );
+    }
+
+    // Start connection timeouts for all peers
+    for (const userId of Object.keys(connection.peers) as Id<"users">[]) {
+      this.startConnectionTimeout(userId);
     }
   }
 
@@ -732,27 +1178,13 @@ export class P2PManager {
       );
     };
 
-    // Add connection state monitoring for debugging
+    // Add connection state monitoring with retry logic
     pc.onconnectionstatechange = () => {
-      this.sdk.logger.debug(
-        `Peer ${remoteUserId} connection state: ${pc.connectionState}`
-      );
-      if (pc.connectionState === "connected") {
-        this.sdk.logger.debug(
-          `  Peer ${remoteUserId} fully connected, expecting ondatachannel events now...`
-        );
-      }
+      this.handleConnectionStateChange(remoteUserId, pc);
     };
 
     pc.oniceconnectionstatechange = () => {
-      this.sdk.logger.debug(
-        `Peer ${remoteUserId} ICE connection state: ${pc.iceConnectionState}`
-      );
-      if (pc.iceConnectionState === "connected") {
-        this.sdk.logger.debug(
-          `  ICE connected to peer ${remoteUserId}, data channels should be available...`
-        );
-      }
+      this.handleIceConnectionStateChange(remoteUserId, pc);
     };
 
     pc.onicegatheringstatechange = () => {
@@ -777,6 +1209,9 @@ export class P2PManager {
 
       // Check if this peer is now fully ready (both channels open if both are enabled)
       if (this.isPeerReady(remoteUserId)) {
+        // Clear any pending retry tracking - connection succeeded!
+        this.clearConnectionAttempt(remoteUserId);
+
         const peer = this.currentConnection?.peers[remoteUserId];
         if (peer) {
           this.sdk.notifyGame(Signals.P2P_CONNECTION_ESTABLISHED, {
@@ -947,6 +1382,12 @@ export class P2PManager {
       this.processedSignalingMessages.clear();
       this.pendingProcessedMessageIds.clear();
       this.pendingIceCandidates.clear();
+
+      // Clear all connection retry tracking
+      for (const userId of this.connectionAttempts.keys()) {
+        this.clearConnectionAttempt(userId);
+      }
+      this.connectionAttempts.clear();
 
       return {
         success: true,
