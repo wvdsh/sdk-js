@@ -53,7 +53,7 @@ export class P2PManager {
   private readonly CHECK_CONNECTION_INTERVAL_MS = 1_000; // 1 second
 
   private readonly QUEUE_SIZE = 1024; // Number of messages per direction per channel
-  private readonly MESSAGE_SIZE = 1024; // Max bytes per message
+  private readonly MESSAGE_SIZE = 2048; // Max bytes per message
   private readonly HEADER_SIZE = 16; // Queue metadata: writeIndex, readIndex, messageCount, version
   private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
   private readonly DEFAULT_NUM_CHANNELS = 4; // Default number of channels to pre-allocate

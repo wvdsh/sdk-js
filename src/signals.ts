@@ -16,7 +16,6 @@ export const Signals = {
   LOBBY_DATA_UPDATED: "LobbyDataUpdated",
 
   // P2P signals
-  P2P_MESSAGE: "P2PMessage",
   P2P_CONNECTION_ESTABLISHED: "P2PConnectionEstablished", // connection to peer is ready
   P2P_CONNECTION_FAILED: "P2PConnectionFailed", // connection to peer failed
   P2P_PEER_DISCONNECTED: "P2PPeerDisconnected", // peer disconnected
