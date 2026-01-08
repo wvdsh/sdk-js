@@ -548,6 +548,15 @@ class WavedashSDK {
   }
 
   /**
+   * Get the maximum supported payload size for P2P messages
+   * @returns The maximum payload size in bytes
+   */
+  getP2PMaxPayloadSize(): number {
+    this.ensureReady();
+    return this.p2pManager.getMaxPayloadSize();
+  }
+
+  /**
    * Send a message through P2P to a specific peer using their userId
    * @param toUserId - Peer userId to send to (undefined = broadcast)
    * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.

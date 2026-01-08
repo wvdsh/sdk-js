@@ -54,8 +54,9 @@ export class P2PManager {
   private readonly CHECK_CONNECTION_INTERVAL_MS = 1_000; // 1 second
 
   private readonly QUEUE_SIZE = 1024; // Number of messages per direction per channel
-  private readonly MESSAGE_SIZE = 2048; // Max bytes per message
-  private readonly HEADER_SIZE = 16; // Queue metadata: writeIndex, readIndex, messageCount, version
+  private readonly MESSAGE_SIZE = 2048; // Max bytes per message slot
+  private readonly QUEUE_HEADER_SIZE = 16; // Queue metadata: writeIndex, readIndex, messageCount, version
+  private readonly MESSAGE_SLOT_HEADER_SIZE = 4; // Size prefix at start of each message slot
   private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
   private readonly DEFAULT_NUM_CHANNELS = 4; // Default number of channels to pre-allocate
 
@@ -67,6 +68,9 @@ export class P2PManager {
   private readonly DATALENGTH_OFFSET = this.USERID_SIZE + this.CHANNEL_SIZE;
   private readonly PAYLOAD_OFFSET =
     this.USERID_SIZE + this.CHANNEL_SIZE + this.DATALENGTH_SIZE;
+  // Max payload = slot size - slot header - message header (PAYLOAD_OFFSET)
+  private readonly MAX_PAYLOAD_SIZE =
+    this.MESSAGE_SIZE - this.MESSAGE_SLOT_HEADER_SIZE - this.PAYLOAD_OFFSET;
 
   // Pre-allocated buffer for outgoing messages to avoid repeated allocations
   // Game engine writes payload here, then calls sendP2PMessage
@@ -850,6 +854,13 @@ export class P2PManager {
         return false;
       }
 
+      if (payload.length > this.MAX_PAYLOAD_SIZE) {
+        this.sdk.logger.error(
+          `P2P payload too large: ${payload.length} bytes exceeds max ${this.MAX_PAYLOAD_SIZE} bytes`
+        );
+        return false;
+      }
+
       const data = payload;
 
       // Called with payload provided - encode it
@@ -1075,14 +1086,14 @@ export class P2PManager {
   private createChannelQueue(channel: number): void {
     // Only incoming queue needed (P2P network → Game engine)
     const queueDataSize = this.MESSAGE_SIZE * this.QUEUE_SIZE;
-    const totalSize = this.HEADER_SIZE + queueDataSize;
+    const totalSize = this.QUEUE_HEADER_SIZE + queueDataSize;
     const buffer = new SharedArrayBuffer(totalSize);
 
     // Layout: [Incoming Header][Incoming Data]
     const incomingHeaderView = new Int32Array(buffer, 0, 4);
     const incomingDataView = new Uint8Array(
       buffer,
-      this.HEADER_SIZE,
+      this.QUEUE_HEADER_SIZE,
       queueDataSize
     );
 
@@ -1135,11 +1146,11 @@ export class P2PManager {
         return;
       }
 
-      // Check if message fits
-      if (binaryData.byteLength > this.MESSAGE_SIZE - 4) {
-        // -4 for size prefix
+      // Check if message fits in slot (after size prefix)
+      const maxMessageSize = this.MESSAGE_SIZE - this.MESSAGE_SLOT_HEADER_SIZE;
+      if (binaryData.byteLength > maxMessageSize) {
         this.sdk.logger.warn(
-          `Message too large for queue: ${binaryData.byteLength} > ${this.MESSAGE_SIZE - 4}`
+          `Message too large for queue: ${binaryData.byteLength} > ${maxMessageSize}`
         );
         return;
       }
@@ -1148,7 +1159,7 @@ export class P2PManager {
       const writeOffset = writeIndex * this.MESSAGE_SIZE;
 
       // Write message size at the beginning of the slot
-      const incomingDataOffset = this.HEADER_SIZE; // Skip header
+      const incomingDataOffset = this.QUEUE_HEADER_SIZE; // Skip header
       const slotView = new DataView(
         queue.buffer,
         incomingDataOffset + writeOffset,
@@ -1156,9 +1167,12 @@ export class P2PManager {
       );
       slotView.setUint32(0, binaryData.byteLength, true);
 
-      // Write raw binary message data
+      // Write raw binary message data (after size prefix)
       const messageBytes = new Uint8Array(binaryData);
-      queue.incomingDataView.set(messageBytes, writeOffset + 4);
+      queue.incomingDataView.set(
+        messageBytes,
+        writeOffset + this.MESSAGE_SLOT_HEADER_SIZE
+      );
 
       // Update queue pointers atomically
       const nextWriteIndex = (writeIndex + 1) % this.QUEUE_SIZE;
@@ -1181,7 +1195,7 @@ export class P2PManager {
   } {
     const totalSize =
       this.channelQueues.size *
-      (this.HEADER_SIZE + this.MESSAGE_SIZE * this.QUEUE_SIZE);
+      (this.QUEUE_HEADER_SIZE + this.MESSAGE_SIZE * this.QUEUE_SIZE);
 
     return {
       channels: this.channelQueues.size,
@@ -1205,6 +1219,10 @@ export class P2PManager {
     return this.outgoingMessageBuffer;
   }
 
+  getMaxPayloadSize(): number {
+    return this.MAX_PAYLOAD_SIZE;
+  }
+
   // Read one message from the incoming queue for a specific channel
   // Returns raw binary to game engines
   // Returns decoded P2PMessage if called in a JS context
@@ -1221,7 +1239,7 @@ export class P2PManager {
 
     const readIndex = Atomics.load(queue.incomingHeaderView, 1);
     const readOffset = readIndex * this.MESSAGE_SIZE;
-    const incomingDataOffset = this.HEADER_SIZE;
+    const incomingDataOffset = this.QUEUE_HEADER_SIZE;
 
     const slotView = new DataView(
       queue.buffer,
@@ -1230,7 +1248,8 @@ export class P2PManager {
     );
     const messageSize = slotView.getUint32(0, true);
 
-    if (messageSize === 0 || messageSize > this.MESSAGE_SIZE - 4) {
+    const maxMessageSize = this.MESSAGE_SIZE - this.MESSAGE_SLOT_HEADER_SIZE;
+    if (messageSize === 0 || messageSize > maxMessageSize) {
       // Invalid message, skip it
       const nextReadIndex = (readIndex + 1) % this.QUEUE_SIZE;
       Atomics.store(queue.incomingHeaderView, 1, nextReadIndex); // readIndex
@@ -1241,7 +1260,7 @@ export class P2PManager {
     // Create a view directly from the SharedArrayBuffer (no copying needed for incoming messages)
     const messageView = new Uint8Array(
       queue.buffer,
-      incomingDataOffset + readOffset + 4,
+      incomingDataOffset + readOffset + this.MESSAGE_SLOT_HEADER_SIZE,
       messageSize
     );
 
