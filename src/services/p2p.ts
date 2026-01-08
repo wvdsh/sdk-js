@@ -68,6 +68,12 @@ export class P2PManager {
   private readonly PAYLOAD_OFFSET =
     this.USERID_SIZE + this.CHANNEL_SIZE + this.DATALENGTH_SIZE;
 
+  // Pre-allocated buffer for outgoing messages to avoid repeated allocations
+  // Game engine writes payload here, then calls sendP2PMessage
+  private outgoingMessageBuffer = new Uint8Array(this.MESSAGE_SIZE);
+  private textEncoder: TextEncoder = new TextEncoder();
+  private textDecoder: TextDecoder = new TextDecoder();
+
   constructor(sdk: WavedashSDK, config?: Partial<P2PConfig>) {
     this.sdk = sdk;
     this.config = { ...DEFAULT_P2P_CONFIG, ...config };
@@ -837,15 +843,14 @@ export class P2PManager {
     toUserId: Id<"users"> | undefined,
     appChannel: number = 0,
     reliable: boolean = true,
-    payload: string | Uint8Array
+    payload: Uint8Array
   ): boolean {
     try {
       if (!this.currentConnection || !payload) {
         return false;
       }
 
-      const data =
-        typeof payload === "string" ? this.decodeBase64(payload) : payload;
+      const data = payload;
 
       // Called with payload provided - encode it
       const message: P2PMessage = {
@@ -1192,6 +1197,14 @@ export class P2PManager {
     return queue ? queue.buffer : null;
   }
 
+  // Get pre-allocated buffer for outgoing messages (for game engine to write directly)
+  // Game engine can write payload here, then call sendP2PMessage with the same buffer
+  // Godot uses this to write binary payloads to a pre-allocated place that JS can read from.
+  // Not needed in Unity because Unity can pass along a direct view into its own WASM heap
+  getP2POutgoingScratchBuffer(): Uint8Array {
+    return this.outgoingMessageBuffer;
+  }
+
   // Read one message from the incoming queue for a specific channel
   // Returns raw binary to game engines
   // Returns decoded P2PMessage if called in a JS context
@@ -1248,7 +1261,7 @@ export class P2PManager {
 
   private encodeBinaryMessage(message: P2PMessage): Uint8Array {
     // Binary format: [fromUserId(32)][channel(4)][dataLength(4)][payload(...)]
-    const fromUserIdBytes = new TextEncoder()
+    const fromUserIdBytes = this.textEncoder
       .encode(message.fromUserId)
       .slice(0, this.USERID_SIZE);
     const payloadBytes = message.payload;
@@ -1291,7 +1304,7 @@ export class P2PManager {
 
     // fromUserId (32 bytes)
     const fromUserIdBytes = uint8View.slice(offset, offset + this.USERID_SIZE);
-    const fromUserId = new TextDecoder()
+    const fromUserId = this.textDecoder
       .decode(fromUserIdBytes)
       .replace(/\0+$/, "") as Id<"users">;
     offset += this.USERID_SIZE;
@@ -1312,24 +1325,5 @@ export class P2PManager {
       channel,
       payload: payload
     };
-  }
-
-  private decodeBase64(base64Data: string): Uint8Array {
-    if ("fromBase64" in Uint8Array) {
-      // https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/Uint8Array/fromBase64
-      return (
-        Uint8Array as unknown as {
-          fromBase64: (s: string) => Uint8Array;
-        }
-      ).fromBase64(base64Data);
-    } else {
-      // Fallback for older environments
-      const binaryString = atob(base64Data);
-      const uint8View = new Uint8Array(binaryString.length);
-      for (let i = 0; i < binaryString.length; i++) {
-        uint8View[i] = binaryString.charCodeAt(i);
-      }
-      return uint8View;
-    }
   }
 }

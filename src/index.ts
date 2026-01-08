@@ -539,18 +539,27 @@ class WavedashSDK {
   // ============
 
   /**
+   * Get a pre-allocated scratch buffer for outgoing messages
+   * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
+   */
+  getP2POutgoingScratchBuffer(): Uint8Array {
+    this.ensureReady();
+    return this.p2pManager.getP2POutgoingScratchBuffer();
+  }
+
+  /**
    * Send a message through P2P to a specific peer using their userId
    * @param toUserId - Peer userId to send to (undefined = broadcast)
    * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
-   * @param payload - The payload to send (either byte array or a base64 encoded string)
+   * @param payload - The payload to send (byte array)
    * @returns true if the message was sent out successfully
    */
   sendP2PMessage(
     toUserId: Id<"users"> | undefined,
     appChannel: number = 0,
     reliable: boolean = true,
-    payload: string | Uint8Array
+    payload: Uint8Array
   ): boolean {
     this.ensureReady();
     if (toUserId && !this.p2pManager.isPeerReady(toUserId)) {
@@ -570,13 +579,13 @@ class WavedashSDK {
    * Send the same payload to all peers in the lobby
    * @param appChannel - Optional app-level channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
-   * @param payload - The payload to send (either byte array or a base64 encoded string)
+   * @param payload - The payload to send (byte array)
    * @returns true if the message was sent out successfully
    */
   broadcastP2PMessage(
     appChannel: number = 0,
     reliable: boolean = true,
-    payload: string | Uint8Array
+    payload: Uint8Array
   ): boolean {
     this.ensureReady();
     if (!this.p2pManager.isBroadcastReady()) {
@@ -808,7 +817,6 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
     IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
   );
 
-  // Pass along iframeManager to the SDK so subclass managers can use it to post messages to the parent
   const sdk = new WavedashSDK(sdkConfig);
 
   (window as unknown as { WavedashJS: WavedashSDK }).WavedashJS = sdk;
