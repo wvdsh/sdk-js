@@ -5,8 +5,7 @@ import { Signals } from "./signals";
 import {
   api,
   GAME_ENGINE,
-  P2P_SIGNALING_MESSAGE_TYPE,
-  PublicApiType
+  PublicApiType,
 } from "@wvdsh/types";
 
 // Extract types from the API
@@ -45,6 +44,13 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<
 export type P2PTurnCredentials = FunctionReturnType<
   typeof api.sdk.turnCredentials.getOrCreate
 >;
+
+export type P2PSignalingMessage = Omit<
+  FunctionReturnType<typeof api.sdk.p2pSignaling.getSignalingMessages>[0],
+  'data'
+> & {
+  data: RTCSessionDescriptionInit | RTCIceCandidateInit;
+};
 
 // Type helper to get signal values as a union type
 export type Signal = (typeof Signals)[keyof typeof Signals];
@@ -130,13 +136,6 @@ export interface P2PMessage {
   channel: number; // Channel for message routing
   payload: Uint8Array;
   // TODO: Assign an incrementing messsage ID to each message for ordering?
-}
-
-export interface P2PSignalingMessage {
-  type: (typeof P2P_SIGNALING_MESSAGE_TYPE)[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
-  fromUserId?: Id<"users">; // Primary identifier for sender
-  toUserId: Id<"users">; // Primary identifier for recipient
-  data: unknown;
 }
 
 // P2P Configuration

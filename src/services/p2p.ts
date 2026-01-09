@@ -11,19 +11,12 @@ import type {
   P2PConnection,
   P2PMessage,
   P2PConfig,
-  P2PTurnCredentials
+  P2PTurnCredentials,
+  P2PSignalingMessage
 } from "../types";
 import { Signals } from "../signals";
 import type { WavedashSDK } from "../index";
 import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/types";
-
-// Type for signaling messages from Convex backend
-interface BackendSignalingMessage {
-  _id: Id<"p2pSignalingMessages">;
-  fromUserId: Id<"users">;
-  messageType: (typeof P2P_SIGNALING_MESSAGE_TYPE)[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
-  data: RTCSessionDescriptionInit | RTCIceCandidateInit;
-}
 
 // Default P2P configuration
 const DEFAULT_P2P_CONFIG: P2PConfig = {
@@ -381,13 +374,13 @@ export class P2PManager {
   }
 
   private async processSignalingMessages(
-    messages: BackendSignalingMessage[],
+    messages: P2PSignalingMessage[],
     connection: P2PConnection
   ): Promise<void> {
     if (messages.length === 0) return;
 
     const newMessageIds: Id<"p2pSignalingMessages">[] = [];
-    const messagesToProcess: BackendSignalingMessage[] = [];
+    const messagesToProcess: P2PSignalingMessage[] = [];
 
     // Filter out messages we've already processed or are pending processing
     for (const message of messages) {
@@ -439,7 +432,7 @@ export class P2PManager {
   }
 
   private async handleSignalingMessage(
-    message: BackendSignalingMessage,
+    message: P2PSignalingMessage,
     connection: P2PConnection
   ): Promise<void> {
     // Skip messages from ourselves
