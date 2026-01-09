@@ -539,18 +539,29 @@ class WavedashSDK {
   // ============
 
   /**
+   * Get a pre-allocated scratch buffer for outgoing messages
+   * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
+   */
+  getP2POutgoingMessageBuffer(): Uint8Array {
+    this.ensureReady();
+    return this.p2pManager.getOutgoingMessageBuffer();
+  }
+
+  /**
    * Send a message through P2P to a specific peer using their userId
    * @param toUserId - Peer userId to send to (undefined = broadcast)
    * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
-   * @param payload - The payload to send (either byte array or a base64 encoded string)
+   * @param payload - The payload to send (byte array)
+   * @param payloadSize - How many bytes from the payload to send. Defaults to payload.length (the entire payload)
    * @returns true if the message was sent out successfully
    */
   sendP2PMessage(
     toUserId: Id<"users"> | undefined,
     appChannel: number = 0,
     reliable: boolean = true,
-    payload: string | Uint8Array
+    payload: Uint8Array,
+    payloadSize: number = payload.length
   ): boolean {
     this.ensureReady();
     if (toUserId && !this.p2pManager.isPeerReady(toUserId)) {
@@ -562,7 +573,8 @@ class WavedashSDK {
       toUserId,
       appChannel,
       reliable,
-      payload
+      payload,
+      payloadSize
     );
   }
 
@@ -570,13 +582,15 @@ class WavedashSDK {
    * Send the same payload to all peers in the lobby
    * @param appChannel - Optional app-level channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
-   * @param payload - The payload to send (either byte array or a base64 encoded string)
+   * @param payload - The payload to send (byte array)
+   * @param payloadSize - How many bytes from the payload to send. Defaults to payload.length (the entire payload)
    * @returns true if the message was sent out successfully
    */
   broadcastP2PMessage(
     appChannel: number = 0,
     reliable: boolean = true,
-    payload: string | Uint8Array
+    payload: Uint8Array,
+    payloadSize: number = payload.length
   ): boolean {
     this.ensureReady();
     if (!this.p2pManager.isBroadcastReady()) {
@@ -586,7 +600,8 @@ class WavedashSDK {
       undefined,
       appChannel,
       reliable,
-      payload
+      payload,
+      payloadSize
     );
   }
 
@@ -600,10 +615,27 @@ class WavedashSDK {
     appChannel: number
   ): Uint8Array | P2PMessage | null {
     this.ensureReady();
-    // Should we return a copy of the binary data rather than a view into the SharedArrayBuffer?
+    // Should we return a copy of the binary data rather than a data view?
     // We're assuming the engine makes its own copy of the binary data when calling this function
     // If we ever see race conditions, make this a copy, but for performance, we're returning a view
-    return this.p2pManager.readMessageFromChannel(appChannel);
+    const returnRawBinary = this.engineInstance ? true : false;
+    return this.p2pManager.readMessageFromChannel(appChannel, returnRawBinary);
+  }
+
+  /**
+   * Drain all messages from a P2P channel into a buffer
+   * Data will be presented in a tightly packed format: [size:4 bytes][msg:N bytes][size:4 bytes][msg:N bytes]...
+   * JS games can just use readP2PMessageFromChannel to get decoded P2PMessages
+   * Game engines should use drainP2PChannelToBuffer for better performance
+   * @param appChannel - The channel to drain
+   * @param buffer - The buffer to drain the messages into.
+   *  If provided, the buffer will be filled until full, any remaining messages will be left in the queue.
+   *  If not provided, a new buffer with all messages will be created and returned.
+   * @returns A Uint8Array containing each message in a tightly packed format: [size:4 bytes][msg:N bytes][size:4 bytes][msg:N bytes]...
+   */
+  drainP2PChannelToBuffer(appChannel: number, buffer?: Uint8Array): Uint8Array {
+    this.ensureReady();
+    return this.p2pManager.drainChannelToBuffer(appChannel, buffer);
   }
 
   /**
@@ -808,7 +840,6 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
     IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
   );
 
-  // Pass along iframeManager to the SDK so subclass managers can use it to post messages to the parent
   const sdk = new WavedashSDK(sdkConfig);
 
   (window as unknown as { WavedashJS: WavedashSDK }).WavedashJS = sdk;
