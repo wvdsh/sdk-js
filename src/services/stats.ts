@@ -38,7 +38,7 @@ export class StatsManager {
         // One-time fetch for stats (local is source of truth)
         (async () => {
           const newStats = await this.sdk.convexClient.query(
-            api.gameAchievements.getMyStatsForGame,
+            api.sdk.gameAchievements.getMyStatsForGame,
             {}
           );
           this.hasLoadedStats = true;
@@ -47,15 +47,13 @@ export class StatsManager {
         // Subscription for achievements (server can unlock them)
         new Promise((resolve, reject) => {
           this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
-            api.gameAchievements.getMyAchievementsForGame,
+            api.sdk.gameAchievements.getMyAchievementsForGame,
             {},
             (achievements) => {
               this.hasLoadedAchievements = true;
               this.achievementIdentifiers = new Set([
                 ...this.achievementIdentifiers,
-                ...achievements.map(
-                  ({ achievement }) => achievement.identifier
-                ),
+                ...achievements.map(({ achievement }) => achievement.identifier)
               ]);
               resolve(undefined);
             },
@@ -63,12 +61,12 @@ export class StatsManager {
               reject(error);
             }
           );
-        }),
+        })
       ]);
       return {
         success: true,
         data: true,
-        args: {},
+        args: {}
       };
     } catch (error) {
       this.sdk.logger.error(`Error requesting stats: ${error}`);
@@ -76,7 +74,7 @@ export class StatsManager {
         success: false,
         data: false,
         args: {},
-        message: error instanceof Error ? error.message : String(error),
+        message: error instanceof Error ? error.message : String(error)
       };
     }
   }
@@ -116,16 +114,16 @@ export class StatsManager {
       await Promise.all([
         updatedStats.length > 0
           ? this.sdk.convexClient.mutation(
-              api.gameAchievements.setUserGameStats,
+              api.sdk.gameAchievements.setUserGameStats,
               { stats: updatedStats }
             )
           : Promise.resolve(),
         updatedAchievements.length > 0
           ? this.sdk.convexClient.mutation(
-              api.gameAchievements.setUserGameAchievements,
+              api.sdk.gameAchievements.setUserGameAchievements,
               { achievements: updatedAchievements }
             )
-          : Promise.resolve(),
+          : Promise.resolve()
       ]);
       return true;
     } catch (error) {

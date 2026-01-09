@@ -63,7 +63,7 @@ async function uploadFromIndexedDb(
     const blob = indexedDBUtils.toBlobFromIndexedDBValue(record);
     const response = await fetch(presignedUploadUrl, {
       method: "PUT",
-      body: blob,
+      body: blob
       // credentials not needed for presigned upload URL
     });
     return response.ok;
@@ -90,7 +90,7 @@ async function uploadFromFS(
     const blob = new Blob([data], { type: "application/octet-stream" });
     const response = await fetch(presignedUploadUrl, {
       method: "PUT",
-      body: blob,
+      body: blob
       // credentials not needed for presigned upload URL
     });
     return response.ok;
@@ -140,7 +140,7 @@ export async function download(
 
   const response = await fetch(url, {
     credentials: "include",
-    method: "GET",
+    method: "GET"
   });
   if (!response.ok) {
     this.logger.error(
@@ -161,7 +161,7 @@ export async function download(
       if (dirPath) {
         try {
           this.engineInstance.FS.mkdirTree(dirPath);
-        } catch (error) {
+        } catch (_error) {
           // Directory might already exist, which is fine
         }
       }
@@ -201,14 +201,14 @@ export async function uploadRemoteFile(
 
   try {
     const uploadUrl = await this.convexClient.mutation(
-      api.remoteFileStorage.getUploadUrl,
+      api.sdk.remoteFileStorage.getUploadUrl,
       { path: args.filePath }
     );
     const success = await upload.call(this, uploadUrl, args.filePath);
     return {
       success: success,
       data: args.filePath,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to upload remote file: ${error}`);
@@ -216,7 +216,7 @@ export async function uploadRemoteFile(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -240,7 +240,7 @@ export async function downloadRemoteFile(
     return {
       success: success,
       data: args.filePath,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to download remote file: ${error}`);
@@ -248,7 +248,7 @@ export async function downloadRemoteFile(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -270,7 +270,7 @@ export async function listRemoteDirectory(
     const url = getRemoteStorageUrl.call(this, path) + "?list=true";
     const response = await fetch(url, {
       credentials: "include",
-      method: "GET",
+      method: "GET"
     });
     if (!response.ok) {
       throw new Error(`${response.status} (${response.statusText})`);
@@ -282,7 +282,7 @@ export async function listRemoteDirectory(
     return {
       success: true,
       data: files,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to list directory: ${error}`);
@@ -290,7 +290,7 @@ export async function listRemoteDirectory(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -332,7 +332,7 @@ export async function downloadRemoteDirectory(
     return {
       success: true,
       data: normalizedPath,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to download user directory: ${error}`);
@@ -340,7 +340,7 @@ export async function downloadRemoteDirectory(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }

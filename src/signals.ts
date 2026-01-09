@@ -23,7 +23,7 @@ export const Signals = {
   // Backend connection signals
   BACKEND_CONNECTED: "BackendConnected", // connected to Convex backend
   BACKEND_DISCONNECTED: "BackendDisconnected", // disconnected from Convex backend
-  BACKEND_RECONNECTING: "BackendReconnecting", // attempting to reconnect to backend
+  BACKEND_RECONNECTING: "BackendReconnecting" // attempting to reconnect to backend
 
   // TODO: Future signals to implement
   // LOBBY_INVITE: 'LobbyInvite',

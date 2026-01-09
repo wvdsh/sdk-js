@@ -5,42 +5,52 @@ import { Signals } from "./signals";
 import {
   api,
   GAME_ENGINE,
-  P2P_SIGNALING_MESSAGE_TYPE,
   PublicApiType,
 } from "@wvdsh/types";
 
 // Extract types from the API
 export type LobbyVisibility =
-  PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["visibility"];
-export type LobbyUser = FunctionReturnType<typeof api.gameLobby.lobbyUsers>[0];
-export type LobbyMessage = FunctionReturnType<
-  typeof api.gameLobby.lobbyMessages
+  PublicApiType["sdk"]["gameLobby"]["createAndJoinLobby"]["_args"]["visibility"];
+export type LobbyUser = FunctionReturnType<
+  typeof api.sdk.gameLobby.lobbyUsers
 >[0];
-export type Lobby = FunctionReturnType<typeof api.gameLobby.listAvailable>[0];
+export type LobbyMessage = FunctionReturnType<
+  typeof api.sdk.gameLobby.lobbyMessages
+>[0];
+export type Lobby = FunctionReturnType<
+  typeof api.sdk.gameLobby.listAvailable
+>[0];
 export type UGCType =
-  PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
+  PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
 export type UGCVisibility =
-  PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
+  PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
 export type LeaderboardSortOrder =
-  PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
+  PublicApiType["sdk"]["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
 export type LeaderboardDisplayType =
-  PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
+  PublicApiType["sdk"]["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
 export type Leaderboard = FunctionReturnType<
-  typeof api.leaderboards.getLeaderboard
+  typeof api.sdk.leaderboards.getLeaderboard
 >;
 export type LeaderboardEntries = FunctionReturnType<
-  typeof api.leaderboards.listEntriesAroundUser
+  typeof api.sdk.leaderboards.listEntriesAroundUser
 >["entries"];
 export type UpsertedLeaderboardEntry = FunctionReturnType<
-  typeof api.leaderboards.upsertLeaderboardEntry
+  typeof api.sdk.leaderboards.upsertLeaderboardEntry
 >["entry"] & {
   userId: Id<"users">;
   username: string;
 };
 
 export type P2PTurnCredentials = FunctionReturnType<
-  typeof api.turnCredentials.getOrCreate
+  typeof api.sdk.turnCredentials.getOrCreate
 >;
+
+export type P2PSignalingMessage = Omit<
+  FunctionReturnType<typeof api.sdk.p2pSignaling.getSignalingMessages>[0],
+  'data'
+> & {
+  data: RTCSessionDescriptionInit | RTCIceCandidateInit;
+};
 
 // Type helper to get signal values as a union type
 export type Signal = (typeof Signals)[keyof typeof Signals];
@@ -76,14 +86,14 @@ export interface EngineInstance {
   ): void;
   // Standard Emscripten filesystem API: https://emscripten.org/docs/api_reference/Filesystem-API.html
   FS: {
-    readFile(path: string, opts?: Record<string, any>): string | Uint8Array;
+    readFile(path: string, opts?: Record<string, unknown>): string | Uint8Array;
     writeFile(
       path: string,
       data: string | ArrayBufferView,
-      opts?: Record<string, any>
+      opts?: Record<string, unknown>
     ): void;
     mkdirTree(path: string, mode?: number): void;
-    syncfs(populate: boolean, callback?: (err: any) => void): void;
+    syncfs(populate: boolean, callback?: (err: unknown) => void): void;
     analyzePath(path: string): { exists: boolean };
     // ... other functions
   };
@@ -96,7 +106,7 @@ export interface WavedashResponse<T> {
   data: T | null;
   // Return the original args that were passed to the JS SDK so caller can reference them
   // TODO: Caller shouldn't rely on this, remove this field
-  args: Record<string, any>;
+  args: Record<string, unknown>;
   // Error message if success is false
   message?: string;
   // TODO: errorCode?
@@ -126,13 +136,6 @@ export interface P2PMessage {
   channel: number; // Channel for message routing
   payload: Uint8Array;
   // TODO: Assign an incrementing messsage ID to each message for ordering?
-}
-
-export interface P2PSignalingMessage {
-  type: (typeof P2P_SIGNALING_MESSAGE_TYPE)[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
-  fromUserId?: Id<"users">; // Primary identifier for sender
-  toUserId: Id<"users">; // Primary identifier for recipient
-  data: any;
 }
 
 // P2P Configuration

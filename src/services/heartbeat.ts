@@ -53,12 +53,12 @@ export class HeartbeatManager {
    * @param data - Data to send to the backend
    * @returns true if the presence was updated successfully
    */
-  async updateUserPresence(data?: Record<string, any>): Promise<boolean> {
+  async updateUserPresence(data?: Record<string, unknown>): Promise<boolean> {
     try {
       // Add a default value to guarantee that the presence is updated
       const dataToSend = data ?? { forceUpdate: true };
-      await this.sdk.convexClient.mutation(api.presence.heartbeat, {
-        data: dataToSend,
+      await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
+        data: dataToSend
       });
       return true;
     } catch (error) {
@@ -81,7 +81,7 @@ export class HeartbeatManager {
         isConnected: this.isConnected,
         hasEverConnected: state.hasEverConnected,
         connectionCount: state.connectionCount,
-        connectionRetries: state.connectionRetries,
+        connectionRetries: state.connectionRetries
       };
 
       // Handle connection state changes

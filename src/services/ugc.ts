@@ -21,13 +21,13 @@ export async function createUGCItem(
 
   try {
     const { ugcId, uploadUrl } = await this.convexClient.mutation(
-      api.userGeneratedContent.createUGCItem,
+      api.sdk.userGeneratedContent.createUGCItem,
       {
         ugcType,
         title,
         description,
         visibility,
-        createPresignedUploadUrl: !!filePath,
+        createPresignedUploadUrl: !!filePath
       }
     );
     if (filePath && !uploadUrl) {
@@ -42,7 +42,7 @@ export async function createUGCItem(
       );
       // TODO: This should be handled on the backend using R2 event notifications
       await this.convexClient.mutation(
-        api.userGeneratedContent.finishUGCUpload,
+        api.sdk.userGeneratedContent.finishUGCUpload,
         { success: success, ugcId: ugcId }
       );
       if (!success) {
@@ -52,7 +52,7 @@ export async function createUGCItem(
     return {
       success: true,
       data: ugcId,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Error creating UGC item: ${error}`);
@@ -60,7 +60,7 @@ export async function createUGCItem(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -77,13 +77,13 @@ export async function updateUGCItem(
 
   try {
     const { uploadUrl } = await this.convexClient.mutation(
-      api.userGeneratedContent.updateUGCItem,
+      api.sdk.userGeneratedContent.updateUGCItem,
       {
         ugcId,
         title,
         description,
         visibility,
-        createPresignedUploadUrl: !!filePath,
+        createPresignedUploadUrl: !!filePath
       }
     );
     if (filePath && !uploadUrl) {
@@ -98,7 +98,7 @@ export async function updateUGCItem(
       );
       // TODO: This should be handled on the backend using R2 event notifications
       await this.convexClient.mutation(
-        api.userGeneratedContent.finishUGCUpload,
+        api.sdk.userGeneratedContent.finishUGCUpload,
         { success: success, ugcId: ugcId }
       );
       if (!success) {
@@ -108,7 +108,7 @@ export async function updateUGCItem(
     return {
       success: true,
       data: ugcId,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Error updating UGC item: ${error}`);
@@ -116,7 +116,7 @@ export async function updateUGCItem(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -130,7 +130,7 @@ export async function downloadUGCItem(
 
   try {
     const downloadUrl = await this.convexClient.query(
-      api.userGeneratedContent.getUGCItemDownloadUrl,
+      api.sdk.userGeneratedContent.getUGCItemDownloadUrl,
       { ugcId: args.ugcId }
     );
     const success = await remoteStorage.download.call(
@@ -141,7 +141,7 @@ export async function downloadUGCItem(
     return {
       success: success,
       data: args.ugcId,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Error downloading UGC item: ${error}`);
@@ -149,7 +149,7 @@ export async function downloadUGCItem(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }

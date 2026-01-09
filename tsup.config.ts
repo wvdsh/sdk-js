@@ -11,5 +11,5 @@ export default defineConfig({
   clean: true,
   external: [],
   noExternal: ["convex", "lodash.unionby"],
-  globalName: "WavedashSDK",
+  globalName: "WavedashSDK"
 });

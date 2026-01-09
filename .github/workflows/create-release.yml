@@ -23,4 +23,3 @@ jobs:
         id: release
         with:
           token: ${{ secrets.GH_PAT }}
-

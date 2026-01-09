@@ -11,7 +11,7 @@ import type {
   Leaderboard,
   LeaderboardEntries,
   WavedashResponse,
-  UpsertedLeaderboardEntry,
+  UpsertedLeaderboardEntry
 } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/types";
@@ -25,7 +25,10 @@ class LeaderboardCache {
   update(leaderboardId: Id<"leaderboards">, totalEntries: number): void {
     const cachedLeaderboard = this.cache.get(leaderboardId);
     if (cachedLeaderboard && typeof totalEntries === "number") {
-      this.cache.set(leaderboardId, { ...cachedLeaderboard, totalEntries });
+      this.cache.set(leaderboardId, {
+        ...cachedLeaderboard,
+        totalEntries
+      });
     }
   }
 
@@ -49,14 +52,14 @@ export async function getLeaderboard(
 
   try {
     const leaderboard = await this.convexClient.query(
-      api.leaderboards.getLeaderboard,
+      api.sdk.leaderboards.getLeaderboard,
       args
     );
     leaderboardCache.set(leaderboard.id, leaderboard);
     return {
       success: true,
       data: leaderboard,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to get leaderboard ${name}`, error);
@@ -64,7 +67,7 @@ export async function getLeaderboard(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -79,14 +82,14 @@ export async function getOrCreateLeaderboard(
 
   try {
     const leaderboard = await this.convexClient.mutation(
-      api.leaderboards.getOrCreateLeaderboard,
+      api.sdk.leaderboards.getOrCreateLeaderboard,
       args
     );
     leaderboardCache.set(leaderboard.id, leaderboard);
     return {
       success: true,
       data: leaderboard,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to get or create leaderboard ${name}`, error);
@@ -94,7 +97,7 @@ export async function getOrCreateLeaderboard(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -115,7 +118,7 @@ export async function getMyLeaderboardEntries(
 
   try {
     const result = await this.convexClient.query(
-      api.leaderboards.getMyLeaderboardEntry,
+      api.sdk.leaderboards.getMyLeaderboardEntry,
       args
     );
     if (result && result.totalEntries) {
@@ -126,7 +129,7 @@ export async function getMyLeaderboardEntries(
       ? {
           ...result.entry,
           userId: this.wavedashUser.id,
-          username: this.wavedashUser.username,
+          username: this.wavedashUser.username
         }
       : null;
 
@@ -137,7 +140,7 @@ export async function getMyLeaderboardEntries(
     return {
       success: true,
       data: entries,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(
@@ -148,7 +151,7 @@ export async function getMyLeaderboardEntries(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -163,7 +166,7 @@ export async function listLeaderboardEntriesAroundUser(
 
   try {
     const result = await this.convexClient.query(
-      api.leaderboards.listEntriesAroundUser,
+      api.sdk.leaderboards.listEntriesAroundUser,
       args
     );
     if (result && result.totalEntries) {
@@ -173,7 +176,7 @@ export async function listLeaderboardEntriesAroundUser(
     return {
       success: true,
       data: result.entries,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(
@@ -184,7 +187,7 @@ export async function listLeaderboardEntriesAroundUser(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -199,7 +202,7 @@ export async function listLeaderboardEntries(
 
   try {
     const result = await this.convexClient.query(
-      api.leaderboards.listEntries,
+      api.sdk.leaderboards.listEntries,
       args
     );
     if (result && result.totalEntries) {
@@ -209,7 +212,7 @@ export async function listLeaderboardEntries(
     return {
       success: true,
       data: result.entries,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(
@@ -220,7 +223,7 @@ export async function listLeaderboardEntries(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -236,7 +239,7 @@ export async function uploadLeaderboardScore(
 
   try {
     const result = await this.convexClient.mutation(
-      api.leaderboards.upsertLeaderboardEntry,
+      api.sdk.leaderboards.upsertLeaderboardEntry,
       args
     );
     if (result && result.totalEntries) {
@@ -246,13 +249,13 @@ export async function uploadLeaderboardScore(
     const entry = {
       ...result.entry,
       userId: this.wavedashUser.id,
-      username: this.wavedashUser.username,
+      username: this.wavedashUser.username
     };
 
     return {
       success: true,
       data: entry,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(
@@ -263,7 +266,7 @@ export async function uploadLeaderboardScore(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }

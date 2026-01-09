@@ -11,9 +11,11 @@ import { parentOrigin } from "./parentOrigin";
 
 const RESPONSE_TIMEOUT_MS = 5_000;
 
-// Track pending requests
+// Track pending requests - response can be any value from IFrameResponseMap
+type IFrameResponseValue = IFrameResponseMap[keyof IFrameResponseMap];
+
 type PendingRequest = {
-  resolve: (data: any) => void;
+  resolve: (data: IFrameResponseValue) => void;
   reject: (error: Error) => void;
   timeout: ReturnType<typeof setTimeout>;
 };
@@ -56,12 +58,8 @@ export class IFrameMessenger {
     requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE],
     data: Record<string, string | number | boolean>
   ): boolean {
-    if (typeof window === "undefined" || !parentOrigin)
-      return false;
-    window.parent.postMessage(
-      { type: requestType, ...data },
-      parentOrigin
-    );
+    if (typeof window === "undefined" || !parentOrigin) return false;
+    window.parent.postMessage({ type: requestType, ...data }, parentOrigin);
     return true;
   }
 
@@ -85,12 +83,13 @@ export class IFrameMessenger {
         );
       }, RESPONSE_TIMEOUT_MS);
 
-      this.pendingRequests.set(requestId, { resolve, reject, timeout });
+      this.pendingRequests.set(requestId, {
+        resolve: resolve as (data: IFrameResponseValue) => void,
+        reject,
+        timeout
+      });
 
-      window.parent.postMessage(
-        { type: requestType, requestId },
-        parentOrigin
-      );
+      window.parent.postMessage({ type: requestType, requestId }, parentOrigin);
     });
   }
 }
