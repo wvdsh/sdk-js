@@ -542,18 +542,9 @@ class WavedashSDK {
    * Get a pre-allocated scratch buffer for outgoing messages
    * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
    */
-  getP2POutgoingScratchBuffer(): Uint8Array {
+  getP2POutgoingMessageBuffer(): Uint8Array {
     this.ensureReady();
-    return this.p2pManager.getP2POutgoingScratchBuffer();
-  }
-
-  /**
-   * Get the maximum supported payload size for P2P messages
-   * @returns The maximum payload size in bytes
-   */
-  getP2PMaxPayloadSize(): number {
-    this.ensureReady();
-    return this.p2pManager.getMaxPayloadSize();
+    return this.p2pManager.getOutgoingMessageBuffer();
   }
 
   /**
@@ -562,13 +553,15 @@ class WavedashSDK {
    * @param appChannel - Optional channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
    * @param payload - The payload to send (byte array)
+   * @param payloadSize - How many bytes from the payload to send. Defaults to payload.length (the entire payload)
    * @returns true if the message was sent out successfully
    */
   sendP2PMessage(
     toUserId: Id<"users"> | undefined,
     appChannel: number = 0,
     reliable: boolean = true,
-    payload: Uint8Array
+    payload: Uint8Array,
+    payloadSize: number = payload.length
   ): boolean {
     this.ensureReady();
     if (toUserId && !this.p2pManager.isPeerReady(toUserId)) {
@@ -580,7 +573,8 @@ class WavedashSDK {
       toUserId,
       appChannel,
       reliable,
-      payload
+      payload,
+      payloadSize
     );
   }
 
@@ -589,12 +583,14 @@ class WavedashSDK {
    * @param appChannel - Optional app-level channel for message routing. All messages still use the same P2P connection under the hood.
    * @param reliable - Send reliably, meaning guaranteed delivery and ordering, but slower (default: true)
    * @param payload - The payload to send (byte array)
+   * @param payloadSize - How many bytes from the payload to send. Defaults to payload.length (the entire payload)
    * @returns true if the message was sent out successfully
    */
   broadcastP2PMessage(
     appChannel: number = 0,
     reliable: boolean = true,
-    payload: Uint8Array
+    payload: Uint8Array,
+    payloadSize: number = payload.length
   ): boolean {
     this.ensureReady();
     if (!this.p2pManager.isBroadcastReady()) {
@@ -604,7 +600,8 @@ class WavedashSDK {
       undefined,
       appChannel,
       reliable,
-      payload
+      payload,
+      payloadSize
     );
   }
 

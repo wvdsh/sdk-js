@@ -61,7 +61,7 @@ export class P2PManager {
   private readonly MESSAGE_SIZE = 2048; // Max bytes per message slot
   private readonly MESSAGE_SLOT_HEADER_SIZE = 4; // Size prefix at start of each message slot
   private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
-  private readonly DEFAULT_NUM_CHANNELS = 4; // Default number of channels to pre-allocate
+  private readonly DEFAULT_NUM_CHANNELS = 3; // Default number of channels to pre-allocate
 
   // Binary message format offsets
   private readonly USERID_SIZE = 32; // TODO: Switch to int handles so this can be 4 bytes instead of 32
@@ -77,7 +77,7 @@ export class P2PManager {
 
   // Pre-allocated buffer for outgoing messages to avoid repeated allocations
   // Game engine writes payload here, then calls sendP2PMessage
-  private outgoingMessageBuffer = new Uint8Array(this.MESSAGE_SIZE);
+  private outgoingMessageBuffer = new Uint8Array(this.MAX_PAYLOAD_SIZE);
   private textEncoder: TextEncoder = new TextEncoder();
   private textDecoder: TextDecoder = new TextDecoder();
 
@@ -850,21 +850,26 @@ export class P2PManager {
     toUserId: Id<"users"> | undefined,
     appChannel: number = 0,
     reliable: boolean = true,
-    payload: Uint8Array
+    payload: Uint8Array,
+    payloadSize: number = payload.length
   ): boolean {
     try {
       if (!this.currentConnection || !payload) {
         return false;
       }
 
-      if (payload.length > this.MAX_PAYLOAD_SIZE) {
+      if (payloadSize > this.MAX_PAYLOAD_SIZE) {
         this.sdk.logger.error(
-          `P2P payload too large: ${payload.length} bytes exceeds max ${this.MAX_PAYLOAD_SIZE} bytes`
+          `P2P payload too large: ${payloadSize} bytes exceeds max ${this.MAX_PAYLOAD_SIZE} bytes`
         );
         return false;
       }
 
-      const data = payload;
+      // Use subarray to get just the bytes we need (no copy, just a view)
+      const data =
+        payloadSize < payload.length
+          ? payload.subarray(0, payloadSize)
+          : payload;
 
       // Called with payload provided - encode it
       const message: P2PMessage = {
@@ -1189,12 +1194,8 @@ export class P2PManager {
   // Game engine can write payload here, then call sendP2PMessage with the same buffer
   // Godot uses this to write binary payloads to a pre-allocated place that JS can read from.
   // Not needed in Unity because Unity can pass along a direct view into its own WASM heap
-  getP2POutgoingScratchBuffer(): Uint8Array {
+  getOutgoingMessageBuffer(): Uint8Array {
     return this.outgoingMessageBuffer;
-  }
-
-  getMaxPayloadSize(): number {
-    return this.MAX_PAYLOAD_SIZE;
   }
 
   // Read one message from the incoming queue for a specific channel
@@ -1237,6 +1238,45 @@ export class P2PManager {
     return this.sdk.engineInstance
       ? messageView
       : this.decodeBinaryMessage(messageView);
+  }
+
+  // Drain all messages from a channel in one call (reduces WASM↔JS boundary crossings)
+  // Format: [size:4][msg:N][size:4][msg:N]... (tightly packed)
+  // Game iterates by reading size, advancing by 4+size, repeat until end of buffer
+  drainChannel(appChannel: number): Uint8Array {
+    const messages: Uint8Array[] = [];
+    const queue = this.channelQueues.get(appChannel);
+    if (!queue) {
+      return new Uint8Array(0);
+    }
+    let totalSize = 0;
+
+    while (queue.messageCount > 0) {
+      const msg = this.readMessageFromChannel(appChannel);
+      if (!msg || (msg instanceof Uint8Array && msg.length === 0)) {
+        break;
+      }
+      const msgBytes = msg as Uint8Array;
+      messages.push(msgBytes);
+      totalSize += this.MESSAGE_SLOT_HEADER_SIZE + msgBytes.length;
+    }
+
+    if (messages.length === 0) {
+      return new Uint8Array(0);
+    }
+
+    const result = new Uint8Array(totalSize);
+    const resultView = new DataView(result.buffer);
+    let writePos = 0;
+
+    for (const msg of messages) {
+      resultView.setUint32(writePos, msg.length, true);
+      writePos += this.MESSAGE_SLOT_HEADER_SIZE;
+      result.set(msg, writePos);
+      writePos += msg.length;
+    }
+
+    return result;
   }
 
   // ================
