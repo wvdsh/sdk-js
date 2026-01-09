@@ -57,7 +57,7 @@ export class HeartbeatManager {
     try {
       // Add a default value to guarantee that the presence is updated
       const dataToSend = data ?? { forceUpdate: true };
-      await this.sdk.convexClient.mutation(api.presence.heartbeat, {
+      await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
         data: dataToSend,
       });
       return true;
@@ -94,7 +94,7 @@ export class HeartbeatManager {
         // First tick of disconnection - notify reconnecting
         this.disconnectedAt = Date.now();
         this.sdk.logger.warn(
-          "Backend disconnected - attempting to reconnect..."
+          "Backend disconnected - attempting to reconnect...",
         );
         this.sdk.notifyGame(Signals.BACKEND_RECONNECTING, connection);
       } else if (!this.isConnected && !wasConnected) {

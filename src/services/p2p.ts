@@ -79,7 +79,7 @@ export class P2PManager {
 
   async initializeP2PForCurrentLobby(
     lobbyId: Id<"lobbies">,
-    members: SDKUser[]
+    members: SDKUser[],
   ): Promise<WavedashResponse<P2PConnection>> {
     try {
       // If we already have a connection, update it instead of replacing
@@ -121,7 +121,7 @@ export class P2PManager {
     } catch (error) {
       this.sdk.logger.error(
         `Error initializing P2P for lobby ${lobbyId}:`,
-        error
+        error,
       );
       return {
         success: false,
@@ -157,8 +157,8 @@ export class P2PManager {
     this.turnCredentialsInitPromise = (async () => {
       try {
         this.turnCredentials = await this.sdk.convexClient.action(
-          api.turnCredentials.getOrCreate,
-          {}
+          api.sdk.turnCredentials.getOrCreate,
+          {},
         );
       } finally {
         this.turnCredentialsInitPromise = null;
@@ -170,7 +170,7 @@ export class P2PManager {
   }
 
   private async updateP2PConnection(
-    members: SDKUser[]
+    members: SDKUser[],
   ): Promise<WavedashResponse<P2PConnection>> {
     try {
       if (!this.currentConnection) {
@@ -180,7 +180,7 @@ export class P2PManager {
       this.sdk.logger.debug("Updating P2P connection with new member list");
 
       const currentPeerUserIds = new Set(
-        Object.keys(this.currentConnection.peers)
+        Object.keys(this.currentConnection.peers),
       );
       currentPeerUserIds.add(this.sdk.getUserId());
       const newPeerUserIds = new Set(members.map((member) => member.id));
@@ -193,7 +193,7 @@ export class P2PManager {
           member.id !== this.sdk.getUserId()
         ) {
           this.sdk.logger.debug(
-            `Adding new peer: ${member.username} (${member.id})`
+            `Adding new peer: ${member.username} (${member.id})`,
           );
 
           // Add new peer to connection
@@ -211,19 +211,19 @@ export class P2PManager {
         const connectionPromises = connectionsToCreate.map((userId) => {
           const shouldCreateChannels = currentUserId < userId;
           this.sdk.logger.debug(
-            `Creating connection to new peer ${userId}, shouldCreateChannels: ${shouldCreateChannels}`
+            `Creating connection to new peer ${userId}, shouldCreateChannels: ${shouldCreateChannels}`,
           );
           return this.createPeerConnection(
             userId,
             this.currentConnection!,
-            shouldCreateChannels
+            shouldCreateChannels,
           );
         });
         await Promise.all(connectionPromises);
 
         // Initiate offers to new peers where we have lower userId
         const peersToInitiate = connectionsToCreate.filter(
-          (userId) => currentUserId < userId
+          (userId) => currentUserId < userId,
         );
 
         if (peersToInitiate.length > 0) {
@@ -232,21 +232,21 @@ export class P2PManager {
 
           const offerPromises = peersToInitiate.map((userId) => {
             this.sdk.logger.debug(
-              `Initiating offer to new peer ${userId} (lower userId rule)`
+              `Initiating offer to new peer ${userId} (lower userId rule)`,
             );
             return this.createOfferToPeer(userId);
           });
 
           await Promise.all(offerPromises);
           this.sdk.logger.debug(
-            `Initiated ${offerPromises.length} offers to new peers`
+            `Initiated ${offerPromises.length} offers to new peers`,
           );
         }
       }
 
       // Clean up connections to users who left
       for (const userId of Object.keys(
-        this.currentConnection.peers
+        this.currentConnection.peers,
       ) as Id<"users">[]) {
         if (!newPeerUserIds.has(userId)) {
           const peer = this.currentConnection.peers[userId];
@@ -284,7 +284,7 @@ export class P2PManager {
   }
 
   private async establishWebRTCConnections(
-    connection: P2PConnection
+    connection: P2PConnection,
   ): Promise<void> {
     // Subscribe to real-time signaling message updates
     this.subscribeToSignalingMessages(connection);
@@ -340,11 +340,11 @@ export class P2PManager {
     // Log state changes
     if (previousState !== this.currentConnection.state) {
       const connectedCount = peerIds.filter((userId) =>
-        this.isPeerReady(userId)
+        this.isPeerReady(userId),
       ).length;
       this.sdk.logger.debug(
         `P2P connection state: ${previousState} → ${this.currentConnection.state} ` +
-          `(${connectedCount}/${peerIds.length} peers connected)`
+          `(${connectedCount}/${peerIds.length} peers connected)`,
       );
     }
   }
@@ -355,13 +355,13 @@ export class P2PManager {
   private subscribeToSignalingMessages(connection: P2PConnection): void {
     // Subscribe to real-time signaling message updates
     this.unsubscribeFromSignalingMessages = this.sdk.convexClient.onUpdate(
-      api.p2pSignaling.getSignalingMessages,
+      api.sdk.p2pSignaling.getSignalingMessages,
       { lobbyId: connection.lobbyId },
       (messages) => {
         if (messages) {
           this.processSignalingMessages(messages, connection);
         }
-      }
+      },
     );
   }
 
@@ -374,7 +374,7 @@ export class P2PManager {
 
   private async processSignalingMessages(
     messages: any[],
-    connection: P2PConnection
+    connection: P2PConnection,
   ): Promise<void> {
     if (messages.length === 0) return;
 
@@ -409,8 +409,8 @@ export class P2PManager {
     if (newMessageIds.length > 0) {
       try {
         await this.sdk.convexClient.mutation(
-          api.p2pSignaling.markSignalingMessagesProcessed,
-          { messageIds: newMessageIds }
+          api.sdk.p2pSignaling.markSignalingMessagesProcessed,
+          { messageIds: newMessageIds },
         );
 
         // Remove from pending set after successful batch processing
@@ -420,7 +420,7 @@ export class P2PManager {
       } catch (error) {
         this.sdk.logger.error(
           "Failed to mark signaling messages as processed:",
-          error
+          error,
         );
         // Remove from pending set even on failure to avoid permanent blocking
         for (const messageId of newMessageIds) {
@@ -432,7 +432,7 @@ export class P2PManager {
 
   private async handleSignalingMessage(
     message: any,
-    connection: P2PConnection
+    connection: P2PConnection,
   ): Promise<void> {
     // Skip messages from ourselves
     if (message.fromUserId === this.sdk.getUserId()) {
@@ -443,7 +443,7 @@ export class P2PManager {
     if (!connection.peers[remoteUserId]) {
       this.sdk.logger.warn(
         "Received signaling message from unknown user:",
-        remoteUserId
+        remoteUserId,
       );
       return;
     }
@@ -468,7 +468,7 @@ export class P2PManager {
         await pc.setLocalDescription(answer);
 
         this.sdk.logger.debug(
-          `  Answer created, waiting for ondatachannel events...`
+          `  Answer created, waiting for ondatachannel events...`,
         );
 
         // Convert RTCSessionDescription to plain object for Convex
@@ -497,7 +497,7 @@ export class P2PManager {
           pending.push(message.data);
           this.pendingIceCandidates.set(remoteUserId, pending);
           this.sdk.logger.debug(
-            `Buffered ICE candidate for ${remoteUserId} (remote description not yet set, ${pending.length} buffered)`
+            `Buffered ICE candidate for ${remoteUserId} (remote description not yet set, ${pending.length} buffered)`,
           );
         } else {
           await pc.addIceCandidate(new RTCIceCandidate(message.data));
@@ -507,7 +507,7 @@ export class P2PManager {
       default:
         this.sdk.logger.warn(
           "Unknown signaling message type:",
-          message.messageType
+          message.messageType,
         );
     }
   }
@@ -518,7 +518,7 @@ export class P2PManager {
    */
   private async flushPendingIceCandidates(
     remoteUserId: Id<"users">,
-    pc: RTCPeerConnection
+    pc: RTCPeerConnection,
   ): Promise<void> {
     const pending = this.pendingIceCandidates.get(remoteUserId);
     if (pending && pending.length > 0) {
@@ -528,7 +528,7 @@ export class P2PManager {
         } catch (error) {
           this.sdk.logger.warn(
             `Failed to add buffered ICE candidate for ${remoteUserId}:`,
-            error
+            error,
           );
         }
       }
@@ -537,7 +537,7 @@ export class P2PManager {
   }
 
   private async establishPeerConnections(
-    connection: P2PConnection
+    connection: P2PConnection,
   ): Promise<void> {
     this.sdk.logger.debug("Establishing WebRTC connections to peers...");
 
@@ -549,12 +549,12 @@ export class P2PManager {
       ([userId, peer]) => {
         const shouldCreateChannels = currentUserId < userId;
         this.sdk.logger.debug(
-          `Creating connection to peer ${userId} (${peer.username}), shouldCreateChannels: ${shouldCreateChannels}`
+          `Creating connection to peer ${userId} (${peer.username}), shouldCreateChannels: ${shouldCreateChannels}`,
         );
         connectionPromises.push(
-          this.createPeerConnection(userId, connection, shouldCreateChannels)
+          this.createPeerConnection(userId, connection, shouldCreateChannels),
         );
-      }
+      },
     );
 
     // Wait for all connections to be created first
@@ -571,18 +571,18 @@ export class P2PManager {
 
       const offerPromises = peersToInitiate.map((userId) => {
         this.sdk.logger.debug(
-          `Initiating offer to peer ${userId} (lower userId rule)`
+          `Initiating offer to peer ${userId} (lower userId rule)`,
         );
         return this.createOfferToPeer(userId);
       });
 
       await Promise.all(offerPromises);
       this.sdk.logger.debug(
-        `Created ${connectionPromises.length} peer connections and initiated ${offerPromises.length} offers`
+        `Created ${connectionPromises.length} peer connections and initiated ${offerPromises.length} offers`,
       );
     } else {
       this.sdk.logger.debug(
-        `Created ${connectionPromises.length} peer connections, no offers to initiate`
+        `Created ${connectionPromises.length} peer connections, no offers to initiate`,
       );
     }
   }
@@ -598,10 +598,10 @@ export class P2PManager {
     const unreliableChannel = this.unreliableChannels.get(remoteUserId);
     this.sdk.logger.debug(`Creating offer to peer ${remoteUserId}:`);
     this.sdk.logger.debug(
-      `  Reliable channel state: ${reliableChannel?.readyState || "none"}`
+      `  Reliable channel state: ${reliableChannel?.readyState || "none"}`,
     );
     this.sdk.logger.debug(
-      `  Unreliable channel state: ${unreliableChannel?.readyState || "none"}`
+      `  Unreliable channel state: ${unreliableChannel?.readyState || "none"}`,
     );
 
     const offer = await pc.createOffer();
@@ -622,12 +622,12 @@ export class P2PManager {
   private async createPeerConnection(
     remoteUserId: Id<"users">,
     connection: P2PConnection,
-    shouldCreateChannels: boolean = false
+    shouldCreateChannels: boolean = false,
   ): Promise<boolean> {
     const iceServers = await this.getIceServers();
     if (!iceServers) {
       this.sdk.logger.error(
-        `No ICE servers available for peer ${remoteUserId}`
+        `No ICE servers available for peer ${remoteUserId}`,
       );
       this.sdk.notifyGame(Signals.P2P_CONNECTION_FAILED, {
         userId: remoteUserId,
@@ -658,7 +658,7 @@ export class P2PManager {
         this.setupDataChannelHandlers(
           reliableChannel,
           remoteUserId,
-          "reliable"
+          "reliable",
         );
       }
 
@@ -671,12 +671,12 @@ export class P2PManager {
         this.setupDataChannelHandlers(
           unreliableChannel,
           remoteUserId,
-          "unreliable"
+          "unreliable",
         );
       }
     } else {
       this.sdk.logger.debug(
-        `Will receive data channels from peer ${remoteUserId} via ondatachannel`
+        `Will receive data channels from peer ${remoteUserId} via ondatachannel`,
       );
     }
 
@@ -693,7 +693,7 @@ export class P2PManager {
               : "unknown";
 
         this.sdk.logger.debug(
-          `Peer ${remoteUserId} gathered ICE candidate: ${candidateType}`
+          `Peer ${remoteUserId} gathered ICE candidate: ${candidateType}`,
         );
         this.sdk.logger.debug(`  Candidate: ${event.candidate.candidate}`);
 
@@ -715,7 +715,7 @@ export class P2PManager {
     pc.ondatachannel = (event) => {
       const channel = event.channel;
       this.sdk.logger.debug(
-        `Received ${channel.label} data channel from peer ${remoteUserId}`
+        `Received ${channel.label} data channel from peer ${remoteUserId}`,
       );
 
       // Store the received channel in the appropriate map
@@ -728,36 +728,36 @@ export class P2PManager {
       this.setupDataChannelHandlers(
         channel,
         remoteUserId,
-        channel.label as "reliable" | "unreliable"
+        channel.label as "reliable" | "unreliable",
       );
     };
 
     // Add connection state monitoring for debugging
     pc.onconnectionstatechange = () => {
       this.sdk.logger.debug(
-        `Peer ${remoteUserId} connection state: ${pc.connectionState}`
+        `Peer ${remoteUserId} connection state: ${pc.connectionState}`,
       );
       if (pc.connectionState === "connected") {
         this.sdk.logger.debug(
-          `  Peer ${remoteUserId} fully connected, expecting ondatachannel events now...`
+          `  Peer ${remoteUserId} fully connected, expecting ondatachannel events now...`,
         );
       }
     };
 
     pc.oniceconnectionstatechange = () => {
       this.sdk.logger.debug(
-        `Peer ${remoteUserId} ICE connection state: ${pc.iceConnectionState}`
+        `Peer ${remoteUserId} ICE connection state: ${pc.iceConnectionState}`,
       );
       if (pc.iceConnectionState === "connected") {
         this.sdk.logger.debug(
-          `  ICE connected to peer ${remoteUserId}, data channels should be available...`
+          `  ICE connected to peer ${remoteUserId}, data channels should be available...`,
         );
       }
     };
 
     pc.onicegatheringstatechange = () => {
       this.sdk.logger.debug(
-        `Peer ${remoteUserId} ICE gathering state: ${pc.iceGatheringState}`
+        `Peer ${remoteUserId} ICE gathering state: ${pc.iceGatheringState}`,
       );
     };
 
@@ -768,11 +768,11 @@ export class P2PManager {
   private setupDataChannelHandlers(
     channel: RTCDataChannel,
     remoteUserId: Id<"users">,
-    type: "reliable" | "unreliable"
+    type: "reliable" | "unreliable",
   ): void {
     channel.onopen = () => {
       this.sdk.logger.debug(
-        `${type} data channel opened with peer ${remoteUserId}`
+        `${type} data channel opened with peer ${remoteUserId}`,
       );
 
       // Check if this peer is now fully ready (both channels open if both are enabled)
@@ -795,7 +795,7 @@ export class P2PManager {
     channel.onerror = (error: RTCErrorEvent) => {
       this.sdk.logger.error(
         `Data channel error with peer ${remoteUserId}:`,
-        error
+        error,
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
@@ -809,7 +809,7 @@ export class P2PManager {
 
     channel.onclose = () => {
       this.sdk.logger.debug(
-        `${type} data channel closed with peer ${remoteUserId}`
+        `${type} data channel closed with peer ${remoteUserId}`,
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
@@ -829,7 +829,7 @@ export class P2PManager {
     toUserId: Id<"users"> | undefined,
     appChannel: number = 0,
     reliable: boolean = true,
-    payload: string | Uint8Array
+    payload: string | Uint8Array,
   ): boolean {
     try {
       if (!this.currentConnection || !payload) {
@@ -880,7 +880,7 @@ export class P2PManager {
 
   private async sendSignalingMessage(
     toUserId: Id<"users">,
-    message: { type: any; data: any }
+    message: { type: any; data: any },
   ): Promise<void> {
     if (!this.currentConnection) {
       throw new Error("No active P2P connection for signaling");
@@ -888,13 +888,13 @@ export class P2PManager {
 
     try {
       await this.sdk.convexClient.mutation(
-        api.p2pSignaling.sendSignalingMessage,
+        api.sdk.p2pSignaling.sendSignalingMessage,
         {
           lobbyId: this.currentConnection.lobbyId,
           toUserId: toUserId,
           messageType: message.type,
           data: message.data,
-        }
+        },
       );
       this.sdk.logger.debug("Sent signaling message:", message.type);
     } catch (error) {
@@ -1021,7 +1021,7 @@ export class P2PManager {
     > = {};
 
     for (const userId of Object.keys(
-      this.currentConnection.peers
+      this.currentConnection.peers,
     ) as Id<"users">[]) {
       const reliableChannel = this.reliableChannels.get(userId);
       const unreliableChannel = this.unreliableChannels.get(userId);
@@ -1048,7 +1048,7 @@ export class P2PManager {
       }
 
       this.sdk.logger.debug(
-        `Initialized ${this.DEFAULT_NUM_CHANNELS} SharedArrayBuffer P2P message queues`
+        `Initialized ${this.DEFAULT_NUM_CHANNELS} SharedArrayBuffer P2P message queues`,
       );
     } catch (error) {
       this.sdk.logger.warn("SharedArrayBuffer not supported");
@@ -1067,7 +1067,7 @@ export class P2PManager {
     const incomingDataView = new Uint8Array(
       buffer,
       this.HEADER_SIZE,
-      queueDataSize
+      queueDataSize,
     );
 
     // Initialize incoming queue header
@@ -1098,7 +1098,7 @@ export class P2PManager {
       if (!this.channelQueues.has(channel)) {
         if (channel >= this.MAX_CHANNELS) {
           this.sdk.logger.warn(
-            `Channel ${channel} exceeds max channels (${this.MAX_CHANNELS}), dropping message`
+            `Channel ${channel} exceeds max channels (${this.MAX_CHANNELS}), dropping message`,
           );
           return;
         }
@@ -1114,7 +1114,7 @@ export class P2PManager {
       // Check if queue is full
       if (messageCount >= this.QUEUE_SIZE) {
         this.sdk.logger.warn(
-          `P2P message queue full for channel ${channel}, dropping message`
+          `P2P message queue full for channel ${channel}, dropping message`,
         );
         return;
       }
@@ -1123,7 +1123,7 @@ export class P2PManager {
       if (binaryData.byteLength > this.MESSAGE_SIZE - 4) {
         // -4 for size prefix
         this.sdk.logger.warn(
-          `Message too large for queue: ${binaryData.byteLength} > ${this.MESSAGE_SIZE - 4}`
+          `Message too large for queue: ${binaryData.byteLength} > ${this.MESSAGE_SIZE - 4}`,
         );
         return;
       }
@@ -1136,7 +1136,7 @@ export class P2PManager {
       const slotView = new DataView(
         queue.buffer,
         incomingDataOffset + writeOffset,
-        this.MESSAGE_SIZE
+        this.MESSAGE_SIZE,
       );
       slotView.setUint32(0, binaryData.byteLength, true);
 
@@ -1202,7 +1202,7 @@ export class P2PManager {
     const slotView = new DataView(
       queue.buffer,
       incomingDataOffset + readOffset,
-      this.MESSAGE_SIZE
+      this.MESSAGE_SIZE,
     );
     const messageSize = slotView.getUint32(0, true);
 
@@ -1218,7 +1218,7 @@ export class P2PManager {
     const messageView = new Uint8Array(
       queue.buffer,
       incomingDataOffset + readOffset + 4,
-      messageSize
+      messageSize,
     );
 
     const nextReadIndex = (readIndex + 1) % this.QUEUE_SIZE;

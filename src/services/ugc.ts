@@ -15,35 +15,35 @@ export async function createUGCItem(
   title?: string,
   description?: string,
   visibility?: UGCVisibility,
-  filePath?: string
+  filePath?: string,
 ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
   const args = { ugcType, title, description, visibility, filePath };
 
   try {
     const { ugcId, uploadUrl } = await this.convexClient.mutation(
-      api.userGeneratedContent.createUGCItem,
+      api.sdk.userGeneratedContent.createUGCItem,
       {
         ugcType,
         title,
         description,
         visibility,
         createPresignedUploadUrl: !!filePath,
-      }
+      },
     );
     if (filePath && !uploadUrl) {
       throw new Error(
-        `Failed to create a presigned upload URL for UGC item: ${filePath}`
+        `Failed to create a presigned upload URL for UGC item: ${filePath}`,
       );
     } else if (filePath && uploadUrl) {
       const success = await remoteStorage.upload.call(
         this,
         uploadUrl,
-        filePath
+        filePath,
       );
       // TODO: This should be handled on the backend using R2 event notifications
       await this.convexClient.mutation(
-        api.userGeneratedContent.finishUGCUpload,
-        { success: success, ugcId: ugcId }
+        api.sdk.userGeneratedContent.finishUGCUpload,
+        { success: success, ugcId: ugcId },
       );
       if (!success) {
         throw new Error(`Failed to upload UGC item: ${filePath}`);
@@ -71,35 +71,35 @@ export async function updateUGCItem(
   title?: string,
   description?: string,
   visibility?: UGCVisibility,
-  filePath?: string
+  filePath?: string,
 ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
   const args = { ugcId, title, description, visibility, filePath };
 
   try {
     const { uploadUrl } = await this.convexClient.mutation(
-      api.userGeneratedContent.updateUGCItem,
+      api.sdk.userGeneratedContent.updateUGCItem,
       {
         ugcId,
         title,
         description,
         visibility,
         createPresignedUploadUrl: !!filePath,
-      }
+      },
     );
     if (filePath && !uploadUrl) {
       throw new Error(
-        `Failed to create a presigned upload URL for UGC item: ${filePath}`
+        `Failed to create a presigned upload URL for UGC item: ${filePath}`,
       );
     } else if (filePath && uploadUrl) {
       const success = await remoteStorage.upload.call(
         this,
         uploadUrl,
-        filePath
+        filePath,
       );
       // TODO: This should be handled on the backend using R2 event notifications
       await this.convexClient.mutation(
-        api.userGeneratedContent.finishUGCUpload,
-        { success: success, ugcId: ugcId }
+        api.sdk.userGeneratedContent.finishUGCUpload,
+        { success: success, ugcId: ugcId },
       );
       if (!success) {
         throw new Error(`Failed to upload UGC item: ${filePath}`);
@@ -124,19 +124,19 @@ export async function updateUGCItem(
 export async function downloadUGCItem(
   this: WavedashSDK,
   ugcId: Id<"userGeneratedContent">,
-  filePath: string
+  filePath: string,
 ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
   const args = { ugcId, filePath };
 
   try {
     const downloadUrl = await this.convexClient.query(
-      api.userGeneratedContent.getUGCItemDownloadUrl,
-      { ugcId: args.ugcId }
+      api.sdk.userGeneratedContent.getUGCItemDownloadUrl,
+      { ugcId: args.ugcId },
     );
     const success = await remoteStorage.download.call(
       this,
       downloadUrl,
-      filePath
+      filePath,
     );
     return {
       success: success,

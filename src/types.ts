@@ -11,35 +11,39 @@ import {
 
 // Extract types from the API
 export type LobbyVisibility =
-  PublicApiType["gameLobby"]["createAndJoinLobby"]["_args"]["visibility"];
-export type LobbyUser = FunctionReturnType<typeof api.gameLobby.lobbyUsers>[0];
-export type LobbyMessage = FunctionReturnType<
-  typeof api.gameLobby.lobbyMessages
+  PublicApiType["sdk"]["gameLobby"]["createAndJoinLobby"]["_args"]["visibility"];
+export type LobbyUser = FunctionReturnType<
+  typeof api.sdk.gameLobby.lobbyUsers
 >[0];
-export type Lobby = FunctionReturnType<typeof api.gameLobby.listAvailable>[0];
+export type LobbyMessage = FunctionReturnType<
+  typeof api.sdk.gameLobby.lobbyMessages
+>[0];
+export type Lobby = FunctionReturnType<
+  typeof api.sdk.gameLobby.listAvailable
+>[0];
 export type UGCType =
-  PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
+  PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
 export type UGCVisibility =
-  PublicApiType["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
+  PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
 export type LeaderboardSortOrder =
-  PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
+  PublicApiType["sdk"]["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
 export type LeaderboardDisplayType =
-  PublicApiType["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
+  PublicApiType["sdk"]["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
 export type Leaderboard = FunctionReturnType<
-  typeof api.leaderboards.getLeaderboard
+  typeof api.sdk.leaderboards.getLeaderboard
 >;
 export type LeaderboardEntries = FunctionReturnType<
-  typeof api.leaderboards.listEntriesAroundUser
+  typeof api.sdk.leaderboards.listEntriesAroundUser
 >["entries"];
 export type UpsertedLeaderboardEntry = FunctionReturnType<
-  typeof api.leaderboards.upsertLeaderboardEntry
+  typeof api.sdk.leaderboards.upsertLeaderboardEntry
 >["entry"] & {
   userId: Id<"users">;
   username: string;
 };
 
 export type P2PTurnCredentials = FunctionReturnType<
-  typeof api.turnCredentials.getOrCreate
+  typeof api.sdk.turnCredentials.getOrCreate
 >;
 
 // Type helper to get signal values as a union type
@@ -72,7 +76,7 @@ export interface EngineInstance {
   SendMessage(
     objectName: string,
     methodName: Signal,
-    value?: string | number | boolean
+    value?: string | number | boolean,
   ): void;
   // Standard Emscripten filesystem API: https://emscripten.org/docs/api_reference/Filesystem-API.html
   FS: {
@@ -80,7 +84,7 @@ export interface EngineInstance {
     writeFile(
       path: string,
       data: string | ArrayBufferView,
-      opts?: Record<string, any>
+      opts?: Record<string, any>,
     ): void;
     mkdirTree(path: string, mode?: number): void;
     syncfs(populate: boolean, callback?: (err: any) => void): void;

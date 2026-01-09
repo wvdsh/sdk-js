@@ -27,7 +27,7 @@ export class StatsManager {
   ensureLoaded(): void {
     if (!this.hasLoadedStats || !this.hasLoadedAchievements) {
       throw new Error(
-        "Stats and achievements not loaded, make sure to call requestStats() first"
+        "Stats and achievements not loaded, make sure to call requestStats() first",
       );
     }
   }
@@ -38,8 +38,8 @@ export class StatsManager {
         // One-time fetch for stats (local is source of truth)
         (async () => {
           const newStats = await this.sdk.convexClient.query(
-            api.gameAchievements.getMyStatsForGame,
-            {}
+            api.sdk.gameAchievements.getMyStatsForGame,
+            {},
           );
           this.hasLoadedStats = true;
           this.stats = unionBy(this.stats, newStats, "identifier");
@@ -47,21 +47,21 @@ export class StatsManager {
         // Subscription for achievements (server can unlock them)
         new Promise((resolve, reject) => {
           this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
-            api.gameAchievements.getMyAchievementsForGame,
+            api.sdk.gameAchievements.getMyAchievementsForGame,
             {},
             (achievements) => {
               this.hasLoadedAchievements = true;
               this.achievementIdentifiers = new Set([
                 ...this.achievementIdentifiers,
                 ...achievements.map(
-                  ({ achievement }) => achievement.identifier
+                  ({ achievement }) => achievement.identifier,
                 ),
               ]);
               resolve(undefined);
             },
             (error) => {
               reject(error);
-            }
+            },
           );
         }),
       ]);
@@ -84,7 +84,7 @@ export class StatsManager {
   private debouncedStoreStats = debounce(
     this.storeStatsInternal.bind(this),
     STORE_STATS_DEBOUNCE_MS,
-    { leading: true, trailing: true }
+    { leading: true, trailing: true },
   );
 
   storeStats(): boolean {
@@ -100,30 +100,30 @@ export class StatsManager {
       // Atomically capture and clear identifiers to avoid race conditions
       const statIdentifiersToStore = new Set(this.updatedStatIdentifiers);
       const achievementIdentifiersToStore = new Set(
-        this.updatedAchievementIdentifiers
+        this.updatedAchievementIdentifiers,
       );
 
       this.updatedStatIdentifiers.clear();
       this.updatedAchievementIdentifiers.clear();
 
       const updatedStats = this.stats.filter((stat) =>
-        statIdentifiersToStore.has(stat.identifier)
+        statIdentifiersToStore.has(stat.identifier),
       );
       const updatedAchievements = Array.from(
-        this.achievementIdentifiers
+        this.achievementIdentifiers,
       ).filter((achievement) => achievementIdentifiersToStore.has(achievement));
 
       await Promise.all([
         updatedStats.length > 0
           ? this.sdk.convexClient.mutation(
-              api.gameAchievements.setUserGameStats,
-              { stats: updatedStats }
+              api.sdk.gameAchievements.setUserGameStats,
+              { stats: updatedStats },
             )
           : Promise.resolve(),
         updatedAchievements.length > 0
           ? this.sdk.convexClient.mutation(
-              api.gameAchievements.setUserGameAchievements,
-              { achievements: updatedAchievements }
+              api.sdk.gameAchievements.setUserGameAchievements,
+              { achievements: updatedAchievements },
             )
           : Promise.resolve(),
       ]);
@@ -170,10 +170,10 @@ export class StatsManager {
 
   getPendingData(): { stats: Stats; achievements: string[] } | null {
     const pendingStats = this.stats.filter((stat) =>
-      this.updatedStatIdentifiers.has(stat.identifier)
+      this.updatedStatIdentifiers.has(stat.identifier),
     );
     const pendingAchievements = Array.from(this.achievementIdentifiers).filter(
-      (id) => this.updatedAchievementIdentifiers.has(id)
+      (id) => this.updatedAchievementIdentifiers.has(id),
     );
 
     if (pendingStats.length === 0 && pendingAchievements.length === 0) {

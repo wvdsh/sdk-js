@@ -52,7 +52,7 @@ export class LobbyManager {
 
   async createLobby(
     visibility: LobbyVisibility,
-    maxPlayers?: number
+    maxPlayers?: number,
   ): Promise<WavedashResponse<Id<"lobbies">>> {
     const args = {
       visibility: visibility,
@@ -61,8 +61,8 @@ export class LobbyManager {
 
     try {
       const lobbyId = await this.sdk.convexClient.mutation(
-        api.gameLobby.createAndJoinLobby,
-        args
+        api.sdk.gameLobby.createAndJoinLobby,
+        args,
       );
 
       this.subscribeToLobby(lobbyId);
@@ -97,12 +97,12 @@ export class LobbyManager {
    * @emits LOBBY_JOINED signal to the game engine
    */
   async joinLobby(
-    lobbyId: Id<"lobbies">
+    lobbyId: Id<"lobbies">,
   ): Promise<WavedashResponse<Id<"lobbies">>> {
     const args = { lobbyId };
 
     try {
-      await this.sdk.convexClient.mutation(api.gameLobby.joinLobby, args);
+      await this.sdk.convexClient.mutation(api.sdk.gameLobby.joinLobby, args);
 
       this.subscribeToLobby(lobbyId);
       // P2P will be initialized separately when processUserUpdates receives the lobby users
@@ -135,7 +135,7 @@ export class LobbyManager {
   getLobbyUsers(lobbyId: Id<"lobbies">): LobbyUser[] {
     if (this.lobbyId !== lobbyId) {
       this.sdk.logger.error(
-        "Must be a member of the lobby to access user list"
+        "Must be a member of the lobby to access user list",
       );
       return [];
     }
@@ -145,7 +145,7 @@ export class LobbyManager {
   getHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
     if (this.lobbyId !== lobbyId) {
       this.sdk.logger.error(
-        "Must be a member of the lobby to access the host ID"
+        "Must be a member of the lobby to access the host ID",
       );
       return null;
     }
@@ -202,7 +202,7 @@ export class LobbyManager {
   }
 
   async leaveLobby(
-    lobbyId: Id<"lobbies">
+    lobbyId: Id<"lobbies">,
   ): Promise<WavedashResponse<Id<"lobbies">>> {
     const args = { lobbyId };
 
@@ -211,7 +211,7 @@ export class LobbyManager {
       this.unsubscribeFromCurrentLobby();
 
       // Now we can leave the lobby
-      await this.sdk.convexClient.mutation(api.gameLobby.leaveLobby, args);
+      await this.sdk.convexClient.mutation(api.sdk.gameLobby.leaveLobby, args);
 
       this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
         lobbyId,
@@ -238,13 +238,13 @@ export class LobbyManager {
     const args = {};
     try {
       const lobbies = await this.sdk.convexClient.query(
-        api.gameLobby.listAvailable,
-        args
+        api.sdk.gameLobby.listAvailable,
+        args,
       );
 
       // Filter out lobbies that are being deleted
       const filteredLobbies = lobbies.filter(
-        (lobby) => !this.maybeBeingDeletedLobbyIds.has(lobby.lobbyId)
+        (lobby) => !this.maybeBeingDeletedLobbyIds.has(lobby.lobbyId),
       );
 
       for (const lobby of filteredLobbies) {
@@ -274,13 +274,13 @@ export class LobbyManager {
     }
     if (message.length > LOBBY_MESSAGE_MAX_LENGTH) {
       this.sdk.logger.error(
-        `Message cannot be longer than ${LOBBY_MESSAGE_MAX_LENGTH} characters`
+        `Message cannot be longer than ${LOBBY_MESSAGE_MAX_LENGTH} characters`,
       );
       return false;
     }
     try {
       // Fire and forget, not awaiting the result
-      this.sdk.convexClient.mutation(api.gameLobby.sendMessage, args);
+      this.sdk.convexClient.mutation(api.sdk.gameLobby.sendMessage, args);
     } catch (error) {
       this.sdk.logger.error(`Error sending lobby message: ${error}`);
       return false;
@@ -306,25 +306,25 @@ export class LobbyManager {
 
     // Subscribe to lobby messages
     this.unsubscribeLobbyMessages = this.sdk.convexClient.onUpdate(
-      api.gameLobby.lobbyMessages,
+      api.sdk.gameLobby.lobbyMessages,
       { lobbyId },
-      this.processMessageUpdates
+      this.processMessageUpdates,
     );
 
     this.unsubscribeLobbyData = this.sdk.convexClient.onUpdate(
-      api.gameLobby.getLobbyMetadata,
+      api.sdk.gameLobby.getLobbyMetadata,
       { lobbyId },
       (lobbyMetadata: Record<string, any>) => {
         this.lobbyMetadata = lobbyMetadata;
         this.sdk.notifyGame(Signals.LOBBY_DATA_UPDATED, lobbyMetadata);
-      }
+      },
     );
 
     // Subscribe to lobby users
     this.unsubscribeLobbyUsers = this.sdk.convexClient.onUpdate(
-      api.gameLobby.lobbyUsers,
+      api.sdk.gameLobby.lobbyUsers,
       { lobbyId },
-      this.processUserUpdates
+      this.processUserUpdates,
     );
 
     this.sdk.logger.debug("Subscribed to lobby:", lobbyId);
@@ -380,7 +380,7 @@ export class LobbyManager {
   private processPendingLobbyDataUpdates(): void {
     this.sdk.logger.debug("Bulk updating lobby metadata:", this.lobbyMetadata);
     this.sdk.convexClient
-      .mutation(api.gameLobby.setLobbyMetadata, {
+      .mutation(api.sdk.gameLobby.setLobbyMetadata, {
         lobbyId: this.lobbyId!,
         updates: this.lobbyMetadata,
       })
@@ -459,7 +459,7 @@ export class LobbyManager {
         // If only one user left, disconnect all P2P connections
         this.sdk.p2pManager.disconnectP2P();
         this.sdk.logger.debug(
-          "Only one user in lobby, P2P connections disconnected"
+          "Only one user in lobby, P2P connections disconnected",
         );
         return;
       }
@@ -473,16 +473,16 @@ export class LobbyManager {
       // Initialize or update P2P - the P2P manager handles both cases
       const result = await this.sdk.p2pManager.initializeP2PForCurrentLobby(
         this.lobbyId,
-        wavedashUsers
+        wavedashUsers,
       );
       if (!result.success) {
         this.sdk.logger.error(
           "Failed to initialize/update P2P connections:",
-          result.message
+          result.message,
         );
       } else {
         this.sdk.logger.debug(
-          `P2P connections updated for lobby ${this.lobbyId} with ${wavedashUsers.length} users`
+          `P2P connections updated for lobby ${this.lobbyId} with ${wavedashUsers.length} users`,
         );
       }
     } catch (error) {
