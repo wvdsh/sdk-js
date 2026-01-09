@@ -858,6 +858,13 @@ export class P2PManager {
         return false;
       }
 
+      if (payloadSize <= 0) {
+        this.sdk.logger.error(
+          `P2P payloadSize must be greater than 0, received ${payloadSize}`
+        );
+        return false;
+      }
+
       if (payloadSize > this.MAX_PAYLOAD_SIZE) {
         this.sdk.logger.error(
           `P2P payload too large: ${payloadSize} bytes exceeds max ${this.MAX_PAYLOAD_SIZE} bytes`
@@ -1241,9 +1248,16 @@ export class P2PManager {
   }
 
   // Drain all messages from a channel in one call (reduces WASM↔JS boundary crossings)
+  // Only intended to be used in game engine context to give raw binary packets to the game engine
+  // JS games should just call readMessageFromChannel repeatedly to get decoded P2PMessages
   // Format: [size:4][msg:N][size:4][msg:N]... (tightly packed)
   // Game iterates by reading size, advancing by 4+size, repeat until end of buffer
-  drainChannel(appChannel: number): Uint8Array {
+  drainChannelToBuffer(appChannel: number, buffer?: Uint8Array): Uint8Array {
+    if (!this.sdk.engineInstance) {
+      throw new Error(
+        "drainChannelToBuffer should only be called in game engine context, not in JS. Use readMessageFromChannel instead."
+      );
+    }
     const messages: Uint8Array[] = [];
     const queue = this.channelQueues.get(appChannel);
     if (!queue) {
@@ -1265,7 +1279,7 @@ export class P2PManager {
       return new Uint8Array(0);
     }
 
-    const result = new Uint8Array(totalSize);
+    const result = buffer ?? new Uint8Array(totalSize);
     const resultView = new DataView(result.buffer);
     let writePos = 0;
 

@@ -622,6 +622,19 @@ class WavedashSDK {
   }
 
   /**
+   * Drain all messages from a P2P channel into a buffer
+   * Only intended to be used in game engine context to give raw binary packets to the game engine
+   * JS games should just call readMessageFromChannel repeatedly to get decoded P2PMessages
+   * @param appChannel - The channel to drain
+   * @param buffer - The buffer to drain the messages into. If not provided, a new buffer will be created.
+   * @returns A Uint8Array containing each message in a tightly packed format: [size:4][msg:N][size:4][msg:N]...
+   */
+  drainP2PChannelToBuffer(appChannel: number, buffer?: Uint8Array): Uint8Array {
+    this.ensureReady();
+    return this.p2pManager.drainChannelToBuffer(appChannel, buffer);
+  }
+
+  /**
    * Check if a specific peer is ready for messaging
    * @param userId - The peer user ID to check
    */
