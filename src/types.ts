@@ -6,7 +6,7 @@ import {
   api,
   GAME_ENGINE,
   P2P_SIGNALING_MESSAGE_TYPE,
-  PublicApiType,
+  PublicApiType
 } from "@wvdsh/types";
 
 // Extract types from the API
@@ -76,18 +76,18 @@ export interface EngineInstance {
   SendMessage(
     objectName: string,
     methodName: Signal,
-    value?: string | number | boolean,
+    value?: string | number | boolean
   ): void;
   // Standard Emscripten filesystem API: https://emscripten.org/docs/api_reference/Filesystem-API.html
   FS: {
-    readFile(path: string, opts?: Record<string, any>): string | Uint8Array;
+    readFile(path: string, opts?: Record<string, unknown>): string | Uint8Array;
     writeFile(
       path: string,
       data: string | ArrayBufferView,
-      opts?: Record<string, any>,
+      opts?: Record<string, unknown>
     ): void;
     mkdirTree(path: string, mode?: number): void;
-    syncfs(populate: boolean, callback?: (err: any) => void): void;
+    syncfs(populate: boolean, callback?: (err: unknown) => void): void;
     analyzePath(path: string): { exists: boolean };
     // ... other functions
   };
@@ -100,7 +100,7 @@ export interface WavedashResponse<T> {
   data: T | null;
   // Return the original args that were passed to the JS SDK so caller can reference them
   // TODO: Caller shouldn't rely on this, remove this field
-  args: Record<string, any>;
+  args: Record<string, unknown>;
   // Error message if success is false
   message?: string;
   // TODO: errorCode?
@@ -136,7 +136,7 @@ export interface P2PSignalingMessage {
   type: (typeof P2P_SIGNALING_MESSAGE_TYPE)[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
   fromUserId?: Id<"users">; // Primary identifier for sender
   toUserId: Id<"users">; // Primary identifier for recipient
-  data: any;
+  data: unknown;
 }
 
 // P2P Configuration

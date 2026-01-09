@@ -31,13 +31,13 @@ import type {
   P2PMessage,
   LobbyUser,
   Signal,
-  Lobby,
+  Lobby
 } from "./types";
 import {
   GAME_ENGINE,
   IFRAME_MESSAGE_TYPE,
   SDKConfig,
-  SDKUser,
+  SDKUser
 } from "@wvdsh/types";
 
 class WavedashSDK {
@@ -67,7 +67,6 @@ class WavedashSDK {
     const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
     convexClient.setAuth(() => this.getAuthToken());
     this.convexClient = convexClient;
-    // @ts-ignore will exist in a separate PR
     this.convexHttpUrl = sdkConfig.convexHttpUrl;
     this.wavedashUser = sdkConfig.wavedashUser;
     this.gameCloudId = sdkConfig.gameCloudId;
@@ -104,10 +103,10 @@ class WavedashSDK {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${this.gameplayJwt}`,
+        Authorization: `Bearer ${this.gameplayJwt}`
       },
       body: JSON.stringify({ _type: "warmup" }),
-      credentials: "include",
+      credentials: "include"
     }).catch(() => {});
 
     const endGameplaySession = (
@@ -133,8 +132,8 @@ class WavedashSDK {
         credentials: "include",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${this.gameplayJwt}`,
-        },
+          Authorization: `Bearer ${this.gameplayJwt}`
+        }
       });
     };
 
@@ -522,7 +521,7 @@ class WavedashSDK {
       return this.formatResponse({
         success: false,
         data: false,
-        args: {},
+        args: {}
       });
     }
     return this.formatResponse(await this.statsManager.requestStats());
@@ -685,13 +684,13 @@ class WavedashSDK {
     return this.lobbyManager.getHostId(lobbyId);
   }
 
-  getLobbyData(lobbyId: Id<"lobbies">, key: string): string {
+  getLobbyData(lobbyId: Id<"lobbies">, key: string): unknown {
     this.ensureReady();
     this.logger.debug(`Getting lobby data: ${key} for lobby: ${lobbyId}`);
     return this.lobbyManager.getLobbyData(lobbyId, key);
   }
 
-  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: any): boolean {
+  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: unknown): boolean {
     this.ensureReady();
     this.logger.debug(`Setting lobby data: ${key} to ${value}`);
     return this.lobbyManager.setLobbyData(lobbyId, key, value);
@@ -722,7 +721,7 @@ class WavedashSDK {
    * @param data Game data to send to the backend
    * @returns true if the presence was updated successfully
    */
-  async updateUserPresence(data?: Record<string, any>): Promise<boolean> {
+  async updateUserPresence(data?: Record<string, unknown>): Promise<boolean> {
     this.ensureReady();
     const result = await this.heartbeatManager.updateUserPresence(data);
     return result;
@@ -782,7 +781,7 @@ class WavedashSDK {
 
   updateLoadProgressZeroToOne(progress: number) {
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE, {
-      progress,
+      progress
     });
   }
 
@@ -812,7 +811,7 @@ export async function setupWavedashSDK(): Promise<WavedashSDK> {
   // Pass along iframeManager to the SDK so subclass managers can use it to post messages to the parent
   const sdk = new WavedashSDK(sdkConfig);
 
-  (window as any).WavedashJS = sdk;
+  (window as unknown as { WavedashJS: WavedashSDK }).WavedashJS = sdk;
 
   return sdk;
 }

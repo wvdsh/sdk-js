@@ -47,14 +47,14 @@ function getRemoteStorageUrl(this: WavedashSDK, filePath: string): string {
 async function uploadFromIndexedDb(
   this: WavedashSDK,
   presignedUploadUrl: string,
-  indexedDBKey: string,
+  indexedDBKey: string
 ): Promise<boolean> {
   try {
     // TODO: Copying Godot's convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
     const record = await indexedDBUtils.getRecordFromIndexedDB(
       "/userfs",
       "FILE_DATA",
-      indexedDBKey,
+      indexedDBKey
     );
     if (!record) {
       this.logger.error(`File not found in IndexedDB: ${indexedDBKey}`);
@@ -63,7 +63,7 @@ async function uploadFromIndexedDb(
     const blob = indexedDBUtils.toBlobFromIndexedDBValue(record);
     const response = await fetch(presignedUploadUrl, {
       method: "PUT",
-      body: blob,
+      body: blob
       // credentials not needed for presigned upload URL
     });
     return response.ok;
@@ -76,7 +76,7 @@ async function uploadFromIndexedDb(
 async function uploadFromFS(
   this: WavedashSDK,
   presignedUploadUrl: string,
-  filePath: string,
+  filePath: string
 ): Promise<boolean> {
   try {
     const exists = this.engineInstance!.FS.analyzePath(filePath).exists;
@@ -84,13 +84,13 @@ async function uploadFromFS(
       throw new Error(`File not found in FS: ${filePath}`);
     }
     const data = this.engineInstance!.FS.readFile(
-      filePath,
+      filePath
     ) as Uint8Array<ArrayBuffer>;
     // Convert to Blob for Safari compatibility
     const blob = new Blob([data], { type: "application/octet-stream" });
     const response = await fetch(presignedUploadUrl, {
       method: "PUT",
-      body: blob,
+      body: blob
       // credentials not needed for presigned upload URL
     });
     return response.ok;
@@ -105,7 +105,7 @@ async function uploadFromFS(
 export async function upload(
   this: WavedashSDK,
   presignedUploadUrl: string,
-  filePath: string,
+  filePath: string
 ): Promise<boolean> {
   this.logger.debug(`Uploading ${filePath} to: ${presignedUploadUrl}`);
   if (this.engineInstance && !this.engineInstance.FS) {
@@ -120,7 +120,7 @@ export async function upload(
     success = await uploadFromIndexedDb.call(
       this,
       presignedUploadUrl,
-      filePath,
+      filePath
     );
   }
   return success;
@@ -130,7 +130,7 @@ export async function upload(
 export async function download(
   this: WavedashSDK,
   url: string,
-  filePath: string,
+  filePath: string
 ): Promise<boolean> {
   this.logger.debug(`Downloading ${filePath} from: ${url}`);
   if (this.engineInstance && !this.engineInstance.FS) {
@@ -140,11 +140,11 @@ export async function download(
 
   const response = await fetch(url, {
     credentials: "include",
-    method: "GET",
+    method: "GET"
   });
   if (!response.ok) {
     this.logger.error(
-      `Failed to download remote file: ${response.status} (${response.statusText})`,
+      `Failed to download remote file: ${response.status} (${response.statusText})`
     );
     return false;
   }
@@ -161,7 +161,7 @@ export async function download(
       if (dirPath) {
         try {
           this.engineInstance.FS.mkdirTree(dirPath);
-        } catch (error) {
+        } catch (_error) {
           // Directory might already exist, which is fine
         }
       }
@@ -173,14 +173,14 @@ export async function download(
         "/userfs",
         "FILE_DATA",
         filePath,
-        dataArray,
+        dataArray
       );
     }
     this.logger.debug(`Successfully saved to: ${filePath}`);
     return true;
   } catch (error) {
     this.logger.error(
-      `Failed to save file ${filePath}: ${error instanceof Error ? error.message : String(error)}`,
+      `Failed to save file ${filePath}: ${error instanceof Error ? error.message : String(error)}`
     );
     return false;
   }
@@ -195,20 +195,20 @@ export async function download(
  */
 export async function uploadRemoteFile(
   this: WavedashSDK,
-  filePath: string,
+  filePath: string
 ): Promise<WavedashResponse<string>> {
   const args = { filePath };
 
   try {
     const uploadUrl = await this.convexClient.mutation(
       api.sdk.remoteFileStorage.getUploadUrl,
-      { path: args.filePath },
+      { path: args.filePath }
     );
     const success = await upload.call(this, uploadUrl, args.filePath);
     return {
       success: success,
       data: args.filePath,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to upload remote file: ${error}`);
@@ -216,7 +216,7 @@ export async function uploadRemoteFile(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -230,7 +230,7 @@ export async function uploadRemoteFile(
  */
 export async function downloadRemoteFile(
   this: WavedashSDK,
-  filePath: string,
+  filePath: string
 ): Promise<WavedashResponse<string>> {
   const args = { filePath };
 
@@ -240,7 +240,7 @@ export async function downloadRemoteFile(
     return {
       success: success,
       data: args.filePath,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to download remote file: ${error}`);
@@ -248,7 +248,7 @@ export async function downloadRemoteFile(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -262,7 +262,7 @@ export async function downloadRemoteFile(
  */
 export async function listRemoteDirectory(
   this: WavedashSDK,
-  path: string,
+  path: string
 ): Promise<WavedashResponse<RemoteFileMetadata[]>> {
   const args = { path };
 
@@ -270,19 +270,19 @@ export async function listRemoteDirectory(
     const url = getRemoteStorageUrl.call(this, path) + "?list=true";
     const response = await fetch(url, {
       credentials: "include",
-      method: "GET",
+      method: "GET"
     });
     if (!response.ok) {
       throw new Error(`${response.status} (${response.statusText})`);
     }
     const responseJson = await response.json();
     const files = responseJson.files.filter(
-      (file: RemoteFileMetadata) => !file.key.endsWith("/"),
+      (file: RemoteFileMetadata) => !file.key.endsWith("/")
     );
     return {
       success: true,
       data: files,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to list directory: ${error}`);
@@ -290,14 +290,14 @@ export async function listRemoteDirectory(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
 
 export async function downloadRemoteDirectory(
   this: WavedashSDK,
-  path: string,
+  path: string
 ): Promise<WavedashResponse<string>> {
   const args = { path };
 
@@ -315,7 +315,7 @@ export async function downloadRemoteDirectory(
       const success = await download.call(
         this,
         url,
-        normalizedPath + file.name,
+        normalizedPath + file.name
       );
       return { fileName: file.name, success };
     });
@@ -326,13 +326,13 @@ export async function downloadRemoteDirectory(
     const failedDownloads = downloadResults.filter((result) => !result.success);
     if (failedDownloads.length > 0) {
       throw new Error(
-        `Failed to download ${failedDownloads.length} files: ${failedDownloads.map((f) => f.fileName).join(", ")}`,
+        `Failed to download ${failedDownloads.length} files: ${failedDownloads.map((f) => f.fileName).join(", ")}`
       );
     }
     return {
       success: true,
       data: normalizedPath,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to download user directory: ${error}`);
@@ -340,7 +340,7 @@ export async function downloadRemoteDirectory(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }

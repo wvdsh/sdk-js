@@ -53,12 +53,12 @@ export class HeartbeatManager {
    * @param data - Data to send to the backend
    * @returns true if the presence was updated successfully
    */
-  async updateUserPresence(data?: Record<string, any>): Promise<boolean> {
+  async updateUserPresence(data?: Record<string, unknown>): Promise<boolean> {
     try {
       // Add a default value to guarantee that the presence is updated
       const dataToSend = data ?? { forceUpdate: true };
       await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
-        data: dataToSend,
+        data: dataToSend
       });
       return true;
     } catch (error) {
@@ -81,7 +81,7 @@ export class HeartbeatManager {
         isConnected: this.isConnected,
         hasEverConnected: state.hasEverConnected,
         connectionCount: state.connectionCount,
-        connectionRetries: state.connectionRetries,
+        connectionRetries: state.connectionRetries
       };
 
       // Handle connection state changes
@@ -94,7 +94,7 @@ export class HeartbeatManager {
         // First tick of disconnection - notify reconnecting
         this.disconnectedAt = Date.now();
         this.sdk.logger.warn(
-          "Backend disconnected - attempting to reconnect...",
+          "Backend disconnected - attempting to reconnect..."
         );
         this.sdk.notifyGame(Signals.BACKEND_RECONNECTING, connection);
       } else if (!this.isConnected && !wasConnected) {

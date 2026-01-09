@@ -48,6 +48,7 @@ The SDK follows a class-based architecture with dual-mode operation:
 ### API Integration
 
 The SDK integrates with a Convex backend through:
+
 - **Queries**: Read operations (getting leaderboards, user data, etc.)
 - **Mutations**: Write operations (creating lobbies, posting to leaderboard, etc.)
 - **Subscriptions**: Real-time updates (lobby messages, lobby users)
@@ -55,21 +56,25 @@ The SDK integrates with a Convex backend through:
 ## Key Features
 
 ### Leaderboards
+
 - Get/create leaderboards with different sort methods and display types
 - Submit scores with metadata and UGC attachments
 - Query leaderboard entries and rankings
 
 ### Game Lobbies
+
 - Create and join multiplayer lobbies
 - Real-time messaging within lobbies
 - Automatic subscription management for lobby updates
 
 ### User-Generated Content (UGC)
+
 - Upload and manage user-created content
 - Attach UGC to leaderboard entries
 - Control visibility and access permissions
 
 ### P2P Networking
+
 - WebRTC-based peer-to-peer connections between lobby members autotriggered when users join lobby
 - Convex backend handles initial WebRTC signaling (offer/answer/ICE exchange)
 - Reliable and unreliable data channels for different message types
@@ -77,6 +82,7 @@ The SDK integrates with a Convex backend through:
 - TURN server fallback for NAT traversal when direct connections fail
 
 Later:
+
 1. Timeout connections that are unused for long enough, the next sendMessage would trigger a new connection to be made
 2. Allow different P2P network topology (mesh, star, relay)
 3. Don't auto-connect every single lobby member, generate P2P connection on the fly when game first tries to send a packet to a user
@@ -85,6 +91,7 @@ Later:
 6. Look into more performant options for sharing zero-copy data between engine and JS, current set up requires a few mandatory data copies
 
 ### Dual Platform Support
+
 - **Web**: Direct JavaScript object returns
 - **Game Engines**: JSON string communication via return values and `SendMessage` notifications
 
@@ -98,6 +105,7 @@ Later:
 ## Installation & Distribution
 
 The package is distributed via GitHub Packages Registry and requires authentication:
+
 - Published to `@wvdsh:registry=https://npm.pkg.github.com`
 - Requires `NODE_AUTH_TOKEN` environment variable for installation
 - Version managed in `package.json` (currently 0.0.4)

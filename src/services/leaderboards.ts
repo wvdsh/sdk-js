@@ -11,7 +11,7 @@ import type {
   Leaderboard,
   LeaderboardEntries,
   WavedashResponse,
-  UpsertedLeaderboardEntry,
+  UpsertedLeaderboardEntry
 } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/types";
@@ -25,7 +25,10 @@ class LeaderboardCache {
   update(leaderboardId: Id<"leaderboards">, totalEntries: number): void {
     const cachedLeaderboard = this.cache.get(leaderboardId);
     if (cachedLeaderboard && typeof totalEntries === "number") {
-      this.cache.set(leaderboardId, { ...cachedLeaderboard, totalEntries });
+      this.cache.set(leaderboardId, {
+        ...cachedLeaderboard,
+        totalEntries
+      });
     }
   }
 
@@ -43,20 +46,20 @@ const leaderboardCache = new LeaderboardCache();
 
 export async function getLeaderboard(
   this: WavedashSDK,
-  name: string,
+  name: string
 ): Promise<WavedashResponse<Leaderboard>> {
   const args = { name };
 
   try {
     const leaderboard = await this.convexClient.query(
       api.sdk.leaderboards.getLeaderboard,
-      args,
+      args
     );
     leaderboardCache.set(leaderboard.id, leaderboard);
     return {
       success: true,
       data: leaderboard,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to get leaderboard ${name}`, error);
@@ -64,7 +67,7 @@ export async function getLeaderboard(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -73,20 +76,20 @@ export async function getOrCreateLeaderboard(
   this: WavedashSDK,
   name: string,
   sortOrder: LeaderboardSortOrder,
-  displayType: LeaderboardDisplayType,
+  displayType: LeaderboardDisplayType
 ): Promise<WavedashResponse<Leaderboard>> {
   const args = { name, sortOrder, displayType };
 
   try {
     const leaderboard = await this.convexClient.mutation(
       api.sdk.leaderboards.getOrCreateLeaderboard,
-      args,
+      args
     );
     leaderboardCache.set(leaderboard.id, leaderboard);
     return {
       success: true,
       data: leaderboard,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Failed to get or create leaderboard ${name}`, error);
@@ -94,14 +97,14 @@ export async function getOrCreateLeaderboard(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
 
 export function getLeaderboardEntryCount(
   this: WavedashSDK,
-  leaderboardId: Id<"leaderboards">,
+  leaderboardId: Id<"leaderboards">
 ): number {
   const cachedLeaderboard = leaderboardCache.get(leaderboardId);
   return cachedLeaderboard ? cachedLeaderboard.totalEntries : -1;
@@ -109,14 +112,14 @@ export function getLeaderboardEntryCount(
 
 export async function getMyLeaderboardEntries(
   this: WavedashSDK,
-  leaderboardId: Id<"leaderboards">,
+  leaderboardId: Id<"leaderboards">
 ): Promise<WavedashResponse<LeaderboardEntries>> {
   const args = { leaderboardId };
 
   try {
     const result = await this.convexClient.query(
       api.sdk.leaderboards.getMyLeaderboardEntry,
-      args,
+      args
     );
     if (result && result.totalEntries) {
       const totalEntries = result.totalEntries;
@@ -126,7 +129,7 @@ export async function getMyLeaderboardEntries(
       ? {
           ...result.entry,
           userId: this.wavedashUser.id,
-          username: this.wavedashUser.username,
+          username: this.wavedashUser.username
         }
       : null;
 
@@ -137,18 +140,18 @@ export async function getMyLeaderboardEntries(
     return {
       success: true,
       data: entries,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(
       `Failed to get my leaderboard entries for leaderboard ${leaderboardId}`,
-      error,
+      error
     );
     return {
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -157,14 +160,14 @@ export async function listLeaderboardEntriesAroundUser(
   this: WavedashSDK,
   leaderboardId: Id<"leaderboards">,
   countAhead: number,
-  countBehind: number,
+  countBehind: number
 ): Promise<WavedashResponse<LeaderboardEntries>> {
   const args = { leaderboardId, countAhead, countBehind };
 
   try {
     const result = await this.convexClient.query(
       api.sdk.leaderboards.listEntriesAroundUser,
-      args,
+      args
     );
     if (result && result.totalEntries) {
       const totalEntries = result.totalEntries;
@@ -173,18 +176,18 @@ export async function listLeaderboardEntriesAroundUser(
     return {
       success: true,
       data: result.entries,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(
       `Failed to list leaderboard entries around user for leaderboard ${leaderboardId}`,
-      error,
+      error
     );
     return {
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -193,14 +196,14 @@ export async function listLeaderboardEntries(
   this: WavedashSDK,
   leaderboardId: Id<"leaderboards">,
   offset: number,
-  limit: number,
+  limit: number
 ): Promise<WavedashResponse<LeaderboardEntries>> {
   const args = { leaderboardId, offset, limit };
 
   try {
     const result = await this.convexClient.query(
       api.sdk.leaderboards.listEntries,
-      args,
+      args
     );
     if (result && result.totalEntries) {
       const totalEntries = result.totalEntries;
@@ -209,18 +212,18 @@ export async function listLeaderboardEntries(
     return {
       success: true,
       data: result.entries,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(
       `Failed to list leaderboard entries for leaderboard ${leaderboardId}`,
-      error,
+      error
     );
     return {
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -230,14 +233,14 @@ export async function uploadLeaderboardScore(
   leaderboardId: Id<"leaderboards">,
   score: number,
   keepBest: boolean,
-  ugcId?: Id<"userGeneratedContent">,
+  ugcId?: Id<"userGeneratedContent">
 ): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
   const args = { leaderboardId, score, keepBest, ugcId };
 
   try {
     const result = await this.convexClient.mutation(
       api.sdk.leaderboards.upsertLeaderboardEntry,
-      args,
+      args
     );
     if (result && result.totalEntries) {
       const totalEntries = result.totalEntries;
@@ -246,24 +249,24 @@ export async function uploadLeaderboardScore(
     const entry = {
       ...result.entry,
       userId: this.wavedashUser.id,
-      username: this.wavedashUser.username,
+      username: this.wavedashUser.username
     };
 
     return {
       success: true,
       data: entry,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(
       `Failed to upload leaderboard score for leaderboard ${leaderboardId}`,
-      error,
+      error
     );
     return {
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }

@@ -15,7 +15,7 @@ export async function createUGCItem(
   title?: string,
   description?: string,
   visibility?: UGCVisibility,
-  filePath?: string,
+  filePath?: string
 ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
   const args = { ugcType, title, description, visibility, filePath };
 
@@ -27,23 +27,23 @@ export async function createUGCItem(
         title,
         description,
         visibility,
-        createPresignedUploadUrl: !!filePath,
-      },
+        createPresignedUploadUrl: !!filePath
+      }
     );
     if (filePath && !uploadUrl) {
       throw new Error(
-        `Failed to create a presigned upload URL for UGC item: ${filePath}`,
+        `Failed to create a presigned upload URL for UGC item: ${filePath}`
       );
     } else if (filePath && uploadUrl) {
       const success = await remoteStorage.upload.call(
         this,
         uploadUrl,
-        filePath,
+        filePath
       );
       // TODO: This should be handled on the backend using R2 event notifications
       await this.convexClient.mutation(
         api.sdk.userGeneratedContent.finishUGCUpload,
-        { success: success, ugcId: ugcId },
+        { success: success, ugcId: ugcId }
       );
       if (!success) {
         throw new Error(`Failed to upload UGC item: ${filePath}`);
@@ -52,7 +52,7 @@ export async function createUGCItem(
     return {
       success: true,
       data: ugcId,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Error creating UGC item: ${error}`);
@@ -60,7 +60,7 @@ export async function createUGCItem(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -71,7 +71,7 @@ export async function updateUGCItem(
   title?: string,
   description?: string,
   visibility?: UGCVisibility,
-  filePath?: string,
+  filePath?: string
 ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
   const args = { ugcId, title, description, visibility, filePath };
 
@@ -83,23 +83,23 @@ export async function updateUGCItem(
         title,
         description,
         visibility,
-        createPresignedUploadUrl: !!filePath,
-      },
+        createPresignedUploadUrl: !!filePath
+      }
     );
     if (filePath && !uploadUrl) {
       throw new Error(
-        `Failed to create a presigned upload URL for UGC item: ${filePath}`,
+        `Failed to create a presigned upload URL for UGC item: ${filePath}`
       );
     } else if (filePath && uploadUrl) {
       const success = await remoteStorage.upload.call(
         this,
         uploadUrl,
-        filePath,
+        filePath
       );
       // TODO: This should be handled on the backend using R2 event notifications
       await this.convexClient.mutation(
         api.sdk.userGeneratedContent.finishUGCUpload,
-        { success: success, ugcId: ugcId },
+        { success: success, ugcId: ugcId }
       );
       if (!success) {
         throw new Error(`Failed to upload UGC item: ${filePath}`);
@@ -108,7 +108,7 @@ export async function updateUGCItem(
     return {
       success: true,
       data: ugcId,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Error updating UGC item: ${error}`);
@@ -116,7 +116,7 @@ export async function updateUGCItem(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -124,24 +124,24 @@ export async function updateUGCItem(
 export async function downloadUGCItem(
   this: WavedashSDK,
   ugcId: Id<"userGeneratedContent">,
-  filePath: string,
+  filePath: string
 ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
   const args = { ugcId, filePath };
 
   try {
     const downloadUrl = await this.convexClient.query(
       api.sdk.userGeneratedContent.getUGCItemDownloadUrl,
-      { ugcId: args.ugcId },
+      { ugcId: args.ugcId }
     );
     const success = await remoteStorage.download.call(
       this,
       downloadUrl,
-      filePath,
+      filePath
     );
     return {
       success: success,
       data: args.ugcId,
-      args: args,
+      args: args
     };
   } catch (error) {
     this.logger.error(`Error downloading UGC item: ${error}`);
@@ -149,7 +149,7 @@ export async function downloadUGCItem(
       success: false,
       data: null,
       args: args,
-      message: error instanceof Error ? error.message : String(error),
+      message: error instanceof Error ? error.message : String(error)
     };
   }
 }

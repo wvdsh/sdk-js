@@ -2,6 +2,16 @@
  * Utility functions to interact with IndexedDB
  */
 
+// IndexedDB can return various shapes depending on how data was stored
+type IndexedDBValue =
+  | { contents: ArrayBuffer | Uint8Array | Int8Array }
+  | { data: ArrayBuffer }
+  | { blob: Blob }
+  | Blob
+  | ArrayBuffer
+  | Uint8Array
+  | Int8Array;
+
 export async function writeToIndexedDB(
   dbName: string,
   storeName: string,
@@ -22,7 +32,7 @@ export async function writeToIndexedDB(
       const value = {
         contents: data,
         timestamp: Date.now(),
-        mode: 33206, // Standard file permissions (rw-rw-rw-)
+        mode: 33206 // Standard file permissions (rw-rw-rw-)
       };
 
       const putReq = store.put(value, key);
@@ -37,7 +47,7 @@ export async function getRecordFromIndexedDB(
   dbName: string,
   storeName: string,
   key: string
-): Promise<Record<string, any> | null> {
+): Promise<IndexedDBValue | null> {
   return new Promise((resolve, reject) => {
     const openReq = indexedDB.open(dbName);
     openReq.onerror = () => reject(openReq.error);
@@ -55,30 +65,30 @@ export async function getRecordFromIndexedDB(
   });
 }
 
-export function toBlobFromIndexedDBValue(value: any): Blob {
+export function toBlobFromIndexedDBValue(value: IndexedDBValue): Blob {
   if (value == null) throw new Error("File not found in IndexedDB");
   // Common IDBFS shapes:
   // - { contents: ArrayBuffer } or { contents: Uint8Array } or { contents: Int8Array }
   // - Blob
   // - ArrayBuffer / Uint8Array / Int8Array
-  if (value.contents != null) {
+  if ("contents" in value && value.contents != null) {
     const buf =
       value.contents instanceof Uint8Array ||
       value.contents instanceof Int8Array
         ? value.contents
         : new Uint8Array(value.contents);
-    return new Blob([buf], { type: "application/octet-stream" });
+    return new Blob([buf as BlobPart], { type: "application/octet-stream" });
   }
   if (value instanceof Blob) return value;
   if (value instanceof Uint8Array || value instanceof Int8Array)
     return new Blob([value as unknown as BlobPart], {
-      type: "application/octet-stream",
+      type: "application/octet-stream"
     });
   if (value instanceof ArrayBuffer)
     return new Blob([value], { type: "application/octet-stream" });
   // Fallback for shapes like { data: ArrayBuffer } or { blob: Blob }
-  if (value.data instanceof ArrayBuffer)
+  if ("data" in value && value.data instanceof ArrayBuffer)
     return new Blob([value.data], { type: "application/octet-stream" });
-  if (value.blob instanceof Blob) return value.blob;
+  if ("blob" in value && value.blob instanceof Blob) return value.blob;
   throw new Error("Unrecognized value shape from IndexedDB");
 }

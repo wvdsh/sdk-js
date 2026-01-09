@@ -1,6 +1,7 @@
 {
   "name": "@wvdsh/sdk-js",
   "version": "0.0.56",
+  "type": "module",
   "description": "Wavedash JavaScript SDK",
   "main": "./dist/index.js",
   "types": "./dist/index.d.mts",
@@ -15,14 +16,24 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
+    "typecheck": "tsc --noEmit",
+    "prettier:fix": "prettier --write .",
+    "prettier:check": "prettier --check .",
+    "eslint:check": "eslint .",
+    "eslint:fix": "eslint . --fix",
     "prepare": "npm run build",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {
+    "@eslint/js": "^9.39.2",
     "@types/lodash.debounce": "^4.0.9",
     "@types/lodash.unionby": "^4.8.9",
+    "eslint": "^9.39.2",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "^3.7.4",
     "tsup": "^8.0.0",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.52.0"
   },
   "dependencies": {
     "@wvdsh/types": "^1.0.68",
