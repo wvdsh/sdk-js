@@ -615,16 +615,18 @@ class WavedashSDK {
     appChannel: number
   ): Uint8Array | P2PMessage | null {
     this.ensureReady();
-    // Should we return a copy of the binary data rather than a view into the SharedArrayBuffer?
+    // Should we return a copy of the binary data rather than a data view?
     // We're assuming the engine makes its own copy of the binary data when calling this function
     // If we ever see race conditions, make this a copy, but for performance, we're returning a view
-    return this.p2pManager.readMessageFromChannel(appChannel);
+    const returnRawBinary = this.engineInstance ? true : false;
+    return this.p2pManager.readMessageFromChannel(appChannel, returnRawBinary);
   }
 
   /**
    * Drain all messages from a P2P channel into a buffer
-   * Only intended to be used in game engine context to give raw binary packets to the game engine
-   * JS games should just call readMessageFromChannel repeatedly to get decoded P2PMessages
+   * Data will be presented in a tightly packed format: [size:4 bytes][msg:N bytes][size:4 bytes][msg:N bytes]...
+   * JS games can just use readP2PMessageFromChannel to get decoded P2PMessages
+   * Game engines should use drainP2PChannelToBuffer for better performance
    * @param appChannel - The channel to drain
    * @param buffer - The buffer to drain the messages into. If not provided, a new buffer will be created.
    * @returns A Uint8Array containing each message in a tightly packed format: [size:4][msg:N][size:4][msg:N]...

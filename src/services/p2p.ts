@@ -851,7 +851,7 @@ export class P2PManager {
     appChannel: number = 0,
     reliable: boolean = true,
     payload: Uint8Array,
-    payloadSize: number = payload.length
+    payloadSize: number = payload.length  // use this when using the reusable outgoingMessageBuffer to send only the intended bytes from the buffer
   ): boolean {
     try {
       if (!this.currentConnection || !payload) {
@@ -860,14 +860,21 @@ export class P2PManager {
 
       if (payloadSize <= 0) {
         this.sdk.logger.error(
-          `P2P payloadSize must be greater than 0, received ${payloadSize}`
+          `P2P payloadSize must be greater than 0, received ${payloadSize}, dropping message.`
         );
         return false;
       }
 
       if (payloadSize > this.MAX_PAYLOAD_SIZE) {
         this.sdk.logger.error(
-          `P2P payload too large: ${payloadSize} bytes exceeds max ${this.MAX_PAYLOAD_SIZE} bytes`
+          `P2P payload too large: ${payloadSize} bytes exceeds max ${this.MAX_PAYLOAD_SIZE} bytes, dropping message.`
+        );
+        return false;
+      }
+
+      if (payloadSize > payload.length) {
+        this.sdk.logger.error(
+          `payloadSize is greater than payload buffer length: ${payloadSize} > ${payload.length}, dropping message.`
         );
         return false;
       }
@@ -1206,16 +1213,17 @@ export class P2PManager {
   }
 
   // Read one message from the incoming queue for a specific channel
-  // Returns raw binary to game engines
-  // Returns decoded P2PMessage if called in a JS context
-  readMessageFromChannel(appChannel: number): Uint8Array | P2PMessage | null {
+  // Returns raw binary if raw is true, otherwise returns decoded P2PMessage
+  // Game engines should use raw, JS games can use decoded P2PMessage
+  readMessageFromChannel(appChannel: number, rawBinary: boolean = true): Uint8Array | P2PMessage | null {
+    const returnRawBinary = rawBinary || this.sdk.engineInstance;
     const queue = this.channelQueues.get(appChannel);
     if (!queue) {
-      return this.sdk.engineInstance ? new Uint8Array(0) : null;
+      return returnRawBinary ? new Uint8Array(0) : null;
     }
 
     if (queue.messageCount === 0) {
-      return this.sdk.engineInstance ? new Uint8Array(0) : null;
+      return returnRawBinary ? new Uint8Array(0) : null;
     }
 
     const readOffset = queue.readIndex * this.MESSAGE_SIZE;
@@ -1228,7 +1236,7 @@ export class P2PManager {
       // Invalid message, skip it
       queue.readIndex = (queue.readIndex + 1) % this.QUEUE_SIZE;
       queue.messageCount--;
-      return this.sdk.engineInstance ? new Uint8Array(0) : null;
+      return returnRawBinary ? new Uint8Array(0) : null;
     }
 
     // Create a view directly from the buffer (no copying needed for incoming messages)
@@ -1242,7 +1250,7 @@ export class P2PManager {
     queue.messageCount--;
 
     // Engine gets the raw binary, JS gets the decoded P2PMessage
-    return this.sdk.engineInstance
+    return returnRawBinary
       ? messageView
       : this.decodeBinaryMessage(messageView);
   }
@@ -1253,11 +1261,6 @@ export class P2PManager {
   // Format: [size:4][msg:N][size:4][msg:N]... (tightly packed)
   // Game iterates by reading size, advancing by 4+size, repeat until end of buffer
   drainChannelToBuffer(appChannel: number, buffer?: Uint8Array): Uint8Array {
-    if (!this.sdk.engineInstance) {
-      throw new Error(
-        "drainChannelToBuffer should only be called in game engine context, not in JS. Use readMessageFromChannel instead."
-      );
-    }
     const messages: Uint8Array[] = [];
     const queue = this.channelQueues.get(appChannel);
     if (!queue) {
@@ -1266,7 +1269,7 @@ export class P2PManager {
     let totalSize = 0;
 
     while (queue.messageCount > 0) {
-      const msg = this.readMessageFromChannel(appChannel);
+      const msg = this.readMessageFromChannel(appChannel, true);
       if (!msg || (msg instanceof Uint8Array && msg.length === 0)) {
         break;
       }
@@ -1280,7 +1283,12 @@ export class P2PManager {
     }
 
     const result = buffer ?? new Uint8Array(totalSize);
-    const resultView = new DataView(result.buffer);
+    // Must include byteOffset for views into larger buffers (e.g., WASM heaps)
+    const resultView = new DataView(
+      result.buffer,
+      result.byteOffset,
+      result.byteLength
+    );
     let writePos = 0;
 
     for (const msg of messages) {
