@@ -628,8 +628,10 @@ class WavedashSDK {
    * JS games can just use readP2PMessageFromChannel to get decoded P2PMessages
    * Game engines should use drainP2PChannelToBuffer for better performance
    * @param appChannel - The channel to drain
-   * @param buffer - The buffer to drain the messages into. If not provided, a new buffer will be created.
-   * @returns A Uint8Array containing each message in a tightly packed format: [size:4][msg:N][size:4][msg:N]...
+   * @param buffer - The buffer to drain the messages into.
+   *  If provided, the buffer will be filled until full, any remaining messages will be left in the queue.
+   *  If not provided, a new buffer with all messages will be created and returned.
+   * @returns A Uint8Array containing each message in a tightly packed format: [size:4 bytes][msg:N bytes][size:4 bytes][msg:N bytes]...
    */
   drainP2PChannelToBuffer(appChannel: number, buffer?: Uint8Array): Uint8Array {
     this.ensureReady();

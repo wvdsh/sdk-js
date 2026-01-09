@@ -1155,7 +1155,7 @@ export class P2PManager {
       const maxMessageSize = this.MESSAGE_SIZE - this.MESSAGE_SLOT_HEADER_SIZE;
       if (binaryData.byteLength > maxMessageSize) {
         this.sdk.logger.warn(
-          `Message too large for queue: ${binaryData.byteLength} > ${maxMessageSize}`
+          `Message too large for queue: ${binaryData.byteLength} > ${maxMessageSize}, dropping message.`
         );
         return;
       }
@@ -1213,9 +1213,14 @@ export class P2PManager {
   }
 
   // Read one message from the incoming queue for a specific channel
-  // Returns raw binary if raw is true, otherwise returns decoded P2PMessage
+  // Returns raw binary if rawBinary is true, otherwise returns decoded P2PMessage
   // Game engines should use raw, JS games can use decoded P2PMessage
-  readMessageFromChannel(appChannel: number, rawBinary: boolean = true): Uint8Array | P2PMessage | null {
+  // If peek is true, returns the message without consuming it (leaves it in queue)
+  readMessageFromChannel(
+    appChannel: number,
+    rawBinary: boolean = true,
+    peek: boolean = false
+  ): Uint8Array | P2PMessage | null {
     const returnRawBinary = rawBinary || this.sdk.engineInstance;
     const queue = this.channelQueues.get(appChannel);
     if (!queue) {
@@ -1233,7 +1238,7 @@ export class P2PManager {
 
     const maxMessageSize = this.MESSAGE_SIZE - this.MESSAGE_SLOT_HEADER_SIZE;
     if (messageSize === 0 || messageSize > maxMessageSize) {
-      // Invalid message, skip it
+      // Invalid message, skip it (always consume invalid messages even when peeking)
       queue.readIndex = (queue.readIndex + 1) % this.QUEUE_SIZE;
       queue.messageCount--;
       return returnRawBinary ? new Uint8Array(0) : null;
@@ -1246,8 +1251,11 @@ export class P2PManager {
       messageSize
     );
 
-    queue.readIndex = (queue.readIndex + 1) % this.QUEUE_SIZE;
-    queue.messageCount--;
+    // Only advance queue pointers if not peeking
+    if (!peek) {
+      queue.readIndex = (queue.readIndex + 1) % this.QUEUE_SIZE;
+      queue.messageCount--;
+    }
 
     // Engine gets the raw binary, JS gets the decoded P2PMessage
     return returnRawBinary
@@ -1260,45 +1268,86 @@ export class P2PManager {
   // JS games should just call readMessageFromChannel repeatedly to get decoded P2PMessages
   // Format: [size:4][msg:N][size:4][msg:N]... (tightly packed)
   // Game iterates by reading size, advancing by 4+size, repeat until end of buffer
+  // If buffer is provided, fills until full and leaves remaining messages in queue
+  // If no buffer provided, allocates exact size needed and drains all messages
+  // Returns subarray of buffer containing only the written data (use .length to know how many bytes were written)
   drainChannelToBuffer(appChannel: number, buffer?: Uint8Array): Uint8Array {
-    const messages: Uint8Array[] = [];
     const queue = this.channelQueues.get(appChannel);
-    if (!queue) {
+    if (!queue || queue.messageCount === 0) {
       return new Uint8Array(0);
     }
-    let totalSize = 0;
 
-    while (queue.messageCount > 0) {
-      const msg = this.readMessageFromChannel(appChannel, true);
-      if (!msg || (msg instanceof Uint8Array && msg.length === 0)) {
-        break;
+    // If no buffer provided (or empty buffer), allocate a new buffer of exact size needed and drain all messages into it
+    if (!buffer || buffer.byteLength === 0) {
+      const messages: Uint8Array[] = [];
+      let totalSize = 0;
+
+      while (queue.messageCount > 0) {
+        const msg = this.readMessageFromChannel(appChannel, true, false);
+        if (!msg || (msg instanceof Uint8Array && msg.length === 0)) {
+          // Invalid message was skipped, continue to next
+          continue;
+        }
+        const msgBytes = msg as Uint8Array;
+        messages.push(msgBytes);
+        totalSize += this.MESSAGE_SLOT_HEADER_SIZE + msgBytes.length;
       }
-      const msgBytes = msg as Uint8Array;
-      messages.push(msgBytes);
-      totalSize += this.MESSAGE_SLOT_HEADER_SIZE + msgBytes.length;
+
+      if (messages.length === 0) {
+        return new Uint8Array(0);
+      }
+
+      const result = new Uint8Array(totalSize);
+      const resultView = new DataView(result.buffer);
+      let writePos = 0;
+
+      for (const msg of messages) {
+        resultView.setUint32(writePos, msg.length, true);
+        writePos += this.MESSAGE_SLOT_HEADER_SIZE;
+        result.set(msg, writePos);
+        writePos += msg.length;
+      }
+
+      return result;
     }
 
-    if (messages.length === 0) {
-      return new Uint8Array(0);
-    }
-
-    const result = buffer ?? new Uint8Array(totalSize);
-    // Must include byteOffset for views into larger buffers (e.g., WASM heaps)
+    // Buffer provided - fill until full, leave remaining messages in queue
     const resultView = new DataView(
-      result.buffer,
-      result.byteOffset,
-      result.byteLength
+      buffer.buffer,
+      buffer.byteOffset,
+      buffer.byteLength
     );
     let writePos = 0;
 
-    for (const msg of messages) {
-      resultView.setUint32(writePos, msg.length, true);
+    while (queue.messageCount > 0) {
+      // Peek at next message to check if it fits
+      const peeked = this.readMessageFromChannel(appChannel, true, true);
+      if (!peeked || (peeked instanceof Uint8Array && peeked.length === 0)) {
+        // Empty result means either no messages or invalid message was skipped
+        // Continue to check while condition - it will exit if messageCount is 0
+        continue;
+      }
+      const msgBytes = peeked as Uint8Array;
+
+      // Check if this message fits in remaining buffer space
+      const spaceNeeded = this.MESSAGE_SLOT_HEADER_SIZE + msgBytes.byteLength;
+      if (writePos + spaceNeeded > buffer.byteLength) {
+        // Buffer full, leave remaining messages in queue (message was only peeked, not consumed)
+        break;
+      }
+
+      // Now consume the message (we already have the data from peek)
+      this.readMessageFromChannel(appChannel, true, false);
+
+      // Write to buffer
+      resultView.setUint32(writePos, msgBytes.length, true);
       writePos += this.MESSAGE_SLOT_HEADER_SIZE;
-      result.set(msg, writePos);
-      writePos += msg.length;
+      buffer.set(msgBytes, writePos);
+      writePos += msgBytes.length;
     }
 
-    return result;
+    // Return subarray containing only written data
+    return buffer.subarray(0, writePos);
   }
 
   // ================
