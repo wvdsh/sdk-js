@@ -233,13 +233,16 @@ export class LobbyManager {
     }
   }
 
-  async listAvailableLobbies(): Promise<WavedashResponse<Lobby[]>> {
-    // TODO: Implement query filters
-    const args = {};
+  async listAvailableLobbies(
+    friendsOnly: boolean = false
+  ): Promise<WavedashResponse<Lobby[]>> {
+    // TODO: Implement more query filters (IP distance, arbitrary key/value matching, etc)
+    const args = { friendsOnly };
+    const filters = friendsOnly ? { friendsOnly } : undefined;
     try {
       const lobbies = await this.sdk.convexClient.query(
         api.sdk.gameLobby.listAvailable,
-        args
+        { filters }
       );
 
       // Filter out lobbies that are being deleted

@@ -1,9 +1,8 @@
 import { ConvexClient } from "convex/browser";
-import * as remoteStorage from "./services/remoteStorage";
-import * as leaderboards from "./services/leaderboards";
-import * as ugc from "./services/ugc";
-// TODO: Refactor all the services above to use Manager pattern we have for lobby and p2p
 import { LobbyManager } from "./services/lobby";
+import { FileSystemManager } from "./services/fileSystem";
+import { UGCManager } from "./services/ugc";
+import { LeaderboardManager } from "./services/leaderboards";
 import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
@@ -45,13 +44,16 @@ class WavedashSDK {
   private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
 
-  protected config: WavedashConfig | null = null;
-  protected wavedashUser: SDKUser;
-  protected gameCloudId: string;
+  config: WavedashConfig | null = null;
+  wavedashUser: SDKUser;
+  gameCloudId: string;
   protected ugcHost: string;
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
+  protected ugcManager: UGCManager;
+  protected leaderboardManager: LeaderboardManager;
+  fileSystemManager: FileSystemManager;
 
   private convexHttpUrl: string;
 
@@ -76,6 +78,9 @@ class WavedashSDK {
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
     this.heartbeatManager = new HeartbeatManager(this);
+    this.fileSystemManager = new FileSystemManager(this);
+    this.ugcManager = new UGCManager(this);
+    this.leaderboardManager = new LeaderboardManager(this);
     this.iframeMessenger = iframeMessenger;
 
     this.setupSessionEndListeners();
@@ -240,13 +245,12 @@ class WavedashSDK {
   // Leaderboards
   // ============
 
-  // TODO: Function wrappers to factor out the common logic here
   async getLeaderboard(
     name: string
   ): Promise<string | WavedashResponse<Leaderboard>> {
     this.ensureReady();
     this.logger.debug(`Getting leaderboard: ${name}`);
-    const result = await leaderboards.getLeaderboard.call(this, name);
+    const result = await this.leaderboardManager.getLeaderboard(name);
     return this.formatResponse(result);
   }
 
@@ -257,8 +261,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<Leaderboard>> {
     this.ensureReady();
     this.logger.debug(`Getting or creating leaderboard: ${name}`);
-    const result = await leaderboards.getOrCreateLeaderboard.call(
-      this,
+    const result = await this.leaderboardManager.getOrCreateLeaderboard(
       name,
       sortOrder,
       displayType
@@ -272,7 +275,7 @@ class WavedashSDK {
     this.logger.debug(
       `Getting leaderboard entry count for leaderboard: ${leaderboardId}`
     );
-    return leaderboards.getLeaderboardEntryCount.call(this, leaderboardId);
+    return this.leaderboardManager.getLeaderboardEntryCount(leaderboardId);
   }
 
   // This is called get my "entries" but under the hood we enforce one entry per user
@@ -284,10 +287,8 @@ class WavedashSDK {
     this.logger.debug(
       `Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`
     );
-    const result = await leaderboards.getMyLeaderboardEntries.call(
-      this,
-      leaderboardId
-    );
+    const result =
+      await this.leaderboardManager.getMyLeaderboardEntries(leaderboardId);
     return this.formatResponse(result);
   }
 
@@ -300,12 +301,12 @@ class WavedashSDK {
     this.logger.debug(
       `Listing entries around user for leaderboard: ${leaderboardId}`
     );
-    const result = await leaderboards.listLeaderboardEntriesAroundUser.call(
-      this,
-      leaderboardId,
-      countAhead,
-      countBehind
-    );
+    const result =
+      await this.leaderboardManager.listLeaderboardEntriesAroundUser(
+        leaderboardId,
+        countAhead,
+        countBehind
+      );
     return this.formatResponse(result);
   }
 
@@ -316,8 +317,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<LeaderboardEntries>> {
     this.ensureReady();
     this.logger.debug(`Listing entries for leaderboard: ${leaderboardId}`);
-    const result = await leaderboards.listLeaderboardEntries.call(
-      this,
+    const result = await this.leaderboardManager.listLeaderboardEntries(
       leaderboardId,
       offset,
       limit
@@ -335,8 +335,7 @@ class WavedashSDK {
     this.logger.debug(
       `Uploading score ${score} to leaderboard: ${leaderboardId}`
     );
-    const result = await leaderboards.uploadLeaderboardScore.call(
-      this,
+    const result = await this.leaderboardManager.uploadLeaderboardScore(
       leaderboardId,
       score,
       keepBest,
@@ -369,8 +368,7 @@ class WavedashSDK {
     this.logger.debug(
       `Creating UGC item of type: ${ugcType} ${filePath ? `from file: ${filePath}` : ""}`
     );
-    const result = await ugc.createUGCItem.call(
-      this,
+    const result = await this.ugcManager.createUGCItem(
       ugcType,
       title,
       description,
@@ -401,8 +399,7 @@ class WavedashSDK {
     this.logger.debug(
       `Updating UGC item: ${ugcId} ${filePath ? `from file: ${filePath}` : ""}`
     );
-    const result = await ugc.updateUGCItem.call(
-      this,
+    const result = await this.ugcManager.updateUGCItem(
       ugcId,
       title,
       description,
@@ -418,7 +415,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     this.ensureReady();
     this.logger.debug(`Downloading UGC item: ${ugcId} to: ${filePath}`);
-    const result = await ugc.downloadUGCItem.call(this, ugcId, filePath);
+    const result = await this.ugcManager.downloadUGCItem(ugcId, filePath);
     return this.formatResponse(result);
   }
 
@@ -437,7 +434,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote file: ${filePath}`);
-    const result = await remoteStorage.downloadRemoteFile.call(this, filePath);
+    const result = await this.fileSystemManager.downloadRemoteFile(filePath);
     return this.formatResponse(result);
   }
 
@@ -452,7 +449,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Uploading remote file: ${filePath}`);
-    const result = await remoteStorage.uploadRemoteFile.call(this, filePath);
+    const result = await this.fileSystemManager.uploadRemoteFile(filePath);
     return this.formatResponse(result);
   }
 
@@ -466,7 +463,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<RemoteFileMetadata[]>> {
     this.ensureReady();
     this.logger.debug(`Listing remote directory: ${path}`);
-    const result = await remoteStorage.listRemoteDirectory.call(this, path);
+    const result = await this.fileSystemManager.listRemoteDirectory(path);
     return this.formatResponse(result);
   }
 
@@ -480,8 +477,37 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote directory: ${path}`);
-    const result = await remoteStorage.downloadRemoteDirectory.call(this, path);
+    const result = await this.fileSystemManager.downloadRemoteDirectory(path);
     return this.formatResponse(result);
+  }
+
+  /**
+   * Persists data to local file storage (IndexeDB).
+   * For use in pure JS games.
+   * Games built from engines should use their engine's builtin File API to read and write files.
+   * @param filePath - The path of the local file to write
+   * @param data - The data to write to the local file (byte array)
+   * @returns true if the file was written successfully
+   */
+  async writeLocalFile(filePath: string, data: Uint8Array): Promise<boolean> {
+    this.ensureReady();
+    this.logger.debug(`Writing local file: ${filePath}`);
+    const result = await this.fileSystemManager.writeLocalFile(filePath, data);
+    return result;
+  }
+
+  /**
+   * Reads data from local file storage (IndexedDB).
+   * For use in pure JS games.
+   * Games built from engines should use their engine's builtin File API to read and write files.
+   * @param filePath - The path of the local file to read
+   * @returns The data read from the local file (byte array)
+   */
+  async readLocalFile(filePath: string): Promise<Uint8Array | null> {
+    this.ensureReady();
+    this.logger.debug(`Reading local file: ${filePath}`);
+    const result = await this.fileSystemManager.readLocalFile(filePath);
+    return result;
   }
 
   // ============
@@ -690,10 +716,12 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
-  async listAvailableLobbies(): Promise<string | WavedashResponse<Lobby[]>> {
+  async listAvailableLobbies(
+    friendsOnly: boolean = false
+  ): Promise<string | WavedashResponse<Lobby[]>> {
     this.ensureReady();
     this.logger.debug(`Listing available lobbies`);
-    const result = await this.lobbyManager.listAvailableLobbies();
+    const result = await this.lobbyManager.listAvailableLobbies(friendsOnly);
     return this.formatResponse(result);
   }
 

@@ -12,21 +12,28 @@ type IndexedDBValue =
   | Uint8Array
   | Int8Array;
 
+// Non-engine local storage (mirrors Godot IDBFS conventions for table names)
+const LOCAL_STORAGE_DB_NAME = "/userfs";
+const LOCAL_STORAGE_STORE_NAME = "FILE_DATA";
+
 export async function writeToIndexedDB(
-  dbName: string,
-  storeName: string,
   key: string,
   data: Uint8Array
 ): Promise<void> {
   return new Promise((resolve, reject) => {
-    const openReq = indexedDB.open(dbName);
+    const openReq = indexedDB.open(LOCAL_STORAGE_DB_NAME);
     openReq.onerror = () => reject(openReq.error);
-    openReq.onupgradeneeded = () =>
-      reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+    openReq.onupgradeneeded = (event) => {
+      // Create the object store if it doesn't exist (first use in pure-JS games)
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(LOCAL_STORAGE_STORE_NAME)) {
+        db.createObjectStore(LOCAL_STORAGE_STORE_NAME);
+      }
+    };
     openReq.onsuccess = () => {
       const db = openReq.result;
-      const tx = db.transaction(storeName, "readwrite");
-      const store = tx.objectStore(storeName);
+      const tx = db.transaction(LOCAL_STORAGE_STORE_NAME, "readwrite");
+      const store = tx.objectStore(LOCAL_STORAGE_STORE_NAME);
 
       // Store raw data as a file with timestamp and file "mode"
       const value = {
@@ -44,19 +51,22 @@ export async function writeToIndexedDB(
 }
 
 export async function getRecordFromIndexedDB(
-  dbName: string,
-  storeName: string,
   key: string
 ): Promise<IndexedDBValue | null> {
   return new Promise((resolve, reject) => {
-    const openReq = indexedDB.open(dbName);
+    const openReq = indexedDB.open(LOCAL_STORAGE_DB_NAME);
     openReq.onerror = () => reject(openReq.error);
-    openReq.onupgradeneeded = () =>
-      reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+    openReq.onupgradeneeded = (event) => {
+      // Create the object store if it doesn't exist (first use in pure-JS games)
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(LOCAL_STORAGE_STORE_NAME)) {
+        db.createObjectStore(LOCAL_STORAGE_STORE_NAME);
+      }
+    };
     openReq.onsuccess = () => {
       const db = openReq.result;
-      const tx = db.transaction(storeName, "readonly");
-      const store = tx.objectStore(storeName);
+      const tx = db.transaction(LOCAL_STORAGE_STORE_NAME, "readonly");
+      const store = tx.objectStore(LOCAL_STORAGE_STORE_NAME);
       const getReq = store.get(key);
       getReq.onsuccess = () => resolve(getReq.result);
       getReq.onerror = () => reject(getReq.error);
