@@ -12,6 +12,7 @@ import { api } from "@wvdsh/types";
 
 let REMOTE_STORAGE_ORIGIN: string | undefined;
 
+// Name of the remote R2 folder that stores user files
 // TODO: Should storage folder be configurable?
 const REMOTE_STORAGE_FOLDER = "userfs";
 
@@ -50,17 +51,11 @@ async function uploadFromIndexedDb(
   indexedDBKey: string
 ): Promise<boolean> {
   try {
-    // TODO: Copying Godot's convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
-    const record = await indexedDBUtils.getRecordFromIndexedDB(
-      "/userfs",
-      "FILE_DATA",
-      indexedDBKey
-    );
-    if (!record) {
+    const blob = await readLocalFileBlob.call(this, indexedDBKey);
+    if (!blob) {
       this.logger.error(`File not found in IndexedDB: ${indexedDBKey}`);
       return false;
     }
-    const blob = indexedDBUtils.toBlobFromIndexedDBValue(record);
     const response = await fetch(presignedUploadUrl, {
       method: "PUT",
       body: blob
@@ -168,13 +163,8 @@ export async function download(
       this.engineInstance.FS.writeFile(filePath, dataArray);
     } else {
       // Save directly to IndexedDB for non-engine contexts
-      // TODO: Just copying the Godot convention for IndexedDB file structure for now, we may want our own for JS games, but it's arbitrary
-      await indexedDBUtils.writeToIndexedDB(
-        "/userfs",
-        "FILE_DATA",
-        filePath,
-        dataArray
-      );
+      const success = await writeLocalFile.call(this, filePath, dataArray);
+      if (!success) return false;
     }
     this.logger.debug(`Successfully saved to: ${filePath}`);
     return true;
@@ -342,5 +332,63 @@ export async function downloadRemoteDirectory(
       args: args,
       message: error instanceof Error ? error.message : String(error)
     };
+  }
+}
+
+export async function writeLocalFile(
+  this: WavedashSDK,
+  filePath: string,
+  data: Uint8Array
+): Promise<boolean> {
+  this.logger.debug(`Writing local file: ${filePath}`);
+  if (this.engineInstance) {
+    this.logger.error("Engine instance detected, use engine's builtin File API to save files.");
+    return false;
+  }
+
+  try {
+    await indexedDBUtils.writeToIndexedDB(filePath, data);
+    return true;
+  } catch (error) {
+    this.logger.error(`Failed to write local file: ${error}`);
+    return false;
+  }
+}
+
+export async function readLocalFile(
+  this: WavedashSDK,
+  filePath: string
+): Promise<Uint8Array | null> {
+  try {
+    const blob = await readLocalFileBlob.call(this, filePath);
+    if (!blob) return null;
+    const arrayBuffer = await blob.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+  } catch (error) {
+    this.logger.error(`Failed to read local file: ${error}`);
+    return null;
+  }
+}
+
+async function readLocalFileBlob(
+  this: WavedashSDK,
+  filePath: string
+): Promise<Blob | null> {
+  this.logger.debug(`Reading local file (blob): ${filePath}`);
+  if (this.engineInstance) {
+    this.logger.error(
+      "Engine instance detected, use engine's builtin File API to read files."
+    );
+    return null;
+  }
+
+  try {
+    const record = await indexedDBUtils.getRecordFromIndexedDB(filePath);
+    if (!record) return null;
+
+    return indexedDBUtils.toBlobFromIndexedDBValue(record);
+  } catch (error) {
+    this.logger.error(`Failed to read local file blob: ${error}`);
+    return null;
   }
 }

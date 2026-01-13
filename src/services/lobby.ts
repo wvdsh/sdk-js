@@ -234,7 +234,7 @@ export class LobbyManager {
   }
 
   async listAvailableLobbies(friendsOnly: boolean = false): Promise<WavedashResponse<Lobby[]>> {
-    // TODO: Implement query filters
+    // TODO: Implement more query filters (IP distance, arbitrary key/value matching, etc)
     const args = { friendsOnly };
     const filters = friendsOnly ? { friendsOnly } : undefined;
     try {
