@@ -2,11 +2,7 @@ import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 
 import { Signals } from "./signals";
-import {
-  api,
-  GAME_ENGINE,
-  PublicApiType,
-} from "@wvdsh/types";
+import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/types";
 
 // Extract types from the API
 export type LobbyVisibility =
@@ -47,7 +43,7 @@ export type P2PTurnCredentials = FunctionReturnType<
 
 export type P2PSignalingMessage = Omit<
   FunctionReturnType<typeof api.sdk.p2pSignaling.getSignalingMessages>[0],
-  'data'
+  "data"
 > & {
   data: RTCSessionDescriptionInit | RTCIceCandidateInit;
 };

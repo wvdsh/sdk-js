@@ -342,7 +342,9 @@ export async function writeLocalFile(
 ): Promise<boolean> {
   this.logger.debug(`Writing local file: ${filePath}`);
   if (this.engineInstance) {
-    this.logger.error("Engine instance detected, use engine's builtin File API to save files.");
+    this.logger.error(
+      "Engine instance detected, use engine's builtin File API to save files."
+    );
     return false;
   }
 

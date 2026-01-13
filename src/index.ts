@@ -690,7 +690,9 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
-  async listAvailableLobbies(friendsOnly: boolean = false): Promise<string | WavedashResponse<Lobby[]>> {
+  async listAvailableLobbies(
+    friendsOnly: boolean = false
+  ): Promise<string | WavedashResponse<Lobby[]>> {
     this.ensureReady();
     this.logger.debug(`Listing available lobbies`);
     const result = await this.lobbyManager.listAvailableLobbies(friendsOnly);

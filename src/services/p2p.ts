@@ -851,7 +851,7 @@ export class P2PManager {
     appChannel: number = 0,
     reliable: boolean = true,
     payload: Uint8Array,
-    payloadSize: number = payload.length  // use this when using the reusable outgoingMessageBuffer to send only the intended bytes from the buffer
+    payloadSize: number = payload.length // use this when using the reusable outgoingMessageBuffer to send only the intended bytes from the buffer
   ): boolean {
     try {
       if (!this.currentConnection || !payload) {
@@ -1115,7 +1115,7 @@ export class P2PManager {
       writeIndex: 0,
       readIndex: 0,
       messageCount: 0,
-      incomingDataView,
+      incomingDataView
     });
   }
 
