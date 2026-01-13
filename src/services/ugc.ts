@@ -5,7 +5,6 @@
  */
 
 import type { Id, WavedashResponse, UGCType, UGCVisibility } from "../types";
-import * as remoteStorage from "./remoteStorage";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/types";
 
@@ -35,8 +34,7 @@ export async function createUGCItem(
         `Failed to create a presigned upload URL for UGC item: ${filePath}`
       );
     } else if (filePath && uploadUrl) {
-      const success = await remoteStorage.upload.call(
-        this,
+      const success = await this.fileSystemManager.upload(
         uploadUrl,
         filePath
       );
@@ -91,8 +89,7 @@ export async function updateUGCItem(
         `Failed to create a presigned upload URL for UGC item: ${filePath}`
       );
     } else if (filePath && uploadUrl) {
-      const success = await remoteStorage.upload.call(
-        this,
+      const success = await this.fileSystemManager.upload(
         uploadUrl,
         filePath
       );
@@ -133,8 +130,7 @@ export async function downloadUGCItem(
       api.sdk.userGeneratedContent.getUGCItemDownloadUrl,
       { ugcId: args.ugcId }
     );
-    const success = await remoteStorage.download.call(
-      this,
+    const success = await this.fileSystemManager.download(
       downloadUrl,
       filePath
     );

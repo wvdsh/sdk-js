@@ -1,9 +1,9 @@
 import { ConvexClient } from "convex/browser";
-import * as remoteStorage from "./services/remoteStorage";
 import * as leaderboards from "./services/leaderboards";
 import * as ugc from "./services/ugc";
-// TODO: Refactor all the services above to use Manager pattern we have for lobby and p2p
+// TODO: Refactor leaderboards and ugc services above to use Manager pattern
 import { LobbyManager } from "./services/lobby";
+import { FileSystemManager } from "./services/fileSystem";
 import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
@@ -45,13 +45,14 @@ class WavedashSDK {
   private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
 
-  protected config: WavedashConfig | null = null;
-  protected wavedashUser: SDKUser;
-  protected gameCloudId: string;
+  config: WavedashConfig | null = null;
+  wavedashUser: SDKUser;
+  gameCloudId: string;
   protected ugcHost: string;
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
+  fileSystemManager: FileSystemManager;
 
   private convexHttpUrl: string;
 
@@ -76,6 +77,7 @@ class WavedashSDK {
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
     this.heartbeatManager = new HeartbeatManager(this);
+    this.fileSystemManager = new FileSystemManager(this);
     this.iframeMessenger = iframeMessenger;
 
     this.setupSessionEndListeners();
@@ -437,7 +439,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote file: ${filePath}`);
-    const result = await remoteStorage.downloadRemoteFile.call(this, filePath);
+    const result = await this.fileSystemManager.downloadRemoteFile(filePath);
     return this.formatResponse(result);
   }
 
@@ -452,7 +454,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Uploading remote file: ${filePath}`);
-    const result = await remoteStorage.uploadRemoteFile.call(this, filePath);
+    const result = await this.fileSystemManager.uploadRemoteFile(filePath);
     return this.formatResponse(result);
   }
 
@@ -466,7 +468,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<RemoteFileMetadata[]>> {
     this.ensureReady();
     this.logger.debug(`Listing remote directory: ${path}`);
-    const result = await remoteStorage.listRemoteDirectory.call(this, path);
+    const result = await this.fileSystemManager.listRemoteDirectory(path);
     return this.formatResponse(result);
   }
 
@@ -480,7 +482,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
     this.logger.debug(`Downloading remote directory: ${path}`);
-    const result = await remoteStorage.downloadRemoteDirectory.call(this, path);
+    const result = await this.fileSystemManager.downloadRemoteDirectory(path);
     return this.formatResponse(result);
   }
 
@@ -498,7 +500,7 @@ class WavedashSDK {
   ): Promise<boolean> {
     this.ensureReady();
     this.logger.debug(`Writing local file: ${filePath}`);
-    const result = await remoteStorage.writeLocalFile.call(this, filePath, data);
+    const result = await this.fileSystemManager.writeLocalFile(filePath, data);
     return result;
   }
 
@@ -514,7 +516,7 @@ class WavedashSDK {
   ): Promise<Uint8Array | null> {
     this.ensureReady();
     this.logger.debug(`Reading local file: ${filePath}`);
-    const result = await remoteStorage.readLocalFile.call(this, filePath);
+    const result = await this.fileSystemManager.readLocalFile(filePath);
     return result;
   }
 
