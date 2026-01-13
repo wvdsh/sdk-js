@@ -489,10 +489,7 @@ class WavedashSDK {
    * @param data - The data to write to the local file (byte array)
    * @returns true if the file was written successfully
    */
-  async writeLocalFile(
-    filePath: string,
-    data: Uint8Array
-  ): Promise<boolean> {
+  async writeLocalFile(filePath: string, data: Uint8Array): Promise<boolean> {
     this.ensureReady();
     this.logger.debug(`Writing local file: ${filePath}`);
     const result = await this.fileSystemManager.writeLocalFile(filePath, data);
@@ -506,9 +503,7 @@ class WavedashSDK {
    * @param filePath - The path of the local file to read
    * @returns The data read from the local file (byte array)
    */
-  async readLocalFile(
-    filePath: string
-  ): Promise<Uint8Array | null> {
+  async readLocalFile(filePath: string): Promise<Uint8Array | null> {
     this.ensureReady();
     this.logger.debug(`Reading local file: ${filePath}`);
     const result = await this.fileSystemManager.readLocalFile(filePath);

@@ -62,7 +62,9 @@ export class FileSystemManager {
    * @param filePath - The path of the remote file to download
    * @returns The path of the local file that the remote file was downloaded to
    */
-  async downloadRemoteFile(filePath: string): Promise<WavedashResponse<string>> {
+  async downloadRemoteFile(
+    filePath: string
+  ): Promise<WavedashResponse<string>> {
     const args = { filePath };
 
     try {
@@ -147,7 +149,9 @@ export class FileSystemManager {
       const downloadResults = await Promise.all(downloadPromises);
 
       // Check if any downloads failed
-      const failedDownloads = downloadResults.filter((result) => !result.success);
+      const failedDownloads = downloadResults.filter(
+        (result) => !result.success
+      );
       if (failedDownloads.length > 0) {
         throw new Error(
           `Failed to download ${failedDownloads.length} files: ${failedDownloads.map((f) => f.fileName).join(", ")}`
@@ -307,7 +311,9 @@ export class FileSystemManager {
 
   private getRemoteStorageUrl(filePath: string): string {
     const ORIGIN = this.getRemoteStorageOrigin();
-    const relativePath = filePath.startsWith("/") ? filePath.slice(1) : filePath;
+    const relativePath = filePath.startsWith("/")
+      ? filePath.slice(1)
+      : filePath;
     return `${ORIGIN}/${this.sdk.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.sdk.wavedashUser.id}/${relativePath}`;
   }
 
