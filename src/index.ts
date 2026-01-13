@@ -484,6 +484,40 @@ class WavedashSDK {
     return this.formatResponse(result);
   }
 
+  /**
+   * Persists data to local file storage (IndexeDB).
+   * For use in pure JS games.
+   * Games built from engines should use their engine's builtin File API to read and write files.
+   * @param filePath - The path of the local file to write
+   * @param data - The data to write to the local file (byte array)
+   * @returns true if the file was written successfully
+   */
+  async writeLocalFile(
+    filePath: string,
+    data: Uint8Array
+  ): Promise<boolean> {
+    this.ensureReady();
+    this.logger.debug(`Writing local file: ${filePath}`);
+    const result = await remoteStorage.writeLocalFile.call(this, filePath, data);
+    return result;
+  }
+
+  /**
+   * Reads data from local file storage (IndexedDB).
+   * For use in pure JS games.
+   * Games built from engines should use their engine's builtin File API to read and write files.
+   * @param filePath - The path of the local file to read
+   * @returns The data read from the local file (byte array)
+   */
+  async readLocalFile(
+    filePath: string
+  ): Promise<Uint8Array | null> {
+    this.ensureReady();
+    this.logger.debug(`Reading local file: ${filePath}`);
+    const result = await remoteStorage.readLocalFile.call(this, filePath);
+    return result;
+  }
+
   // ============
   // Achievements + Stats
   // ============
