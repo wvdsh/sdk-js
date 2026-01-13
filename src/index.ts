@@ -1,9 +1,8 @@
 import { ConvexClient } from "convex/browser";
-import * as leaderboards from "./services/leaderboards";
-// TODO: Refactor leaderboards service above to use Manager pattern
 import { LobbyManager } from "./services/lobby";
 import { FileSystemManager } from "./services/fileSystem";
 import { UGCManager } from "./services/ugc";
+import { LeaderboardManager } from "./services/leaderboards";
 import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
@@ -53,6 +52,7 @@ class WavedashSDK {
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
   protected ugcManager: UGCManager;
+  protected leaderboardManager: LeaderboardManager;
   fileSystemManager: FileSystemManager;
 
   private convexHttpUrl: string;
@@ -80,6 +80,7 @@ class WavedashSDK {
     this.heartbeatManager = new HeartbeatManager(this);
     this.fileSystemManager = new FileSystemManager(this);
     this.ugcManager = new UGCManager(this);
+    this.leaderboardManager = new LeaderboardManager(this);
     this.iframeMessenger = iframeMessenger;
 
     this.setupSessionEndListeners();
@@ -244,13 +245,12 @@ class WavedashSDK {
   // Leaderboards
   // ============
 
-  // TODO: Function wrappers to factor out the common logic here
   async getLeaderboard(
     name: string
   ): Promise<string | WavedashResponse<Leaderboard>> {
     this.ensureReady();
     this.logger.debug(`Getting leaderboard: ${name}`);
-    const result = await leaderboards.getLeaderboard.call(this, name);
+    const result = await this.leaderboardManager.getLeaderboard(name);
     return this.formatResponse(result);
   }
 
@@ -261,8 +261,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<Leaderboard>> {
     this.ensureReady();
     this.logger.debug(`Getting or creating leaderboard: ${name}`);
-    const result = await leaderboards.getOrCreateLeaderboard.call(
-      this,
+    const result = await this.leaderboardManager.getOrCreateLeaderboard(
       name,
       sortOrder,
       displayType
@@ -276,7 +275,7 @@ class WavedashSDK {
     this.logger.debug(
       `Getting leaderboard entry count for leaderboard: ${leaderboardId}`
     );
-    return leaderboards.getLeaderboardEntryCount.call(this, leaderboardId);
+    return this.leaderboardManager.getLeaderboardEntryCount(leaderboardId);
   }
 
   // This is called get my "entries" but under the hood we enforce one entry per user
@@ -288,10 +287,8 @@ class WavedashSDK {
     this.logger.debug(
       `Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`
     );
-    const result = await leaderboards.getMyLeaderboardEntries.call(
-      this,
-      leaderboardId
-    );
+    const result =
+      await this.leaderboardManager.getMyLeaderboardEntries(leaderboardId);
     return this.formatResponse(result);
   }
 
@@ -304,12 +301,12 @@ class WavedashSDK {
     this.logger.debug(
       `Listing entries around user for leaderboard: ${leaderboardId}`
     );
-    const result = await leaderboards.listLeaderboardEntriesAroundUser.call(
-      this,
-      leaderboardId,
-      countAhead,
-      countBehind
-    );
+    const result =
+      await this.leaderboardManager.listLeaderboardEntriesAroundUser(
+        leaderboardId,
+        countAhead,
+        countBehind
+      );
     return this.formatResponse(result);
   }
 
@@ -320,8 +317,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<LeaderboardEntries>> {
     this.ensureReady();
     this.logger.debug(`Listing entries for leaderboard: ${leaderboardId}`);
-    const result = await leaderboards.listLeaderboardEntries.call(
-      this,
+    const result = await this.leaderboardManager.listLeaderboardEntries(
       leaderboardId,
       offset,
       limit
@@ -339,8 +335,7 @@ class WavedashSDK {
     this.logger.debug(
       `Uploading score ${score} to leaderboard: ${leaderboardId}`
     );
-    const result = await leaderboards.uploadLeaderboardScore.call(
-      this,
+    const result = await this.leaderboardManager.uploadLeaderboardScore(
       leaderboardId,
       score,
       keepBest,

@@ -23,8 +23,13 @@ export async function writeToIndexedDB(
   return new Promise((resolve, reject) => {
     const openReq = indexedDB.open(LOCAL_STORAGE_DB_NAME);
     openReq.onerror = () => reject(openReq.error);
-    openReq.onupgradeneeded = () =>
-      reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+    openReq.onupgradeneeded = (event) => {
+      // Create the object store if it doesn't exist (first use in pure-JS games)
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(LOCAL_STORAGE_STORE_NAME)) {
+        db.createObjectStore(LOCAL_STORAGE_STORE_NAME);
+      }
+    };
     openReq.onsuccess = () => {
       const db = openReq.result;
       const tx = db.transaction(LOCAL_STORAGE_STORE_NAME, "readwrite");
@@ -51,8 +56,13 @@ export async function getRecordFromIndexedDB(
   return new Promise((resolve, reject) => {
     const openReq = indexedDB.open(LOCAL_STORAGE_DB_NAME);
     openReq.onerror = () => reject(openReq.error);
-    openReq.onupgradeneeded = () =>
-      reject(new Error("Unexpected DB upgrade; wrong DB/schema"));
+    openReq.onupgradeneeded = (event) => {
+      // Create the object store if it doesn't exist (first use in pure-JS games)
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(LOCAL_STORAGE_STORE_NAME)) {
+        db.createObjectStore(LOCAL_STORAGE_STORE_NAME);
+      }
+    };
     openReq.onsuccess = () => {
       const db = openReq.result;
       const tx = db.transaction(LOCAL_STORAGE_STORE_NAME, "readonly");

@@ -362,9 +362,9 @@ export class FileSystemManager {
 
   private async readLocalFileBlob(filePath: string): Promise<Blob | null> {
     this.sdk.logger.debug(`Reading local file (blob): ${filePath}`);
-    if (this.sdk.engineInstance) {
+    if (this.sdk.engineInstance?.FS) {
       this.sdk.logger.error(
-        "Engine instance detected, use engine's builtin File API to read files."
+        `${this.sdk.engineInstance.type} engine detected, use engine's builtin file access to read files.`
       );
       return null;
     }
