@@ -1,9 +1,9 @@
 import { ConvexClient } from "convex/browser";
 import * as leaderboards from "./services/leaderboards";
-import * as ugc from "./services/ugc";
-// TODO: Refactor leaderboards and ugc services above to use Manager pattern
+// TODO: Refactor leaderboards service above to use Manager pattern
 import { LobbyManager } from "./services/lobby";
 import { FileSystemManager } from "./services/fileSystem";
+import { UGCManager } from "./services/ugc";
 import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
@@ -52,6 +52,7 @@ class WavedashSDK {
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
+  protected ugcManager: UGCManager;
   fileSystemManager: FileSystemManager;
 
   private convexHttpUrl: string;
@@ -78,6 +79,7 @@ class WavedashSDK {
     this.statsManager = new StatsManager(this);
     this.heartbeatManager = new HeartbeatManager(this);
     this.fileSystemManager = new FileSystemManager(this);
+    this.ugcManager = new UGCManager(this);
     this.iframeMessenger = iframeMessenger;
 
     this.setupSessionEndListeners();
@@ -371,8 +373,7 @@ class WavedashSDK {
     this.logger.debug(
       `Creating UGC item of type: ${ugcType} ${filePath ? `from file: ${filePath}` : ""}`
     );
-    const result = await ugc.createUGCItem.call(
-      this,
+    const result = await this.ugcManager.createUGCItem(
       ugcType,
       title,
       description,
@@ -403,8 +404,7 @@ class WavedashSDK {
     this.logger.debug(
       `Updating UGC item: ${ugcId} ${filePath ? `from file: ${filePath}` : ""}`
     );
-    const result = await ugc.updateUGCItem.call(
-      this,
+    const result = await this.ugcManager.updateUGCItem(
       ugcId,
       title,
       description,
@@ -420,7 +420,7 @@ class WavedashSDK {
   ): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
     this.ensureReady();
     this.logger.debug(`Downloading UGC item: ${ugcId} to: ${filePath}`);
-    const result = await ugc.downloadUGCItem.call(this, ugcId, filePath);
+    const result = await this.ugcManager.downloadUGCItem(ugcId, filePath);
     return this.formatResponse(result);
   }
 
