@@ -805,7 +805,11 @@ class WavedashSDK {
   ): void {
     const data =
       typeof payload === "object" ? JSON.stringify(payload) : payload;
-    this.engineInstance?.SendMessage(this.engineCallbackReceiver, signal, data);
+    if (this.engineInstance?.SendMessage) {
+      this.engineInstance.SendMessage(this.engineCallbackReceiver, signal, data);
+    } else {
+      this.logger.error("Engine instance not set. Dropping signal:", signal);
+    }
   }
 
   // ================
