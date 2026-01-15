@@ -73,12 +73,14 @@ export class LobbyManager {
       this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
         lobbyId
       });
-
-      return {
+      const response = {
         success: true,
         data: lobbyId,
         args: args
       };
+      this.sdk.notifyGame(Signals.LOBBY_JOINED, response);
+
+      return response;
     } catch (error) {
       this.sdk.logger.error(`Error creating lobby: ${error}`);
       return {
