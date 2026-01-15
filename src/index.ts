@@ -43,20 +43,19 @@ class WavedashSDK {
   private initialized: boolean = false;
   private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
+  private convexHttpUrl: string;
 
-  config: WavedashConfig | null = null;
-  wavedashUser: SDKUser;
-  gameCloudId: string;
   protected ugcHost: string;
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
   protected ugcManager: UGCManager;
   protected leaderboardManager: LeaderboardManager;
+  
+  config: WavedashConfig | null = null;
+  wavedashUser: SDKUser;
+  gameCloudId: string;
   fileSystemManager: FileSystemManager;
-
-  private convexHttpUrl: string;
-
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
   engineInstance: EngineInstance | null = null;
@@ -192,12 +191,18 @@ class WavedashSDK {
   }
 
   /**
-   * Set the engine instance (Unity or Godot).
-   * If using a game engine, call this function before starting the game.
-   * @param engineInstance - The engine instance.
+   * Set or update the engine instance (Unity or Godot).
+   * This method is additive - it merges properties into any existing instance.
+   * Can be called multiple times in any order (e.g., JSLib sets FS first, runner sets the unityInstance later).
+   * This handles the race condition where a Unity game can actually start running BEFORE window.createUnityInstance resolves
+   * @param engineInstance - The engine instance or partial attributes to merge.
    */
-  setEngineInstance(engineInstance: EngineInstance): void {
-    this.engineInstance = engineInstance;
+  setEngineInstance(engineInstance: Partial<EngineInstance>): void {
+    if (this.engineInstance) {
+      Object.assign(this.engineInstance, engineInstance);
+    } else {
+      this.engineInstance = engineInstance as EngineInstance;
+    }
   }
 
   isReady(): boolean {
