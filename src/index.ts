@@ -150,6 +150,10 @@ class WavedashSDK {
   // =============
 
   init(config: WavedashConfig): boolean {
+    if (this.initialized) {
+      this.logger.warn("init called twice! Already initialized, skipping init");
+      return false;
+    }
     if (!config) {
       this.logger.error("Initialized with empty config");
       return false;
