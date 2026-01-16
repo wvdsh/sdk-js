@@ -78,6 +78,9 @@ export class LobbyManager {
         data: lobbyId,
         args: args
       };
+
+      // Emit LOBBY_JOINED signal for consistency
+      // This signal is emitted for creating + joining lobbies, joining lobbies from in-game, and joining lobbies out of game (ie invite link)
       this.sdk.notifyGame(Signals.LOBBY_JOINED, response);
 
       return response;
@@ -115,6 +118,7 @@ export class LobbyManager {
         args: args
       };
 
+      // Only emit LOBBY_JOINED signal if joining lobby was successful
       this.sdk.notifyGame(Signals.LOBBY_JOINED, response);
       this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
         lobbyId
@@ -123,14 +127,12 @@ export class LobbyManager {
       return response;
     } catch (error) {
       this.sdk.logger.error(`Error joining lobby: ${error}`);
-      const response = {
+      return {
         success: false,
         data: null,
         args: args,
         message: error instanceof Error ? error.message : String(error)
       };
-      this.sdk.notifyGame(Signals.LOBBY_JOINED, response);
-      return response;
     }
   }
 
