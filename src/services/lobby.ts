@@ -79,23 +79,7 @@ export class LobbyManager {
         args
       )) as unknown as LobbyJoinResponse;
 
-      this.subscribeToLobby(result.lobbyId);
-      this.lobbyHostId = result.hostId;
-      this.lobbyId = result.lobbyId;
-      // P2P will be initialized when processUserUpdates receives the lobby users
-
-      this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
-        lobbyId: result.lobbyId
-      });
-
-      // Emit LOBBY_JOINED signal with full lobby context from backend response
-      // This signal is the canonical source of lobby state for games
-      this.sdk.notifyGame(Signals.LOBBY_JOINED, {
-        lobbyId: result.lobbyId,
-        hostId: result.hostId,
-        users: result.users,
-        metadata: result.metadata
-      } satisfies LobbyJoinedPayload);
+      this.handleLobbyJoin(result);
 
       return {
         success: true,
@@ -129,23 +113,7 @@ export class LobbyManager {
         args
       )) as unknown as LobbyJoinResponse;
 
-      this.subscribeToLobby(result.lobbyId);
-      this.lobbyHostId = result.hostId;
-      this.lobbyId = result.lobbyId;
-      // P2P will be initialized separately when processUserUpdates receives the lobby users
-
-      this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
-        lobbyId: result.lobbyId
-      });
-
-      // Emit LOBBY_JOINED signal with full lobby context from backend response
-      // This signal is the canonical source of lobby state for games
-      this.sdk.notifyGame(Signals.LOBBY_JOINED, {
-        lobbyId: result.lobbyId,
-        hostId: result.hostId,
-        users: result.users,
-        metadata: result.metadata
-      } satisfies LobbyJoinedPayload);
+      this.handleLobbyJoin(result);
 
       return {
         success: true,
@@ -328,15 +296,21 @@ export class LobbyManager {
   // ================
 
   /**
-   * Sets up Convex subscriptions for all relevant lobby updates
-   * @precondition - The user has already joined the lobby
-   * @param lobbyId - The ID of the lobby to subscribe to
+   * Initialize local lobby state and subscribe to all relevant updates.
+   * Sets up Convex subscriptions for messages, users, and metadata.
+   * Emits LOBBY_JOINED signal to the game engine.
+   * @precondition - The user has already joined the lobby via mutation
+   * @param response - The full response from createAndJoinLobby or joinLobby mutation
    */
-  private subscribeToLobby(lobbyId: Id<"lobbies">): void {
+  private handleLobbyJoin(response: LobbyJoinResponse): void {
     // Unsubscribe from previous lobby if any
     this.cleanupLobbyState();
 
-    this.lobbyId = lobbyId;
+    // Initialize local state from response
+    this.lobbyId = response.lobbyId;
+    this.lobbyHostId = response.hostId;
+    this.lobbyUsers = response.users;
+    this.lobbyMetadata = response.metadata;
 
     // Error handler for subscription failures (e.g., kicked from lobby)
     const onLobbySubscriptionError = (error: Error) => {
@@ -352,14 +326,15 @@ export class LobbyManager {
     // Subscribe to lobby messages
     this.unsubscribeLobbyMessages = this.sdk.convexClient.onUpdate(
       api.sdk.gameLobby.lobbyMessages,
-      { lobbyId },
+      { lobbyId: response.lobbyId },
       this.processMessageUpdates,
       onLobbySubscriptionError
     );
 
+    // Subscribe to lobby metadata
     this.unsubscribeLobbyData = this.sdk.convexClient.onUpdate(
       api.sdk.gameLobby.getLobbyMetadata,
-      { lobbyId },
+      { lobbyId: response.lobbyId },
       (lobbyMetadata: Record<string, unknown>) => {
         this.lobbyMetadata = lobbyMetadata;
         this.sdk.notifyGame(
@@ -373,12 +348,26 @@ export class LobbyManager {
     // Subscribe to lobby users
     this.unsubscribeLobbyUsers = this.sdk.convexClient.onUpdate(
       api.sdk.gameLobby.lobbyUsers,
-      { lobbyId },
+      { lobbyId: response.lobbyId },
       this.processUserUpdates,
       onLobbySubscriptionError
     );
 
-    this.sdk.logger.debug("Subscribed to lobby:", lobbyId);
+    // Notify parent iframe
+    this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
+      lobbyId: response.lobbyId
+    });
+
+    // Emit LOBBY_JOINED signal with full lobby context
+    // This signal is the canonical source of lobby state for games
+    this.sdk.notifyGame(Signals.LOBBY_JOINED, {
+      lobbyId: response.lobbyId,
+      hostId: response.hostId,
+      users: response.users,
+      metadata: response.metadata
+    } satisfies LobbyJoinedPayload);
+
+    this.sdk.logger.debug("Subscribed to lobby:", response.lobbyId);
   }
 
   /**
@@ -395,7 +384,7 @@ export class LobbyManager {
     this.sdk.logger.warn(
       `User was removed from lobby: ${lobbyId} (reason: ${reason})`
     );
-    this.cleanupLobbyState(lobbyId);
+    this.cleanupLobbyState();
 
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
       lobbyId
@@ -410,12 +399,11 @@ export class LobbyManager {
 
   /**
    * Clean up lobby state without emitting signals
-   * Used internally by leaveLobby() and handleLobbyKicked()
-   * @param lobbyId - Optional lobbyId to use (for when this.lobbyId needs to be cleared first as a guard)
+   * Used internally by handleLobbyJoin() and handleLobbyKicked()
    */
-  private cleanupLobbyState(lobbyId?: Id<"lobbies">): void {
-    // Use provided lobbyId or fall back to this.lobbyId
-    const currentLobbyId = lobbyId ?? this.lobbyId;
+  private cleanupLobbyState(): void {
+    // Capture lobbyId before clearing (used for "maybe being deleted" tracking)
+    const currentLobbyId = this.lobbyId;
 
     // Set lobbyId to null immediately to guard against multiple calls (e.g., from concurrent subscription errors)
     this.lobbyId = null;
