@@ -30,7 +30,7 @@ import type {
   P2PMessage,
   LobbyUser,
   Signal,
-  Lobby,
+  Lobby
 } from "./types";
 import {
   GAME_ENGINE,
@@ -51,7 +51,7 @@ class WavedashSDK {
   protected heartbeatManager: HeartbeatManager;
   protected ugcManager: UGCManager;
   protected leaderboardManager: LeaderboardManager;
-  
+
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
   gameCloudId: string;
@@ -186,9 +186,11 @@ class WavedashSDK {
 
     // Join a lobby on startup if provided (from invite link or external source)
     if (this.lobbyIdToJoinOnStartup && !this.config.deferEvents) {
-      this.lobbyManager.joinLobby(this.lobbyIdToJoinOnStartup).catch((error) => {
-        this.logger.error("Could not join lobby on startup:", error);
-      });
+      this.lobbyManager
+        .joinLobby(this.lobbyIdToJoinOnStartup)
+        .catch((error) => {
+          this.logger.error("Could not join lobby on startup:", error);
+        });
     }
 
     return true;
@@ -221,9 +223,11 @@ class WavedashSDK {
     this.config!.deferEvents = false;
     // Game is now ready for event messages, join a lobby if provided (from invite link or external source)
     if (this.lobbyIdToJoinOnStartup) {
-      this.lobbyManager.joinLobby(this.lobbyIdToJoinOnStartup).catch((error) => {
-        this.logger.error("Could not join lobby on startup:", error);
-      });
+      this.lobbyManager
+        .joinLobby(this.lobbyIdToJoinOnStartup)
+        .catch((error) => {
+          this.logger.error("Could not join lobby on startup:", error);
+        });
     }
   }
 
@@ -815,7 +819,11 @@ class WavedashSDK {
     const data =
       typeof payload === "object" ? JSON.stringify(payload) : payload;
     if (this.engineInstance?.SendMessage) {
-      this.engineInstance.SendMessage(this.engineCallbackReceiver, signal, data);
+      this.engineInstance.SendMessage(
+        this.engineCallbackReceiver,
+        signal,
+        data
+      );
     } else {
       this.logger.error("Engine instance not set. Dropping signal:", signal);
     }

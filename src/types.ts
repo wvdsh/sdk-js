@@ -126,9 +126,10 @@ export interface LobbyJoinedPayload {
 /** Reasons why a user was kicked from a lobby */
 export const LobbyKickedReason = {
   KICKED: "KICKED",
-  ERROR: "ERROR",
+  ERROR: "ERROR"
 } as const;
-export type LobbyKickedReason = typeof LobbyKickedReason[keyof typeof LobbyKickedReason];
+export type LobbyKickedReason =
+  (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason];
 
 /** Payload for LOBBY_KICKED signal - emitted when removed from a lobby */
 export interface LobbyKickedPayload {
@@ -139,9 +140,10 @@ export interface LobbyKickedPayload {
 /** Change types for lobby user updates */
 export const LobbyUserChangeType = {
   JOINED: "JOINED",
-  LEFT: "LEFT",
+  LEFT: "LEFT"
 } as const;
-export type LobbyUserChangeType = typeof LobbyUserChangeType[keyof typeof LobbyUserChangeType];
+export type LobbyUserChangeType =
+  (typeof LobbyUserChangeType)[keyof typeof LobbyUserChangeType];
 
 /** Payload for LOBBY_USERS_UPDATED signal - emitted when a user joins or leaves */
 export interface LobbyUsersUpdatedPayload extends LobbyUser {

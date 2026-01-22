@@ -15,7 +15,7 @@ import type {
   LobbyKickedPayload,
   LobbyUsersUpdatedPayload,
   LobbyDataUpdatedPayload,
-  LobbyMessagePayload,
+  LobbyMessagePayload
 } from "../types";
 import { LobbyKickedReason, LobbyUserChangeType } from "../types";
 import { Signals } from "../signals";
@@ -362,7 +362,10 @@ export class LobbyManager {
       { lobbyId },
       (lobbyMetadata: Record<string, unknown>) => {
         this.lobbyMetadata = lobbyMetadata;
-        this.sdk.notifyGame(Signals.LOBBY_DATA_UPDATED, lobbyMetadata satisfies LobbyDataUpdatedPayload);
+        this.sdk.notifyGame(
+          Signals.LOBBY_DATA_UPDATED,
+          lobbyMetadata satisfies LobbyDataUpdatedPayload
+        );
       },
       onLobbySubscriptionError
     );
@@ -383,11 +386,15 @@ export class LobbyManager {
    * This is called when a subscription fails with "User is not a member of this lobby"
    * Multiple subscriptions may error at once, so we guard against emitting multiple signals
    */
-  private handleLobbyKicked(reason: LobbyKickedReason = LobbyKickedReason.KICKED): void {
+  private handleLobbyKicked(
+    reason: LobbyKickedReason = LobbyKickedReason.KICKED
+  ): void {
     const lobbyId = this.lobbyId;
     if (!lobbyId) return;
 
-    this.sdk.logger.warn(`User was removed from lobby: ${lobbyId} (reason: ${reason})`);
+    this.sdk.logger.warn(
+      `User was removed from lobby: ${lobbyId} (reason: ${reason})`
+    );
     this.cleanupLobbyState(lobbyId);
 
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
@@ -409,7 +416,7 @@ export class LobbyManager {
   private cleanupLobbyState(lobbyId?: Id<"lobbies">): void {
     // Use provided lobbyId or fall back to this.lobbyId
     const currentLobbyId = lobbyId ?? this.lobbyId;
-    
+
     // Set lobbyId to null immediately to guard against multiple calls (e.g., from concurrent subscription errors)
     this.lobbyId = null;
 
@@ -504,7 +511,9 @@ export class LobbyManager {
     for (const user of previousUsers) {
       if (!newUserIds.has(user.userId)) {
         if (user.userId === this.sdk.getUserId()) {
-          this.sdk.logger.warn("USER WAS KICKED FROM LOBBY! Received notification for myself leaving.");
+          this.sdk.logger.warn(
+            "USER WAS KICKED FROM LOBBY! Received notification for myself leaving."
+          );
         }
         // For now, we can't distinguish between LEFT, DISCONNECTED, or KICKED
         // from the basic lobby users update. Default to LEFT.
@@ -526,7 +535,10 @@ export class LobbyManager {
     for (const message of newMessages) {
       if (!this.recentMessageIds.includes(message.messageId)) {
         this.recentMessageIds.push(message.messageId);
-        this.sdk.notifyGame(Signals.LOBBY_MESSAGE, message satisfies LobbyMessagePayload);
+        this.sdk.notifyGame(
+          Signals.LOBBY_MESSAGE,
+          message satisfies LobbyMessagePayload
+        );
       }
     }
     this.recentMessageIds = newMessages.map((message) => message.messageId);
