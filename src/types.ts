@@ -115,12 +115,16 @@ export interface WavedashResponse<T> {
 
 // --- Lobby Signals ---
 
-/** Payload for LOBBY_JOINED signal - emitted when joining or creating a lobby */
+/** Payload for LOBBY_JOINED signal - emitted on join/create attempt (success or failure) */
 export interface LobbyJoinedPayload {
+  success: boolean;
   lobbyId: Id<"lobbies">;
-  hostId: Id<"users">;
-  users: LobbyUser[];
-  metadata: Record<string, unknown>;
+  // Present on success
+  hostId?: Id<"users">;
+  users?: LobbyUser[];
+  metadata?: Record<string, unknown>;
+  // Present on failure
+  message?: string;
 }
 
 /** Reasons why a user was kicked from a lobby */
