@@ -13,8 +13,11 @@ import type {
   LobbyMessage,
   LobbyJoinedPayload,
   LobbyKickedPayload,
+  LobbyUsersUpdatedPayload,
+  LobbyDataUpdatedPayload,
+  LobbyMessagePayload,
 } from "../types";
-import { LobbyKickedReason } from "../types";
+import { LobbyKickedReason, LobbyUserChangeType } from "../types";
 import { Signals } from "../signals";
 import type { WavedashSDK } from "../index";
 import {
@@ -359,7 +362,7 @@ export class LobbyManager {
       { lobbyId },
       (lobbyMetadata: Record<string, unknown>) => {
         this.lobbyMetadata = lobbyMetadata;
-        this.sdk.notifyGame(Signals.LOBBY_DATA_UPDATED, lobbyMetadata);
+        this.sdk.notifyGame(Signals.LOBBY_DATA_UPDATED, lobbyMetadata satisfies LobbyDataUpdatedPayload);
       },
       onLobbySubscriptionError
     );
@@ -492,8 +495,8 @@ export class LobbyManager {
       if (!previousUserIds.has(user.userId)) {
         this.sdk.notifyGame(Signals.LOBBY_USERS_UPDATED, {
           ...user,
-          changeType: "JOINED"
-        });
+          changeType: LobbyUserChangeType.JOINED
+        } satisfies LobbyUsersUpdatedPayload);
       }
     }
 
@@ -508,8 +511,8 @@ export class LobbyManager {
         this.sdk.notifyGame(Signals.LOBBY_USERS_UPDATED, {
           ...user,
           isHost: false,
-          changeType: "LEFT"
-        });
+          changeType: LobbyUserChangeType.LEFT
+        } satisfies LobbyUsersUpdatedPayload);
       }
     }
 
@@ -523,7 +526,7 @@ export class LobbyManager {
     for (const message of newMessages) {
       if (!this.recentMessageIds.includes(message.messageId)) {
         this.recentMessageIds.push(message.messageId);
-        this.sdk.notifyGame(Signals.LOBBY_MESSAGE, message);
+        this.sdk.notifyGame(Signals.LOBBY_MESSAGE, message satisfies LobbyMessagePayload);
       }
     }
     this.recentMessageIds = newMessages.map((message) => message.messageId);

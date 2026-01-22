@@ -880,8 +880,8 @@ class WavedashSDK {
 
 export { WavedashSDK };
 
-// Re-export all types
-export type * from "./types";
+// Re-export all types and constants
+export * from "./types";
 
 // Type-safe initialization helper
 export async function setupWavedashSDK(): Promise<WavedashSDK> {

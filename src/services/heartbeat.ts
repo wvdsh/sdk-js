@@ -10,6 +10,7 @@ import { api } from "@wvdsh/types";
 import type { WavedashSDK } from "../index";
 import { Signals } from "../signals";
 import type { ConnectionState } from "convex/browser";
+import type { BackendConnectionPayload } from "../types";
 
 export class HeartbeatManager {
   private sdk: WavedashSDK;
@@ -77,7 +78,7 @@ export class HeartbeatManager {
       const state: ConnectionState =
         this.sdk.convexClient.client.connectionState() as ConnectionState;
       this.isConnected = navigator.onLine && state.isWebSocketConnected;
-      const connection = {
+      const connection: BackendConnectionPayload = {
         isConnected: this.isConnected,
         hasEverConnected: state.hasEverConnected,
         connectionCount: state.connectionCount,

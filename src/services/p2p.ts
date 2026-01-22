@@ -12,7 +12,10 @@ import type {
   P2PMessage,
   P2PConfig,
   P2PTurnCredentials,
-  P2PSignalingMessage
+  P2PSignalingMessage,
+  P2PConnectionEstablishedPayload,
+  P2PConnectionFailedPayload,
+  P2PPeerDisconnectedPayload
 } from "../types";
 import { Signals } from "../signals";
 import type { WavedashSDK } from "../index";
@@ -654,7 +657,7 @@ export class P2PManager {
         userId: remoteUserId,
         username: connection.peers[remoteUserId]?.username || "",
         error: "No ICE servers available"
-      });
+      } satisfies P2PConnectionFailedPayload);
       return false;
     }
     const pc = new RTCPeerConnection({
@@ -803,7 +806,7 @@ export class P2PManager {
           this.sdk.notifyGame(Signals.P2P_CONNECTION_ESTABLISHED, {
             userId: peer.userId,
             username: peer.username
-          });
+          } satisfies P2PConnectionEstablishedPayload);
         }
       }
     };
@@ -824,7 +827,7 @@ export class P2PManager {
           userId: peer.userId,
           username: peer.username,
           error: error.toString()
-        });
+        } satisfies P2PConnectionFailedPayload);
       }
     };
 
@@ -837,7 +840,7 @@ export class P2PManager {
         this.sdk.notifyGame(Signals.P2P_PEER_DISCONNECTED, {
           userId: peer.userId,
           username: peer.username
-        });
+        } satisfies P2PPeerDisconnectedPayload);
       }
     };
   }
