@@ -115,7 +115,7 @@ export interface WavedashResponse<T> {
 
 // --- Lobby Signals ---
 
-/** Payload for LOBBY_JOINED signal - emitted on join/create attempt (success or failure) */
+/** Payload for LOBBY_JOINED signal - emitted on lobby join attempt (success or failure), as well successful lobby create */
 export interface LobbyJoinedPayload {
   success: boolean;
   lobbyId: Id<"lobbies">;
