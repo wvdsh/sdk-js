@@ -10,8 +10,14 @@ import type {
   Lobby,
   LobbyVisibility,
   LobbyUser,
-  LobbyMessage
+  LobbyMessage,
+  LobbyJoinedPayload,
+  LobbyKickedPayload,
+  LobbyUsersUpdatedPayload,
+  LobbyDataUpdatedPayload,
+  LobbyMessagePayload
 } from "../types";
+import { LobbyKickedReason, LobbyUserChangeType } from "../types";
 import { Signals } from "../signals";
 import type { WavedashSDK } from "../index";
 import {
@@ -20,6 +26,16 @@ import {
   LOBBY_MESSAGE_MAX_LENGTH,
   SDKUser
 } from "@wvdsh/types";
+
+// Type for the lobby join/create response from backend
+// This matches the return type of createAndJoinLobby and joinLobby mutations
+// TODO: Replace this with the actual return type from the backend once Convex types are regenerated
+interface LobbyJoinResponse {
+  lobbyId: Id<"lobbies">;
+  hostId: Id<"users">;
+  users: LobbyUser[];
+  metadata: Record<string, unknown>;
+}
 
 export class LobbyManager {
   private sdk: WavedashSDK;
@@ -54,37 +70,28 @@ export class LobbyManager {
     visibility: LobbyVisibility,
     maxPlayers?: number
   ): Promise<WavedashResponse<Id<"lobbies">>> {
-    const args = {
-      visibility: visibility,
-      maxPlayers: maxPlayers
-    };
+    const args = { visibility, maxPlayers };
 
     try {
-      const lobbyId = await this.sdk.convexClient.mutation(
+      // Cast through unknown until Convex types are regenerated
+      const result = (await this.sdk.convexClient.mutation(
         api.sdk.gameLobby.createAndJoinLobby,
         args
-      );
+      )) as unknown as LobbyJoinResponse;
 
-      this.subscribeToLobby(lobbyId);
-      this.lobbyHostId = this.sdk.getUserId();
-      this.lobbyId = lobbyId;
-      // P2P will be initialized when processUserUpdates receives the lobby users
-
-      this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
-        lobbyId
-      });
+      this.handleLobbyJoin(result);
 
       return {
         success: true,
-        data: lobbyId,
-        args: args
+        data: result.lobbyId,
+        args
       };
     } catch (error) {
       this.sdk.logger.error(`Error creating lobby: ${error}`);
       return {
         success: false,
         data: null,
-        args: args,
+        args,
         message: error instanceof Error ? error.message : String(error)
       };
     }
@@ -93,42 +100,34 @@ export class LobbyManager {
   /**
    * Join a lobby
    * @param lobbyId - The ID of the lobby to join
-   * @returns A WavedashResponse containing the lobby ID
-   * @emits LOBBY_JOINED signal to the game engine
+   * @returns A WavedashResponse with success/failure. Full lobby context comes via LOBBY_JOINED signal.
+   * @emits LOBBY_JOINED signal to the game engine with full lobby context
    */
-  async joinLobby(
-    lobbyId: Id<"lobbies">
-  ): Promise<WavedashResponse<Id<"lobbies">>> {
+  async joinLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<boolean>> {
     const args = { lobbyId };
 
     try {
-      await this.sdk.convexClient.mutation(api.sdk.gameLobby.joinLobby, args);
+      // Cast through unknown until Convex types are regenerated
+      const result = (await this.sdk.convexClient.mutation(
+        api.sdk.gameLobby.joinLobby,
+        args
+      )) as unknown as LobbyJoinResponse;
 
-      this.subscribeToLobby(lobbyId);
-      // P2P will be initialized separately when processUserUpdates receives the lobby users
+      this.handleLobbyJoin(result);
 
-      const response = {
+      return {
         success: true,
-        data: lobbyId,
-        args: args
+        data: true,
+        args
       };
-
-      this.sdk.notifyGame(Signals.LOBBY_JOINED, response);
-      this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
-        lobbyId
-      });
-
-      return response;
     } catch (error) {
       this.sdk.logger.error(`Error joining lobby: ${error}`);
-      const response = {
+      return {
         success: false,
-        data: null,
-        args: args,
+        data: false,
+        args,
         message: error instanceof Error ? error.message : String(error)
       };
-      this.sdk.notifyGame(Signals.LOBBY_JOINED, response);
-      return response;
     }
   }
 
@@ -208,7 +207,7 @@ export class LobbyManager {
 
     try {
       // Clean up subscriptions BEFORE leaving lobby so we don't trigger updates to ourselves from leaving
-      this.unsubscribeFromCurrentLobby();
+      this.cleanupLobbyState();
 
       // Now we can leave the lobby
       await this.sdk.convexClient.mutation(api.sdk.gameLobby.leaveLobby, args);
@@ -297,43 +296,118 @@ export class LobbyManager {
   // ================
 
   /**
-   * Sets up Convex subscriptions for all relevant lobby updates
-   * @precondition - The user has already joined the lobby
-   * @param lobbyId - The ID of the lobby to subscribe to
+   * Initialize local lobby state and subscribe to all relevant updates.
+   * Sets up Convex subscriptions for messages, users, and metadata.
+   * Emits LOBBY_JOINED signal to the game engine.
+   * @precondition - The user has already joined the lobby via mutation
+   * @param response - The full response from createAndJoinLobby or joinLobby mutation
    */
-  private subscribeToLobby(lobbyId: Id<"lobbies">): void {
+  private handleLobbyJoin(response: LobbyJoinResponse): void {
     // Unsubscribe from previous lobby if any
-    this.unsubscribeFromCurrentLobby();
+    this.cleanupLobbyState();
 
-    this.lobbyId = lobbyId;
+    // Initialize local state from response
+    this.lobbyId = response.lobbyId;
+    this.lobbyHostId = response.hostId;
+    this.lobbyUsers = response.users;
+    this.lobbyMetadata = response.metadata;
+
+    // Error handler for subscription failures (e.g., kicked from lobby)
+    const onLobbySubscriptionError = (error: Error) => {
+      this.sdk.logger.error(`Lobby subscription error: ${error.message}`);
+      // Check if this is a "not a member" error indicating we were kicked
+      if (error.message.includes("not a member")) {
+        this.handleLobbyKicked(LobbyKickedReason.KICKED);
+      } else {
+        this.handleLobbyKicked(LobbyKickedReason.ERROR);
+      }
+    };
 
     // Subscribe to lobby messages
     this.unsubscribeLobbyMessages = this.sdk.convexClient.onUpdate(
       api.sdk.gameLobby.lobbyMessages,
-      { lobbyId },
-      this.processMessageUpdates
+      { lobbyId: response.lobbyId },
+      this.processMessageUpdates,
+      onLobbySubscriptionError
     );
 
+    // Subscribe to lobby metadata
     this.unsubscribeLobbyData = this.sdk.convexClient.onUpdate(
       api.sdk.gameLobby.getLobbyMetadata,
-      { lobbyId },
+      { lobbyId: response.lobbyId },
       (lobbyMetadata: Record<string, unknown>) => {
         this.lobbyMetadata = lobbyMetadata;
-        this.sdk.notifyGame(Signals.LOBBY_DATA_UPDATED, lobbyMetadata);
-      }
+        this.sdk.notifyGame(
+          Signals.LOBBY_DATA_UPDATED,
+          lobbyMetadata satisfies LobbyDataUpdatedPayload
+        );
+      },
+      onLobbySubscriptionError
     );
 
     // Subscribe to lobby users
     this.unsubscribeLobbyUsers = this.sdk.convexClient.onUpdate(
       api.sdk.gameLobby.lobbyUsers,
-      { lobbyId },
-      this.processUserUpdates
+      { lobbyId: response.lobbyId },
+      this.processUserUpdates,
+      onLobbySubscriptionError
     );
 
-    this.sdk.logger.debug("Subscribed to lobby:", lobbyId);
+    // Notify parent iframe
+    this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
+      lobbyId: response.lobbyId
+    });
+
+    // Emit LOBBY_JOINED signal with full lobby context
+    // This signal is the canonical source of lobby state for games
+    this.sdk.notifyGame(Signals.LOBBY_JOINED, {
+      lobbyId: response.lobbyId,
+      hostId: response.hostId,
+      users: response.users,
+      metadata: response.metadata
+    } satisfies LobbyJoinedPayload);
+
+    this.sdk.logger.debug("Subscribed to lobby:", response.lobbyId);
   }
 
-  unsubscribeFromCurrentLobby(): void {
+  /**
+   * Handle being kicked or removed from a lobby (subscription error)
+   * This is called when a subscription fails with "User is not a member of this lobby"
+   * Multiple subscriptions may error at once, so we guard against emitting multiple signals
+   */
+  private handleLobbyKicked(
+    reason: LobbyKickedReason = LobbyKickedReason.KICKED
+  ): void {
+    const lobbyId = this.lobbyId;
+    if (!lobbyId) return;
+
+    this.sdk.logger.warn(
+      `User was removed from lobby: ${lobbyId} (reason: ${reason})`
+    );
+    this.cleanupLobbyState();
+
+    this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
+      lobbyId
+    });
+
+    // Emit LOBBY_KICKED signal
+    this.sdk.notifyGame(Signals.LOBBY_KICKED, {
+      lobbyId,
+      reason
+    } satisfies LobbyKickedPayload);
+  }
+
+  /**
+   * Clean up lobby state without emitting signals
+   * Used internally by handleLobbyJoin() and handleLobbyKicked()
+   */
+  private cleanupLobbyState(): void {
+    // Capture lobbyId before clearing (used for "maybe being deleted" tracking)
+    const currentLobbyId = this.lobbyId;
+
+    // Set lobbyId to null immediately to guard against multiple calls (e.g., from concurrent subscription errors)
+    this.lobbyId = null;
+
     if (this.unsubscribeLobbyMessages) {
       this.unsubscribeLobbyMessages();
       this.unsubscribeLobbyMessages = null;
@@ -352,32 +426,38 @@ export class LobbyManager {
 
     // If we're leaving as the last user in the lobby, it's going to be deleted unless someone else joined right as we left
     // Temporarily track this lobby ID so we don't list it as available
-    if (this.lobbyId && this.lobbyUsers.length === 1) {
-      const lobbyId = this.lobbyId;
-
+    if (currentLobbyId && this.lobbyUsers.length === 1) {
       // Clear any existing timeout for this lobby
       const existingTimeout =
-        this.resetMaybeBeingDeletedLobbyIdTimeouts.get(lobbyId);
+        this.resetMaybeBeingDeletedLobbyIdTimeouts.get(currentLobbyId);
       if (existingTimeout) {
         clearTimeout(existingTimeout);
       }
 
       // Track this lobby as potentially being deleted
-      this.maybeBeingDeletedLobbyIds.add(lobbyId);
+      this.maybeBeingDeletedLobbyIds.add(currentLobbyId);
 
       // Set timeout to remove it from the set after 500ms
       const timeoutId = setTimeout(() => {
-        this.maybeBeingDeletedLobbyIds.delete(lobbyId);
-        this.resetMaybeBeingDeletedLobbyIdTimeouts.delete(lobbyId);
+        this.maybeBeingDeletedLobbyIds.delete(currentLobbyId);
+        this.resetMaybeBeingDeletedLobbyIdTimeouts.delete(currentLobbyId);
       }, 500);
 
-      this.resetMaybeBeingDeletedLobbyIdTimeouts.set(lobbyId, timeoutId);
+      this.resetMaybeBeingDeletedLobbyIdTimeouts.set(currentLobbyId, timeoutId);
     }
-    this.lobbyId = null;
+
     this.lobbyUsers = [];
     this.lobbyHostId = null;
     this.lobbyMetadata = {};
     this.recentMessageIds = [];
+  }
+
+  /**
+   * Public method to clean up lobby state without emitting signals
+   * Used for session end cleanup
+   */
+  unsubscribeFromCurrentLobby(): void {
+    this.cleanupLobbyState();
   }
 
   private processPendingLobbyDataUpdates(): void {
@@ -410,21 +490,26 @@ export class LobbyManager {
       if (!previousUserIds.has(user.userId)) {
         this.sdk.notifyGame(Signals.LOBBY_USERS_UPDATED, {
           ...user,
-          changeType: "JOINED"
-        });
+          changeType: LobbyUserChangeType.JOINED
+        } satisfies LobbyUsersUpdatedPayload);
       }
     }
 
     // Find users who left
     for (const user of previousUsers) {
       if (!newUserIds.has(user.userId)) {
+        if (user.userId === this.sdk.getUserId()) {
+          this.sdk.logger.warn(
+            "USER WAS KICKED FROM LOBBY! Received notification for myself leaving."
+          );
+        }
         // For now, we can't distinguish between LEFT, DISCONNECTED, or KICKED
         // from the basic lobby users update. Default to LEFT.
         this.sdk.notifyGame(Signals.LOBBY_USERS_UPDATED, {
           ...user,
           isHost: false,
-          changeType: "LEFT"
-        });
+          changeType: LobbyUserChangeType.LEFT
+        } satisfies LobbyUsersUpdatedPayload);
       }
     }
 
@@ -438,7 +523,10 @@ export class LobbyManager {
     for (const message of newMessages) {
       if (!this.recentMessageIds.includes(message.messageId)) {
         this.recentMessageIds.push(message.messageId);
-        this.sdk.notifyGame(Signals.LOBBY_MESSAGE, message);
+        this.sdk.notifyGame(
+          Signals.LOBBY_MESSAGE,
+          message satisfies LobbyMessagePayload
+        );
       }
     }
     this.recentMessageIds = newMessages.map((message) => message.messageId);

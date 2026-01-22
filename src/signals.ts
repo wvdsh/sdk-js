@@ -10,8 +10,8 @@
 export const Signals = {
   // Lobby signals
   LOBBY_MESSAGE: "LobbyMessage",
-  LOBBY_KICKED: "LobbyKicked", // player was removed from lobby either by host or network issue
   LOBBY_JOINED: "LobbyJoined",
+  LOBBY_KICKED: "LobbyKicked", // player was removed from lobby (kicked by host or disconnected)
   LOBBY_USERS_UPDATED: "LobbyUsersUpdated",
   LOBBY_DATA_UPDATED: "LobbyDataUpdated",
 

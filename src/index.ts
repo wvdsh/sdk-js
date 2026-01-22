@@ -51,7 +51,7 @@ class WavedashSDK {
   protected heartbeatManager: HeartbeatManager;
   protected ugcManager: UGCManager;
   protected leaderboardManager: LeaderboardManager;
-  
+
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
   gameCloudId: string;
@@ -184,11 +184,13 @@ class WavedashSDK {
     // Start heartbeat service
     this.heartbeatManager.start();
 
-    // Join a lobby on startup if provided
+    // Join a lobby on startup if provided (from invite link or external source)
     if (this.lobbyIdToJoinOnStartup && !this.config.deferEvents) {
-      this.joinLobby(this.lobbyIdToJoinOnStartup).catch((error) => {
-        this.logger.error("Could not join lobby on startup:", error);
-      });
+      this.lobbyManager
+        .joinLobby(this.lobbyIdToJoinOnStartup)
+        .catch((error) => {
+          this.logger.error("Could not join lobby on startup:", error);
+        });
     }
 
     return true;
@@ -219,11 +221,13 @@ class WavedashSDK {
       return;
     }
     this.config!.deferEvents = false;
-    // Game is now ready for event messages, join a lobby if provided, SDK will send LOBBY_JOINED signal on success
+    // Game is now ready for event messages, join a lobby if provided (from invite link or external source)
     if (this.lobbyIdToJoinOnStartup) {
-      this.joinLobby(this.lobbyIdToJoinOnStartup).catch((error) => {
-        this.logger.error("Could not join lobby on startup:", error);
-      });
+      this.lobbyManager
+        .joinLobby(this.lobbyIdToJoinOnStartup)
+        .catch((error) => {
+          this.logger.error("Could not join lobby on startup:", error);
+        });
     }
   }
 
@@ -695,6 +699,14 @@ class WavedashSDK {
   // Game Lobbies
   // ============
 
+  /**
+   * Create a new lobby and join it as the host.
+   * @param visibility - The visibility of the lobby
+   * @param maxPlayers - Optional maximum number of players
+   * @returns A WavedashResponse with the created lobbyId.
+   *          Full lobby context is provided via the LOBBY_JOINED signal.
+   * @emits LOBBY_JOINED signal to the game engine with full lobby context
+   */
   async createLobby(
     visibility: LobbyVisibility,
     maxPlayers?: number
@@ -711,14 +723,15 @@ class WavedashSDK {
   }
 
   /**
-   * Join a lobby
+   * Join an existing lobby.
    * @param lobbyId - The ID of the lobby to join
-   * @returns A WavedashResponse containing the lobby ID
-   * @emits LOBBY_JOINED signal to the game engine
+   * @returns A WavedashResponse with success/failure.
+   *          Full lobby context is provided via the LOBBY_JOINED signal.
+   * @emits LOBBY_JOINED signal to the game engine with full lobby context
    */
   async joinLobby(
     lobbyId: Id<"lobbies">
-  ): Promise<string | WavedashResponse<Id<"lobbies">>> {
+  ): Promise<string | WavedashResponse<boolean>> {
     this.ensureReady();
     this.logger.debug(`Joining lobby: ${lobbyId}`);
     const result = await this.lobbyManager.joinLobby(lobbyId);
@@ -806,7 +819,11 @@ class WavedashSDK {
     const data =
       typeof payload === "object" ? JSON.stringify(payload) : payload;
     if (this.engineInstance?.SendMessage) {
-      this.engineInstance.SendMessage(this.engineCallbackReceiver, signal, data);
+      this.engineInstance.SendMessage(
+        this.engineCallbackReceiver,
+        signal,
+        data
+      );
     } else {
       this.logger.error("Engine instance not set. Dropping signal:", signal);
     }
@@ -871,8 +888,8 @@ class WavedashSDK {
 
 export { WavedashSDK };
 
-// Re-export all types
-export type * from "./types";
+// Re-export all types and constants
+export * from "./types";
 
 // Type-safe initialization helper
 export async function setupWavedashSDK(): Promise<WavedashSDK> {

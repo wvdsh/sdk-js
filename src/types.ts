@@ -108,7 +108,88 @@ export interface WavedashResponse<T> {
   // TODO: errorCode?
 }
 
+// =============================================================================
+// Signal Payloads
+// These are the payload types for each signal that the SDK emits to the game engine.
+// =============================================================================
+
+// --- Lobby Signals ---
+
+/** Payload for LOBBY_JOINED signal - emitted when joining or creating a lobby */
+export interface LobbyJoinedPayload {
+  lobbyId: Id<"lobbies">;
+  hostId: Id<"users">;
+  users: LobbyUser[];
+  metadata: Record<string, unknown>;
+}
+
+/** Reasons why a user was kicked from a lobby */
+export const LobbyKickedReason = {
+  KICKED: "KICKED",
+  ERROR: "ERROR"
+} as const;
+export type LobbyKickedReason =
+  (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason];
+
+/** Payload for LOBBY_KICKED signal - emitted when removed from a lobby */
+export interface LobbyKickedPayload {
+  lobbyId: Id<"lobbies">;
+  reason: LobbyKickedReason;
+}
+
+/** Change types for lobby user updates */
+export const LobbyUserChangeType = {
+  JOINED: "JOINED",
+  LEFT: "LEFT"
+} as const;
+export type LobbyUserChangeType =
+  (typeof LobbyUserChangeType)[keyof typeof LobbyUserChangeType];
+
+/** Payload for LOBBY_USERS_UPDATED signal - emitted when a user joins or leaves */
+export interface LobbyUsersUpdatedPayload extends LobbyUser {
+  changeType: LobbyUserChangeType;
+}
+
+/** Payload for LOBBY_DATA_UPDATED signal - the full lobby metadata */
+export type LobbyDataUpdatedPayload = Record<string, unknown>;
+
+/** Payload for LOBBY_MESSAGE signal - a message received in the lobby */
+export type LobbyMessagePayload = LobbyMessage;
+
+// --- P2P Signals ---
+
+/** Payload for P2P_CONNECTION_ESTABLISHED signal */
+export interface P2PConnectionEstablishedPayload {
+  userId: Id<"users">;
+  username: string;
+}
+
+/** Payload for P2P_CONNECTION_FAILED signal */
+export interface P2PConnectionFailedPayload {
+  userId: Id<"users">;
+  username: string;
+  error: string;
+}
+
+/** Payload for P2P_PEER_DISCONNECTED signal */
+export interface P2PPeerDisconnectedPayload {
+  userId: Id<"users">;
+  username: string;
+}
+
+// --- Backend Connection Signals ---
+
+/** Payload for BACKEND_CONNECTED, BACKEND_DISCONNECTED, BACKEND_RECONNECTING signals */
+export interface BackendConnectionPayload {
+  isConnected: boolean;
+  hasEverConnected: boolean;
+  connectionCount: number;
+  connectionRetries: number;
+}
+
+// =============================================================================
 // P2P Connection types
+// =============================================================================
 export interface P2PPeer {
   userId: Id<"users">; // Primary identifier - links to persistent user
   username: string;
