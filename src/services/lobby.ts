@@ -121,12 +121,21 @@ export class LobbyManager {
         args
       };
     } catch (error) {
-      this.sdk.logger.error(`Error joining lobby: ${error}`);
+      const message = error instanceof Error ? error.message : String(error);
+      this.sdk.logger.error(`Error joining lobby: ${message}`);
+
+      // Emit LOBBY_JOINED signal with failure so all SDKs receive consistent shape
+      this.sdk.notifyGame(Signals.LOBBY_JOINED, {
+        success: false,
+        lobbyId,
+        message
+      } satisfies LobbyJoinedPayload);
+
       return {
         success: false,
         data: false,
         args,
-        message: error instanceof Error ? error.message : String(error)
+        message
       };
     }
   }
@@ -359,8 +368,8 @@ export class LobbyManager {
     });
 
     // Emit LOBBY_JOINED signal with full lobby context
-    // This signal is the canonical source of lobby state for games
     this.sdk.notifyGame(Signals.LOBBY_JOINED, {
+      success: true,
       lobbyId: response.lobbyId,
       hostId: response.hostId,
       users: response.users,
