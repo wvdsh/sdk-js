@@ -108,6 +108,28 @@ export interface WavedashResponse<T> {
   // TODO: errorCode?
 }
 
+// Lobby join/create types
+// These use a simplified acknowledgment pattern where the method returns success/failure,
+// and the LOBBY_JOINED signal provides the full lobby context.
+export interface LobbyJoinedPayload {
+  lobbyId: Id<"lobbies">;
+  hostId: Id<"users">;
+  users: LobbyUser[];
+  metadata: Record<string, unknown>;
+}
+
+export const LobbyKickedReason = {
+  KICKED: "KICKED",
+  ERROR: "ERROR",
+} as const;
+
+export type LobbyKickedReason = typeof LobbyKickedReason[keyof typeof LobbyKickedReason];
+
+export interface LobbyKickedPayload {
+  lobbyId: Id<"lobbies">;
+  reason: LobbyKickedReason;
+}
+
 // P2P Connection types
 export interface P2PPeer {
   userId: Id<"users">; // Primary identifier - links to persistent user
