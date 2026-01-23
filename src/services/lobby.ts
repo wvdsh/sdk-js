@@ -15,7 +15,8 @@ import type {
   LobbyKickedPayload,
   LobbyUsersUpdatedPayload,
   LobbyDataUpdatedPayload,
-  LobbyMessagePayload
+  LobbyMessagePayload,
+  LobbyJoinResponse
 } from "../types";
 import { LobbyKickedReason, LobbyUserChangeType } from "../types";
 import { Signals } from "../signals";
@@ -26,16 +27,6 @@ import {
   LOBBY_MESSAGE_MAX_LENGTH,
   SDKUser
 } from "@wvdsh/types";
-
-// Type for the lobby join/create response from backend
-// This matches the return type of createAndJoinLobby and joinLobby mutations
-// TODO: Replace this with the actual return type from the backend once Convex types are regenerated
-interface LobbyJoinResponse {
-  lobbyId: Id<"lobbies">;
-  hostId: Id<"users">;
-  users: LobbyUser[];
-  metadata: Record<string, unknown>;
-}
 
 export class LobbyManager {
   private sdk: WavedashSDK;
@@ -74,10 +65,10 @@ export class LobbyManager {
 
     try {
       // Cast through unknown until Convex types are regenerated
-      const result = (await this.sdk.convexClient.mutation(
+      const result = await this.sdk.convexClient.mutation(
         api.sdk.gameLobby.createAndJoinLobby,
         args
-      )) as unknown as LobbyJoinResponse;
+      );
 
       this.handleLobbyJoin(result);
 
@@ -108,10 +99,10 @@ export class LobbyManager {
 
     try {
       // Cast through unknown until Convex types are regenerated
-      const result = (await this.sdk.convexClient.mutation(
+      const result = await this.sdk.convexClient.mutation(
         api.sdk.gameLobby.joinLobby,
         args
-      )) as unknown as LobbyJoinResponse;
+      );
 
       this.handleLobbyJoin(result);
 
