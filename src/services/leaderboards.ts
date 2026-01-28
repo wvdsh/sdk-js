@@ -135,9 +135,10 @@ export class LeaderboardManager {
   async listLeaderboardEntriesAroundUser(
     leaderboardId: Id<"leaderboards">,
     countAhead: number,
-    countBehind: number
+    countBehind: number,
+    friendsOnly: boolean = false
   ): Promise<WavedashResponse<LeaderboardEntries>> {
-    const args = { leaderboardId, countAhead, countBehind };
+    const args = { leaderboardId, countAhead, countBehind, friendsOnly };
 
     try {
       const result = await this.sdk.convexClient.query(
@@ -169,9 +170,10 @@ export class LeaderboardManager {
   async listLeaderboardEntries(
     leaderboardId: Id<"leaderboards">,
     offset: number,
-    limit: number
+    limit: number,
+    friendsOnly: boolean = false
   ): Promise<WavedashResponse<LeaderboardEntries>> {
-    const args = { leaderboardId, offset, limit };
+    const args = { leaderboardId, offset, limit, friendsOnly };
 
     try {
       const result = await this.sdk.convexClient.query(

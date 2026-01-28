@@ -308,7 +308,8 @@ class WavedashSDK {
   async listLeaderboardEntriesAroundUser(
     leaderboardId: Id<"leaderboards">,
     countAhead: number,
-    countBehind: number
+    countBehind: number,
+    friendsOnly: boolean = false
   ): Promise<string | WavedashResponse<LeaderboardEntries>> {
     this.ensureReady();
     this.logger.debug(
@@ -318,7 +319,8 @@ class WavedashSDK {
       await this.leaderboardManager.listLeaderboardEntriesAroundUser(
         leaderboardId,
         countAhead,
-        countBehind
+        countBehind,
+        friendsOnly
       );
     return this.formatResponse(result);
   }
@@ -326,14 +328,16 @@ class WavedashSDK {
   async listLeaderboardEntries(
     leaderboardId: Id<"leaderboards">,
     offset: number,
-    limit: number
+    limit: number,
+    friendsOnly: boolean = false
   ): Promise<string | WavedashResponse<LeaderboardEntries>> {
     this.ensureReady();
     this.logger.debug(`Listing entries for leaderboard: ${leaderboardId}`);
     const result = await this.leaderboardManager.listLeaderboardEntries(
       leaderboardId,
       offset,
-      limit
+      limit,
+      friendsOnly
     );
     return this.formatResponse(result);
   }
