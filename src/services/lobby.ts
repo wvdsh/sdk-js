@@ -64,10 +64,10 @@ export class LobbyManager {
   // ================
 
   /**
-   * Start listening for lobby invites for the current user.
+   * Initialize the lobby manager.
    * Called during SDK initialization.
    */
-  startListeningForInvites(): void {
+  init(): void {
     if (this.unsubscribeLobbyInvites) {
       return; // Already listening
     }

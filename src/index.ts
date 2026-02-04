@@ -189,8 +189,8 @@ class WavedashSDK {
     this.logger.debug("Initialized with config:", this.config);
     // Start heartbeat service
     this.heartbeatManager.start();
-    // Start listening for lobby invites
-    this.lobbyManager.startListeningForInvites();
+    // Initialize lobby manager
+    this.lobbyManager.init();
 
     // Join a lobby on startup if provided (from invite link or external source)
     if (this.lobbyIdToJoinOnStartup && !this.config.deferEvents) {
