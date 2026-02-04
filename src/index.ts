@@ -39,11 +39,17 @@ import {
   SDKUser
 } from "@wvdsh/types";
 
+interface QueuedEvent {
+  signal: Signal;
+  payload: string | number | boolean | object;
+}
+
 class WavedashSDK {
   private initialized: boolean = false;
   private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
+  private eventQueue: QueuedEvent[] = [];
 
   protected ugcHost: string;
   protected lobbyManager: LobbyManager;
@@ -119,7 +125,7 @@ class WavedashSDK {
       if (this.sessionEndSent) return;
       this.sessionEndSent = true;
 
-      this.lobbyManager.unsubscribeFromCurrentLobby();
+      this.lobbyManager.destroy();
       const pendingData = this.statsManager.getPendingData();
       const sessionEndData: Record<string, unknown> = {};
       if (pendingData?.stats?.length) {
@@ -183,6 +189,8 @@ class WavedashSDK {
     this.logger.debug("Initialized with config:", this.config);
     // Start heartbeat service
     this.heartbeatManager.start();
+    // Initialize lobby manager
+    this.lobbyManager.init();
 
     // Join a lobby on startup if provided (from invite link or external source)
     if (this.lobbyIdToJoinOnStartup && !this.config.deferEvents) {
@@ -221,6 +229,10 @@ class WavedashSDK {
       return;
     }
     this.config!.deferEvents = false;
+
+    // Flush any queued events now that the game is ready
+    this.flushEventQueue();
+
     // Game is now ready for event messages, join a lobby if provided (from invite link or external source)
     if (this.lobbyIdToJoinOnStartup) {
       this.lobbyManager
@@ -798,6 +810,16 @@ class WavedashSDK {
     return this.lobbyManager.sendLobbyMessage(lobbyId, message);
   }
 
+  async inviteUserToLobby(
+    lobbyId: Id<"lobbies">,
+    userId: Id<"users">
+  ): Promise<string | WavedashResponse<boolean>> {
+    this.ensureReady();
+    this.logger.debug(`Inviting user ${userId} to lobby ${lobbyId}`);
+    const result = await this.lobbyManager.inviteUserToLobby(lobbyId, userId);
+    return this.formatResponse(result);
+  }
+
   // ==============================
   // User Presence
   // ==============================
@@ -820,6 +842,20 @@ class WavedashSDK {
     signal: Signal,
     payload: string | number | boolean | object
   ): void {
+    // Queue events if game is not ready for them yet
+    if (this.config?.deferEvents) {
+      this.eventQueue.push({ signal, payload });
+      this.logger.debug(`Queued event: ${signal}`);
+      return;
+    }
+
+    this.sendGameEvent(signal, payload);
+  }
+
+  private sendGameEvent(
+    signal: Signal,
+    payload: string | number | boolean | object
+  ): void {
     const data =
       typeof payload === "object" ? JSON.stringify(payload) : payload;
     if (this.engineInstance?.SendMessage) {
@@ -831,6 +867,17 @@ class WavedashSDK {
     } else {
       this.logger.error("Engine instance not set. Dropping signal:", signal);
     }
+  }
+
+  private flushEventQueue(): void {
+    if (this.eventQueue.length === 0) {
+      return;
+    }
+    this.logger.debug(`Flushing ${this.eventQueue.length} queued events`);
+    for (const event of this.eventQueue) {
+      this.sendGameEvent(event.signal, event.payload);
+    }
+    this.eventQueue = [];
   }
 
   // ================

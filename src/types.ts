@@ -19,6 +19,9 @@ export type Lobby = FunctionReturnType<
 export type LobbyJoinResponse = FunctionReturnType<
   typeof api.sdk.gameLobby.joinLobby
 >;
+export type LobbyInvite = FunctionReturnType<
+  typeof api.sdk.gameLobby.getLobbyInvites
+>[0];
 export type UGCType =
   PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
 export type UGCVisibility =
@@ -162,6 +165,9 @@ export type LobbyDataUpdatedPayload = Record<string, unknown>;
 
 /** Payload for LOBBY_MESSAGE signal - a message received in the lobby */
 export type LobbyMessagePayload = LobbyMessage;
+
+/** Payload for LOBBY_INVITE signal - an invite to join a lobby */
+export type LobbyInvitePayload = LobbyInvite;
 
 // --- P2P Signals ---
 

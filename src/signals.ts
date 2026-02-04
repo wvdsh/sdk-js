@@ -14,6 +14,7 @@ export const Signals = {
   LOBBY_KICKED: "LobbyKicked", // player was removed from lobby (kicked by host or disconnected)
   LOBBY_USERS_UPDATED: "LobbyUsersUpdated",
   LOBBY_DATA_UPDATED: "LobbyDataUpdated",
+  LOBBY_INVITE: "LobbyInvite", // received an invite to join a lobby
 
   // P2P signals
   P2P_CONNECTION_ESTABLISHED: "P2PConnectionEstablished", // connection to peer is ready
@@ -26,6 +27,5 @@ export const Signals = {
   BACKEND_RECONNECTING: "BackendReconnecting" // attempting to reconnect to backend
 
   // TODO: Future signals to implement
-  // LOBBY_INVITE: 'LobbyInvite',
   // P2P_CONNECTION_REQUESTED: 'P2PConnectionRequested', // for now we always connect all lobby members
 } as const;

@@ -36,7 +36,7 @@
     "typescript-eslint": "^8.52.0"
   },
   "dependencies": {
-    "@wvdsh/types": "^1.0.90",
+    "@wvdsh/types": "^1.0.93",
     "convex": "^1.28.0",
     "lodash.debounce": "^4.0.8",
     "lodash.unionby": "^4.8.0"
