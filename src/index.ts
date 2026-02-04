@@ -125,7 +125,7 @@ class WavedashSDK {
       if (this.sessionEndSent) return;
       this.sessionEndSent = true;
 
-      this.lobbyManager.unsubscribeFromCurrentLobby();
+      this.lobbyManager.destroy();
       const pendingData = this.statsManager.getPendingData();
       const sessionEndData: Record<string, unknown> = {};
       if (pendingData?.stats?.length) {

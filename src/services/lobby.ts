@@ -515,6 +515,38 @@ export class LobbyManager {
     this.cleanupLobbyState();
   }
 
+  /**
+   * Fully destroy the LobbyManager, cleaning up all subscriptions and timeouts.
+   * Called during session end to ensure no lingering listeners.
+   */
+  destroy(): void {
+    // Clean up current lobby state (messages, users, data subscriptions, P2P)
+    this.cleanupLobbyState();
+
+    // Clean up lobby invites subscription
+    if (this.unsubscribeLobbyInvites) {
+      this.unsubscribeLobbyInvites();
+      this.unsubscribeLobbyInvites = null;
+    }
+
+    // Clear pending lobby data update timeout
+    if (this.lobbyDataUpdateTimeout) {
+      clearTimeout(this.lobbyDataUpdateTimeout);
+      this.lobbyDataUpdateTimeout = null;
+    }
+
+    // Clear all "maybe being deleted" tracking timeouts
+    for (const timeoutId of this.resetMaybeBeingDeletedLobbyIdTimeouts.values()) {
+      clearTimeout(timeoutId);
+    }
+    this.resetMaybeBeingDeletedLobbyIdTimeouts.clear();
+    this.maybeBeingDeletedLobbyIds.clear();
+
+    // Clear other state
+    this.seenInviteIds.clear();
+    this.cachedLobbies = {};
+  }
+
   private processPendingLobbyDataUpdates(): void {
     this.sdk.logger.debug("Bulk updating lobby metadata:", this.lobbyMetadata);
     this.sdk.convexClient
