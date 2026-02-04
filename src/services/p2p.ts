@@ -470,7 +470,9 @@ export class P2PManager {
 
     switch (message.messageType) {
       case P2P_SIGNALING_MESSAGE_TYPE.OFFER: {
-        // Log offer processing details
+        // Receiving an offer means peer is handling connection/restart - clear our restart state
+        this.iceRestartInProgress.delete(remoteUserId);
+
         this.sdk.logger.debug(`Processing offer from peer ${remoteUserId}:`);
 
         await pc.setRemoteDescription(
@@ -772,8 +774,9 @@ export class P2PManager {
         this.sdk.logger.debug(
           `  ICE connected to peer ${remoteUserId}, data channels should be available...`
         );
-        // Reset restart attempts on successful connection
+        // Reset restart state on successful connection
         this.iceRestartAttempts.delete(remoteUserId);
+        this.iceRestartInProgress.delete(remoteUserId);
       } else if (pc.iceConnectionState === "failed") {
         // ICE connection failed - wait briefly before restarting to avoid
         // reacting to transient failures during network switches (Wi-Fi hiccups, etc.)
@@ -808,6 +811,7 @@ export class P2PManager {
 
   // Track ICE restart attempts to prevent infinite restart loops
   private iceRestartAttempts = new Map<Id<"users">, number>();
+  private iceRestartInProgress = new Set<Id<"users">>(); // Prevents double-initiation
   private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
 
   /**
@@ -824,6 +828,14 @@ export class P2PManager {
     if (currentUserId > remoteUserId) {
       this.sdk.logger.debug(
         `Waiting for peer ${remoteUserId} to initiate ICE restart (they have lower userId)`
+      );
+      return;
+    }
+
+    // Skip if restart already in progress for this peer
+    if (this.iceRestartInProgress.has(remoteUserId)) {
+      this.sdk.logger.debug(
+        `ICE restart already in progress for peer ${remoteUserId}, skipping`
       );
       return;
     }
@@ -846,6 +858,7 @@ export class P2PManager {
     }
 
     this.iceRestartAttempts.set(remoteUserId, attempts + 1);
+    this.iceRestartInProgress.add(remoteUserId);
     this.sdk.logger.debug(
       `ICE restart attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS} for peer ${remoteUserId}`
     );
@@ -1088,6 +1101,7 @@ export class P2PManager {
       this.pendingProcessedMessageIds.clear();
       this.pendingIceCandidates.clear();
       this.iceRestartAttempts.clear();
+      this.iceRestartInProgress.clear();
 
       return {
         success: true,
