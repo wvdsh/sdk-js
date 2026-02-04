@@ -30,18 +30,30 @@ const DEFAULT_P2P_CONFIG: P2PConfig = {
 
 export class P2PManager {
   private sdk: WavedashSDK;
+  private config: P2PConfig;
   private currentConnection: P2PConnection | null = null;
+
+  // WebRTC connection state
   private peerConnections = new Map<Id<"users">, RTCPeerConnection>();
   private reliableChannels = new Map<Id<"users">, RTCDataChannel>();
   private unreliableChannels = new Map<Id<"users">, RTCDataChannel>();
-  private pendingIceCandidates = new Map<Id<"users">, RTCIceCandidateInit[]>(); // Buffer ICE candidates until remote description is set
-  private config: P2PConfig;
-  private processedSignalingMessages = new Set<string>(); // Track processed message IDs
+  private pendingIceCandidates = new Map<Id<"users">, RTCIceCandidateInit[]>();
   private connectionStateCheckInterval: ReturnType<typeof setInterval> | null =
     null;
 
-  private turnCredentials: P2PTurnCredentials | null = null; // Cached TURN server credentials for WebRTC relay
-  private turnCredentialsInitPromise: Promise<void> | null = null; // Tracks in-flight initialization
+  // ICE restart tracking
+  private iceRestartAttempts = new Map<Id<"users">, number>();
+  private iceRestartInProgress = new Set<Id<"users">>();
+  private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
+
+  // TURN server credentials
+  private turnCredentials: P2PTurnCredentials | null = null;
+  private turnCredentialsInitPromise: Promise<void> | null = null;
+
+  // Signaling state
+  private unsubscribeFromSignalingMessages: (() => void) | null = null;
+  private processedSignalingMessages = new Set<string>();
+  private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
 
   // Message queues - one per channel for performance
   // Only incoming queue is used (P2P network → Game engine)
@@ -362,9 +374,6 @@ export class P2PManager {
       );
     }
   }
-
-  private unsubscribeFromSignalingMessages: (() => void) | null = null;
-  private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
 
   private subscribeToSignalingMessages(connection: P2PConnection): void {
     // Subscribe to real-time signaling message updates
@@ -809,11 +818,6 @@ export class P2PManager {
     return true;
   }
 
-  // Track ICE restart attempts to prevent infinite restart loops
-  private iceRestartAttempts = new Map<Id<"users">, number>();
-  private iceRestartInProgress = new Set<Id<"users">>(); // Prevents double-initiation
-  private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
-
   /**
    * Attempt to restart ICE when connection fails.
    * Only the peer with the lower userId initiates the restart to avoid conflicts.
@@ -913,7 +917,7 @@ export class P2PManager {
     };
 
     channel.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-      // Enqueue the raw binary data directly to SharedArrayBuffer queue
+      // Enqueue the raw binary data directly to queue
       this.enqueueMessage(event.data);
     };
 
@@ -1192,7 +1196,7 @@ export class P2PManager {
   }
 
   // ================
-  // SharedArrayBuffer Message Queue
+  // Incoming Message Queues
   // ================
 
   private initializeMessageQueue(): void {
