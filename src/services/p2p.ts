@@ -244,9 +244,6 @@ export class P2PManager {
         );
 
         if (peersToInitiate.length > 0) {
-          // Small delay to ensure data channels are set up before creating offers
-          await new Promise((resolve) => setTimeout(resolve, 100));
-
           const offerPromises = peersToInitiate.map((userId) => {
             this.sdk.logger.debug(
               `Initiating offer to new peer ${userId} (lower userId rule)`
@@ -590,9 +587,6 @@ export class P2PManager {
     ).filter((userId) => currentUserId < userId);
 
     if (peersToInitiate.length > 0) {
-      // Small delay to ensure data channels are properly set up before creating offers
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
       const offerPromises = peersToInitiate.map((userId) => {
         this.sdk.logger.debug(
           `Initiating offer to peer ${userId} (lower userId rule)`
@@ -662,8 +656,10 @@ export class P2PManager {
     }
     const pc = new RTCPeerConnection({
       iceServers: iceServers,
-      // Start gathering ICE candidates in the background as soon as the RTCPeerConnection is created
-      iceCandidatePoolSize: 5,
+      // Disable candidate pre-gathering - gather ICE candidates only after setLocalDescription()
+      // This ensures proper sequencing and avoids race conditions at the cost of
+      // slightly slower initial connection (more reliable)
+      iceCandidatePoolSize: 0,
       // Allow all IP addresses (helpful for same-device testing)
       bundlePolicy: "max-bundle",
       rtcpMuxPolicy: "require"
@@ -776,6 +772,27 @@ export class P2PManager {
         this.sdk.logger.debug(
           `  ICE connected to peer ${remoteUserId}, data channels should be available...`
         );
+        // Reset restart attempts on successful connection
+        this.iceRestartAttempts.delete(remoteUserId);
+      } else if (pc.iceConnectionState === "failed") {
+        // ICE connection failed - wait briefly before restarting to avoid
+        // reacting to transient failures during network switches (Wi-Fi hiccups, etc.)
+        this.sdk.logger.debug(
+          `ICE connection to peer ${remoteUserId} failed, will retry in 500ms...`
+        );
+        setTimeout(() => {
+          if (pc.iceConnectionState === "failed") {
+            this.sdk.logger.warn(
+              `ICE connection to peer ${remoteUserId} still failed after delay, attempting ICE restart...`
+            );
+            this.attemptIceRestart(remoteUserId, pc);
+          }
+        }, 500);
+      } else if (pc.iceConnectionState === "disconnected") {
+        // Disconnected state may recover on its own, but log it
+        this.sdk.logger.debug(
+          `ICE connection to peer ${remoteUserId} disconnected, may recover...`
+        );
       }
     };
 
@@ -787,6 +804,77 @@ export class P2PManager {
 
     this.peerConnections.set(remoteUserId, pc);
     return true;
+  }
+
+  // Track ICE restart attempts to prevent infinite restart loops
+  private iceRestartAttempts = new Map<Id<"users">, number>();
+  private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
+
+  /**
+   * Attempt to restart ICE when connection fails.
+   * Only the peer with the lower userId initiates the restart to avoid conflicts.
+   */
+  private async attemptIceRestart(
+    remoteUserId: Id<"users">,
+    pc: RTCPeerConnection
+  ): Promise<void> {
+    const currentUserId = this.sdk.getUserId();
+
+    // Only the peer with lower userId initiates restart to avoid both sides restarting simultaneously
+    if (currentUserId > remoteUserId) {
+      this.sdk.logger.debug(
+        `Waiting for peer ${remoteUserId} to initiate ICE restart (they have lower userId)`
+      );
+      return;
+    }
+
+    // Check restart attempt count
+    const attempts = this.iceRestartAttempts.get(remoteUserId) || 0;
+    if (attempts >= this.MAX_ICE_RESTART_ATTEMPTS) {
+      this.sdk.logger.error(
+        `Max ICE restart attempts (${this.MAX_ICE_RESTART_ATTEMPTS}) reached for peer ${remoteUserId}, giving up`
+      );
+      const peer = this.currentConnection?.peers[remoteUserId];
+      if (peer) {
+        this.sdk.notifyGame(Signals.P2P_CONNECTION_FAILED, {
+          userId: peer.userId,
+          username: peer.username,
+          error: "ICE restart failed after maximum attempts"
+        } satisfies P2PConnectionFailedPayload);
+      }
+      return;
+    }
+
+    this.iceRestartAttempts.set(remoteUserId, attempts + 1);
+    this.sdk.logger.debug(
+      `ICE restart attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS} for peer ${remoteUserId}`
+    );
+
+    try {
+      // Trigger ICE restart - this invalidates current ICE candidates and gathers new ones
+      pc.restartIce();
+
+      // Create and send a new offer with iceRestart flag
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+
+      const offerData = {
+        type: offer.type,
+        sdp: offer.sdp
+      };
+
+      await this.sendSignalingMessage(remoteUserId, {
+        type: P2P_SIGNALING_MESSAGE_TYPE.OFFER,
+        data: offerData
+      });
+
+      this.sdk.logger.debug(`ICE restart offer sent to peer ${remoteUserId}`);
+    } catch (error) {
+      this.sdk.logger.error(
+        `Failed to initiate ICE restart for peer ${remoteUserId}:`,
+        error
+      );
+    }
   }
 
   private setupDataChannelHandlers(
@@ -995,10 +1083,11 @@ export class P2PManager {
 
       this.currentConnection = null;
 
-      // Clear processed message caches
+      // Clear processed message caches and state
       this.processedSignalingMessages.clear();
       this.pendingProcessedMessageIds.clear();
       this.pendingIceCandidates.clear();
+      this.iceRestartAttempts.clear();
 
       return {
         success: true,
