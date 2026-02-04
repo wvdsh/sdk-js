@@ -11,11 +11,13 @@ import type {
   LobbyVisibility,
   LobbyUser,
   LobbyMessage,
+  LobbyInvite,
   LobbyJoinedPayload,
   LobbyKickedPayload,
   LobbyUsersUpdatedPayload,
   LobbyDataUpdatedPayload,
   LobbyMessagePayload,
+  LobbyInvitePayload,
   LobbyJoinResponse
 } from "../types";
 import { LobbyKickedReason, LobbyUserChangeType } from "../types";
@@ -49,6 +51,10 @@ export class LobbyManager {
   // We'll cache metadata and num users for each lobby and return that info synchronously when requested by the game
   private cachedLobbies: Record<Id<"lobbies">, Lobby> = {};
 
+  // Track lobby invites
+  private unsubscribeLobbyInvites: (() => void) | null = null;
+  private seenInviteIds: Set<Id<"notifications">> = new Set();
+
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
   }
@@ -56,6 +62,27 @@ export class LobbyManager {
   // ================
   // Public Methods
   // ================
+
+  /**
+   * Start listening for lobby invites for the current user.
+   * Called during SDK initialization.
+   */
+  startListeningForInvites(): void {
+    if (this.unsubscribeLobbyInvites) {
+      return; // Already listening
+    }
+
+    this.unsubscribeLobbyInvites = this.sdk.convexClient.onUpdate(
+      api.sdk.gameLobby.getLobbyInvites,
+      {},
+      this.processInviteUpdates,
+      (error) => {
+        this.sdk.logger.error(`Lobby invites subscription error: ${error}`);
+      }
+    );
+
+    this.sdk.logger.debug("Started listening for lobby invites");
+  }
 
   async createLobby(
     visibility: LobbyVisibility,
@@ -289,6 +316,34 @@ export class LobbyManager {
     }
 
     return true;
+  }
+
+  async inviteUserToLobby(
+    lobbyId: Id<"lobbies">,
+    userId: Id<"users">
+  ): Promise<WavedashResponse<boolean>> {
+    const args = { lobbyId, targetUserId: userId };
+
+    try {
+      await this.sdk.convexClient.mutation(
+        api.sdk.gameLobby.inviteToLobby,
+        args
+      );
+
+      return {
+        success: true,
+        data: true,
+        args
+      };
+    } catch (error) {
+      this.sdk.logger.error(`Error inviting user to lobby: ${error}`);
+      return {
+        success: false,
+        data: false,
+        args,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
   }
 
   // ================
@@ -530,6 +585,20 @@ export class LobbyManager {
       }
     }
     this.recentMessageIds = newMessages.map((message) => message.messageId);
+  };
+
+  private processInviteUpdates = (invites: LobbyInvite[]): void => {
+    for (const invite of invites) {
+      if (!this.seenInviteIds.has(invite.notificationId)) {
+        this.seenInviteIds.add(invite.notificationId);
+        this.sdk.notifyGame(
+          Signals.LOBBY_INVITE,
+          invite satisfies LobbyInvitePayload
+        );
+      }
+    }
+    // Update seen IDs to match current invites (remove stale ones)
+    this.seenInviteIds = new Set(invites.map((invite) => invite.notificationId));
   };
 
   // ================
