@@ -55,6 +55,16 @@ export class P2PManager {
   private processedSignalingMessages = new Set<string>();
   private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
 
+  // Initialization lock to prevent duplicate concurrent initialization for the same lobby
+  private initializationInProgress: Promise<
+    WavedashResponse<P2PConnection>
+  > | null = null;
+  private initializationLobbyId: Id<"lobbies"> | null = null;
+
+  // Signaling subscription readiness tracking
+  private signalingSubscriptionReady: Promise<void> | null = null;
+  private signalingSubscriptionReadyResolver: (() => void) | null = null;
+
   // Message queues - one per channel for performance
   // Only incoming queue is used (P2P network → Game engine)
   // Note: Using regular ArrayBuffer since all JS runs on main thread (no Web Workers)
@@ -111,7 +121,7 @@ export class P2PManager {
     members: SDKUser[]
   ): Promise<WavedashResponse<P2PConnection>> {
     try {
-      // If we already have a connection, update it instead of replacing
+      // If we already have a connection for this lobby, update it
       if (
         this.currentConnection &&
         this.currentConnection.lobbyId === lobbyId
@@ -119,34 +129,32 @@ export class P2PManager {
         return this.updateP2PConnection(members);
       }
 
-      // Create P2P connection state (no more handles needed)
-      const connection: P2PConnection = {
-        lobbyId,
-        peers: {},
-        state: "connecting"
-      };
-
-      // Populate peers object (excluding local peer)
-      members.forEach((member) => {
-        if (member.id !== this.sdk.getUserId()) {
-          // Use userId as the peer identifier instead of handles
-          connection.peers[member.id] = {
-            userId: member.id,
-            username: member.username
-          };
+      // If initialization is already in progress for this lobby, wait for it
+      if (
+        this.initializationInProgress &&
+        this.initializationLobbyId === lobbyId
+      ) {
+        this.sdk.logger.debug(
+          "P2P initialization already in progress, waiting..."
+        );
+        const result = await this.initializationInProgress;
+        // After waiting, update with potentially new members
+        if (result.success && this.currentConnection) {
+          return this.updateP2PConnection(members);
         }
-      });
+        return result;
+      }
 
-      this.currentConnection = connection;
+      // Start new initialization with lock
+      this.initializationLobbyId = lobbyId;
+      this.initializationInProgress = this.doInitializeP2P(lobbyId, members);
 
-      // Start WebRTC connection establishment
-      await this.establishWebRTCConnections(connection);
-
-      return {
-        success: true,
-        data: connection,
-        args: { lobbyId, members }
-      };
+      try {
+        return await this.initializationInProgress;
+      } finally {
+        this.initializationInProgress = null;
+        this.initializationLobbyId = null;
+      }
     } catch (error) {
       this.sdk.logger.error(
         `Error initializing P2P for lobby ${lobbyId}:`,
@@ -159,6 +167,43 @@ export class P2PManager {
         message: error instanceof Error ? error.message : String(error)
       };
     }
+  }
+
+  /**
+   * Internal method that performs the actual P2P initialization.
+   * Called by initializeP2PForCurrentLobby with proper locking.
+   */
+  private async doInitializeP2P(
+    lobbyId: Id<"lobbies">,
+    members: SDKUser[]
+  ): Promise<WavedashResponse<P2PConnection>> {
+    // Create P2P connection state
+    const connection: P2PConnection = {
+      lobbyId,
+      peers: {},
+      state: "connecting"
+    };
+
+    // Populate peers object (excluding local peer)
+    members.forEach((member) => {
+      if (member.id !== this.sdk.getUserId()) {
+        connection.peers[member.id] = {
+          userId: member.id,
+          username: member.username
+        };
+      }
+    });
+
+    this.currentConnection = connection;
+
+    // Start WebRTC connection establishment
+    await this.establishWebRTCConnections(connection);
+
+    return {
+      success: true,
+      data: connection,
+      args: { lobbyId, members }
+    };
   }
 
   /**
@@ -217,10 +262,15 @@ export class P2PManager {
       // Find new users who joined
       const connectionsToCreate: Id<"users">[] = [];
       for (const member of members) {
-        if (
-          !currentPeerUserIds.has(member.id) &&
-          member.id !== this.sdk.getUserId()
-        ) {
+        if (member.id === this.sdk.getUserId()) continue;
+
+        const existingPeer = this.currentConnection.peers[member.id];
+        if (existingPeer) {
+          // Update username if it was empty (from on-demand peer creation)
+          if (!existingPeer.username && member.username) {
+            existingPeer.username = member.username;
+          }
+        } else {
           this.sdk.logger.debug(
             `Adding new peer: ${member.username} (${member.id})`
           );
@@ -315,7 +365,14 @@ export class P2PManager {
     // Subscribe to real-time signaling message updates
     this.subscribeToSignalingMessages(connection);
 
-    // Establish WebRTC connections immediately (no need to wait for assignments)
+    // Wait for the signaling subscription to be ready before proceeding
+    // This ensures we can receive answers to our offers
+    if (this.signalingSubscriptionReady) {
+      await this.signalingSubscriptionReady;
+      this.sdk.logger.debug("Signaling subscription confirmed ready");
+    }
+
+    // Establish WebRTC connections (creates offers)
     await this.establishPeerConnections(connection);
 
     connection.state = "connecting";
@@ -376,11 +433,26 @@ export class P2PManager {
   }
 
   private subscribeToSignalingMessages(connection: P2PConnection): void {
+    // Create a promise that resolves when we receive the first subscription callback
+    // This indicates the subscription is active and ready to receive messages
+    this.signalingSubscriptionReady = new Promise((resolve) => {
+      this.signalingSubscriptionReadyResolver = resolve;
+    });
+
+    let firstCallbackReceived = false;
+
     // Subscribe to real-time signaling message updates
     this.unsubscribeFromSignalingMessages = this.sdk.convexClient.onUpdate(
       api.sdk.p2pSignaling.getSignalingMessages,
       { lobbyId: connection.lobbyId },
       (messages) => {
+        // Signal that subscription is ready on first callback
+        if (!firstCallbackReceived) {
+          firstCallbackReceived = true;
+          this.signalingSubscriptionReadyResolver?.();
+          this.signalingSubscriptionReadyResolver = null;
+        }
+
         if (messages) {
           this.processSignalingMessages(messages, connection);
         }
@@ -463,19 +535,47 @@ export class P2PManager {
     }
 
     const remoteUserId = message.fromUserId;
-    if (!connection.peers[remoteUserId]) {
-      this.sdk.logger.warn(
-        "Received signaling message from unknown user:",
-        remoteUserId
-      );
-      return;
+
+    // If we receive an OFFER from a user we don't have a peer connection for yet,
+    // create one on-demand. This handles the race condition where the remote peer
+    // sends an offer before our updateP2PConnection has been called with them in the member list.
+    if (!this.peerConnections.has(remoteUserId)) {
+      if (message.messageType === P2P_SIGNALING_MESSAGE_TYPE.OFFER) {
+        this.sdk.logger.debug(
+          `Received offer from ${remoteUserId} before peer connection exists, creating on-demand`
+        );
+
+        // Add peer to connection if not already present
+        if (!connection.peers[remoteUserId]) {
+          connection.peers[remoteUserId] = {
+            userId: remoteUserId,
+            username: "" // Will be updated when member list arrives
+          };
+        }
+
+        // Create peer connection (we're receiving the offer, so don't create channels)
+        const success = await this.createPeerConnection(
+          remoteUserId,
+          connection,
+          false // shouldCreateChannels = false, we'll receive them via ondatachannel
+        );
+
+        if (!success) {
+          this.sdk.logger.error(
+            `Failed to create on-demand peer connection for ${remoteUserId}`
+          );
+          return;
+        }
+      } else {
+        // For non-OFFER messages, we need the peer connection to exist first
+        this.sdk.logger.warn(
+          `No peer connection for user ${remoteUserId}, dropping ${message.messageType} message`
+        );
+        return;
+      }
     }
 
-    const pc = this.peerConnections.get(remoteUserId);
-    if (!pc) {
-      this.sdk.logger.warn("No peer connection for user:", remoteUserId);
-      return;
-    }
+    const pc = this.peerConnections.get(remoteUserId)!;
 
     switch (message.messageType) {
       case P2P_SIGNALING_MESSAGE_TYPE.OFFER: {
@@ -1106,6 +1206,14 @@ export class P2PManager {
       this.pendingIceCandidates.clear();
       this.iceRestartAttempts.clear();
       this.iceRestartInProgress.clear();
+
+      // Clear initialization lock state
+      this.initializationInProgress = null;
+      this.initializationLobbyId = null;
+
+      // Clear signaling subscription readiness state
+      this.signalingSubscriptionReady = null;
+      this.signalingSubscriptionReadyResolver = null;
 
       return {
         success: true,
