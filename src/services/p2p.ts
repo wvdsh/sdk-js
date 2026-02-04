@@ -30,18 +30,30 @@ const DEFAULT_P2P_CONFIG: P2PConfig = {
 
 export class P2PManager {
   private sdk: WavedashSDK;
+  private config: P2PConfig;
   private currentConnection: P2PConnection | null = null;
+
+  // WebRTC connection state
   private peerConnections = new Map<Id<"users">, RTCPeerConnection>();
   private reliableChannels = new Map<Id<"users">, RTCDataChannel>();
   private unreliableChannels = new Map<Id<"users">, RTCDataChannel>();
-  private pendingIceCandidates = new Map<Id<"users">, RTCIceCandidateInit[]>(); // Buffer ICE candidates until remote description is set
-  private config: P2PConfig;
-  private processedSignalingMessages = new Set<string>(); // Track processed message IDs
+  private pendingIceCandidates = new Map<Id<"users">, RTCIceCandidateInit[]>();
   private connectionStateCheckInterval: ReturnType<typeof setInterval> | null =
     null;
 
-  private turnCredentials: P2PTurnCredentials | null = null; // Cached TURN server credentials for WebRTC relay
-  private turnCredentialsInitPromise: Promise<void> | null = null; // Tracks in-flight initialization
+  // ICE restart tracking
+  private iceRestartAttempts = new Map<Id<"users">, number>();
+  private iceRestartInProgress = new Set<Id<"users">>();
+  private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
+
+  // TURN server credentials
+  private turnCredentials: P2PTurnCredentials | null = null;
+  private turnCredentialsInitPromise: Promise<void> | null = null;
+
+  // Signaling state
+  private unsubscribeFromSignalingMessages: (() => void) | null = null;
+  private processedSignalingMessages = new Set<string>();
+  private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
 
   // Message queues - one per channel for performance
   // Only incoming queue is used (P2P network → Game engine)
@@ -244,9 +256,6 @@ export class P2PManager {
         );
 
         if (peersToInitiate.length > 0) {
-          // Small delay to ensure data channels are set up before creating offers
-          await new Promise((resolve) => setTimeout(resolve, 100));
-
           const offerPromises = peersToInitiate.map((userId) => {
             this.sdk.logger.debug(
               `Initiating offer to new peer ${userId} (lower userId rule)`
@@ -366,9 +375,6 @@ export class P2PManager {
     }
   }
 
-  private unsubscribeFromSignalingMessages: (() => void) | null = null;
-  private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
-
   private subscribeToSignalingMessages(connection: P2PConnection): void {
     // Subscribe to real-time signaling message updates
     this.unsubscribeFromSignalingMessages = this.sdk.convexClient.onUpdate(
@@ -473,7 +479,9 @@ export class P2PManager {
 
     switch (message.messageType) {
       case P2P_SIGNALING_MESSAGE_TYPE.OFFER: {
-        // Log offer processing details
+        // Receiving an offer means peer is handling connection/restart - clear our restart state
+        this.iceRestartInProgress.delete(remoteUserId);
+
         this.sdk.logger.debug(`Processing offer from peer ${remoteUserId}:`);
 
         await pc.setRemoteDescription(
@@ -590,9 +598,6 @@ export class P2PManager {
     ).filter((userId) => currentUserId < userId);
 
     if (peersToInitiate.length > 0) {
-      // Small delay to ensure data channels are properly set up before creating offers
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
       const offerPromises = peersToInitiate.map((userId) => {
         this.sdk.logger.debug(
           `Initiating offer to peer ${userId} (lower userId rule)`
@@ -662,8 +667,10 @@ export class P2PManager {
     }
     const pc = new RTCPeerConnection({
       iceServers: iceServers,
-      // Start gathering ICE candidates in the background as soon as the RTCPeerConnection is created
-      iceCandidatePoolSize: 5,
+      // Disable candidate pre-gathering - gather ICE candidates only after setLocalDescription()
+      // This ensures proper sequencing and avoids race conditions at the cost of
+      // slightly slower initial connection (more reliable)
+      iceCandidatePoolSize: 0,
       // Allow all IP addresses (helpful for same-device testing)
       bundlePolicy: "max-bundle",
       rtcpMuxPolicy: "require"
@@ -776,6 +783,28 @@ export class P2PManager {
         this.sdk.logger.debug(
           `  ICE connected to peer ${remoteUserId}, data channels should be available...`
         );
+        // Reset restart state on successful connection
+        this.iceRestartAttempts.delete(remoteUserId);
+        this.iceRestartInProgress.delete(remoteUserId);
+      } else if (pc.iceConnectionState === "failed") {
+        // ICE connection failed - wait briefly before restarting to avoid
+        // reacting to transient failures during network switches (Wi-Fi hiccups, etc.)
+        this.sdk.logger.debug(
+          `ICE connection to peer ${remoteUserId} failed, will retry in 500ms...`
+        );
+        setTimeout(() => {
+          if (pc.iceConnectionState === "failed") {
+            this.sdk.logger.warn(
+              `ICE connection to peer ${remoteUserId} still failed after delay, attempting ICE restart...`
+            );
+            this.attemptIceRestart(remoteUserId, pc);
+          }
+        }, 500);
+      } else if (pc.iceConnectionState === "disconnected") {
+        // Disconnected state may recover on its own, but log it
+        this.sdk.logger.debug(
+          `ICE connection to peer ${remoteUserId} disconnected, may recover...`
+        );
       }
     };
 
@@ -787,6 +816,82 @@ export class P2PManager {
 
     this.peerConnections.set(remoteUserId, pc);
     return true;
+  }
+
+  /**
+   * Attempt to restart ICE when connection fails.
+   * Only the peer with the lower userId initiates the restart to avoid conflicts.
+   */
+  private async attemptIceRestart(
+    remoteUserId: Id<"users">,
+    pc: RTCPeerConnection
+  ): Promise<void> {
+    const currentUserId = this.sdk.getUserId();
+
+    // Only the peer with lower userId initiates restart to avoid both sides restarting simultaneously
+    if (currentUserId > remoteUserId) {
+      this.sdk.logger.debug(
+        `Waiting for peer ${remoteUserId} to initiate ICE restart (they have lower userId)`
+      );
+      return;
+    }
+
+    // Skip if restart already in progress for this peer
+    if (this.iceRestartInProgress.has(remoteUserId)) {
+      this.sdk.logger.debug(
+        `ICE restart already in progress for peer ${remoteUserId}, skipping`
+      );
+      return;
+    }
+
+    // Check restart attempt count
+    const attempts = this.iceRestartAttempts.get(remoteUserId) || 0;
+    if (attempts >= this.MAX_ICE_RESTART_ATTEMPTS) {
+      this.sdk.logger.error(
+        `Max ICE restart attempts (${this.MAX_ICE_RESTART_ATTEMPTS}) reached for peer ${remoteUserId}, giving up`
+      );
+      const peer = this.currentConnection?.peers[remoteUserId];
+      if (peer) {
+        this.sdk.notifyGame(Signals.P2P_CONNECTION_FAILED, {
+          userId: peer.userId,
+          username: peer.username,
+          error: "ICE restart failed after maximum attempts"
+        } satisfies P2PConnectionFailedPayload);
+      }
+      return;
+    }
+
+    this.iceRestartAttempts.set(remoteUserId, attempts + 1);
+    this.iceRestartInProgress.add(remoteUserId);
+    this.sdk.logger.debug(
+      `ICE restart attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS} for peer ${remoteUserId}`
+    );
+
+    try {
+      // Trigger ICE restart - this invalidates current ICE candidates and gathers new ones
+      pc.restartIce();
+
+      // Create and send a new offer with iceRestart flag
+      const offer = await pc.createOffer({ iceRestart: true });
+      await pc.setLocalDescription(offer);
+
+      const offerData = {
+        type: offer.type,
+        sdp: offer.sdp
+      };
+
+      await this.sendSignalingMessage(remoteUserId, {
+        type: P2P_SIGNALING_MESSAGE_TYPE.OFFER,
+        data: offerData
+      });
+
+      this.sdk.logger.debug(`ICE restart offer sent to peer ${remoteUserId}`);
+    } catch (error) {
+      this.sdk.logger.error(
+        `Failed to initiate ICE restart for peer ${remoteUserId}:`,
+        error
+      );
+    }
   }
 
   private setupDataChannelHandlers(
@@ -812,7 +917,7 @@ export class P2PManager {
     };
 
     channel.onmessage = (event: MessageEvent<ArrayBuffer>) => {
-      // Enqueue the raw binary data directly to SharedArrayBuffer queue
+      // Enqueue the raw binary data directly to queue
       this.enqueueMessage(event.data);
     };
 
@@ -995,10 +1100,12 @@ export class P2PManager {
 
       this.currentConnection = null;
 
-      // Clear processed message caches
+      // Clear processed message caches and state
       this.processedSignalingMessages.clear();
       this.pendingProcessedMessageIds.clear();
       this.pendingIceCandidates.clear();
+      this.iceRestartAttempts.clear();
+      this.iceRestartInProgress.clear();
 
       return {
         success: true,
@@ -1089,7 +1196,7 @@ export class P2PManager {
   }
 
   // ================
-  // SharedArrayBuffer Message Queue
+  // Incoming Message Queues
   // ================
 
   private initializeMessageQueue(): void {
