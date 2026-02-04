@@ -463,6 +463,12 @@ export class LobbyManager {
     // Set lobbyId to null immediately to guard against multiple calls (e.g., from concurrent subscription errors)
     this.lobbyId = null;
 
+    // Clear pending lobby data update timeout
+    if (this.lobbyDataUpdateTimeout) {
+      clearTimeout(this.lobbyDataUpdateTimeout);
+      this.lobbyDataUpdateTimeout = null;
+    }
+
     if (this.unsubscribeLobbyMessages) {
       this.unsubscribeLobbyMessages();
       this.unsubscribeLobbyMessages = null;
@@ -527,12 +533,6 @@ export class LobbyManager {
     if (this.unsubscribeLobbyInvites) {
       this.unsubscribeLobbyInvites();
       this.unsubscribeLobbyInvites = null;
-    }
-
-    // Clear pending lobby data update timeout
-    if (this.lobbyDataUpdateTimeout) {
-      clearTimeout(this.lobbyDataUpdateTimeout);
-      this.lobbyDataUpdateTimeout = null;
     }
 
     // Clear all "maybe being deleted" tracking timeouts
