@@ -55,6 +55,9 @@ export class LobbyManager {
   private unsubscribeLobbyInvites: (() => void) | null = null;
   private seenInviteIds: Set<Id<"notifications">> = new Set();
 
+  // Queue for serializing P2P connection updates to prevent race conditions
+  private p2pUpdateQueue: Promise<void> = Promise.resolve();
+
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
   }
@@ -408,6 +411,17 @@ export class LobbyManager {
       onLobbySubscriptionError
     );
 
+    // Initialize P2P connections immediately with the users from join response
+    // Don't wait for the subscription callback - we already have the user list
+    // This prevents race conditions where signaling messages arrive before P2P is set up
+    if (response.users.length > 1) {
+      this.p2pUpdateQueue = this.updateP2PConnections(response.users).catch(
+        (error) => {
+          this.sdk.logger.error("Error initializing P2P on join:", error);
+        }
+      );
+    }
+
     // Notify parent iframe
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
       lobbyId: response.lobbyId
@@ -511,6 +525,9 @@ export class LobbyManager {
     this.lobbyHostId = null;
     this.lobbyMetadata = {};
     this.recentMessageIds = [];
+
+    // Reset the P2P update queue to prevent stale operations
+    this.p2pUpdateQueue = Promise.resolve();
   }
 
   /**
@@ -601,8 +618,13 @@ export class LobbyManager {
     }
 
     // Update P2P connections when lobby membership changes
+    // Serialize P2P updates to prevent race conditions from concurrent subscription callbacks
     if (this.lobbyId) {
-      this.updateP2PConnections(newUsers);
+      this.p2pUpdateQueue = this.p2pUpdateQueue
+        .then(() => this.updateP2PConnections(newUsers))
+        .catch((error) => {
+          this.sdk.logger.error("Error in queued P2P update:", error);
+        });
     }
   };
 
