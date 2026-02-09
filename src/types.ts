@@ -22,6 +22,9 @@ export type LobbyJoinResponse = FunctionReturnType<
 export type LobbyInvite = FunctionReturnType<
   typeof api.sdk.gameLobby.getLobbyInvites
 >[0];
+export type Friend = FunctionReturnType<
+  typeof api.sdk.friends.listFriends
+>[0];
 export type UGCType =
   PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
 export type UGCVisibility =

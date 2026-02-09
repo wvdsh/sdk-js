@@ -6,6 +6,7 @@ import { LeaderboardManager } from "./services/leaderboards";
 import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
+import { FriendsManager } from "./services/friends";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
@@ -30,7 +31,8 @@ import type {
   P2PMessage,
   LobbyUser,
   Signal,
-  Lobby
+  Lobby,
+  Friend
 } from "./types";
 import {
   GAME_ENGINE,
@@ -56,6 +58,7 @@ class WavedashSDK {
   protected heartbeatManager: HeartbeatManager;
   protected ugcManager: UGCManager;
   protected leaderboardManager: LeaderboardManager;
+  protected friendsManager: FriendsManager;
 
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
@@ -88,6 +91,7 @@ class WavedashSDK {
     this.fileSystemManager = new FileSystemManager(this);
     this.ugcManager = new UGCManager(this);
     this.leaderboardManager = new LeaderboardManager(this);
+    this.friendsManager = new FriendsManager(this);
     this.iframeMessenger = iframeMessenger;
 
     this.setupSessionEndListeners();
@@ -266,6 +270,17 @@ class WavedashSDK {
   getUserId(): Id<"users"> {
     this.ensureReady();
     return this.wavedashUser.id;
+  }
+
+  // ============
+  // Friends
+  // ============
+
+  async listFriends(): Promise<string | WavedashResponse<Friend[]>> {
+    this.ensureReady();
+    this.logger.debug("Listing friends");
+    const result = await this.friendsManager.listFriends();
+    return this.formatResponse(result);
   }
 
   // ============
