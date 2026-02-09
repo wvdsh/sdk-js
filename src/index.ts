@@ -51,7 +51,6 @@ class WavedashSDK {
   private convexHttpUrl: string;
   private eventQueue: QueuedEvent[] = [];
 
-  protected ugcHost: string;
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
@@ -69,6 +68,8 @@ class WavedashSDK {
   iframeMessenger: IFrameMessenger;
   p2pManager: P2PManager;
   gameplayJwt: string | null = null;
+  ugcHost: string;
+  uploadsHost: string;
 
   constructor(sdkConfig: SDKConfig) {
     const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
@@ -78,6 +79,7 @@ class WavedashSDK {
     this.wavedashUser = sdkConfig.wavedashUser;
     this.gameCloudId = sdkConfig.gameCloudId;
     this.ugcHost = sdkConfig.ugcHost;
+    this.uploadsHost = sdkConfig.uploadsHost;
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);

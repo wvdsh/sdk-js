@@ -59,7 +59,6 @@ export type Signal = (typeof Signals)[keyof typeof Signals];
 
 // Configuration and user types
 export interface WavedashConfig {
-  gameId: Id<"games">;
   debug?: boolean;
   remoteStorageOrigin?: string;
   p2p?: Partial<P2PConfig>;

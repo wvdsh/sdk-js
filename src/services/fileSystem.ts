@@ -297,6 +297,11 @@ export class FileSystemManager {
       return this.remoteStorageOrigin;
     }
 
+    if (this.sdk.ugcHost) {
+      this.remoteStorageOrigin = this.sdk.ugcHost;
+      return this.remoteStorageOrigin;
+    }
+
     // Fallback to ugc.hostname if running in browser
     if (typeof window !== "undefined" && window.location) {
       const hostname = window.location.hostname;
