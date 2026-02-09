@@ -6,7 +6,12 @@ import { LeaderboardManager } from "./services/leaderboards";
 import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
-import { FriendsManager } from "./services/friends";
+import {
+  FriendsManager,
+  AVATAR_SIZE_SMALL,
+  AVATAR_SIZE_MEDIUM,
+  AVATAR_SIZE_LARGE
+} from "./services/friends";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
@@ -58,7 +63,7 @@ class WavedashSDK {
   protected heartbeatManager: HeartbeatManager;
   protected ugcManager: UGCManager;
   protected leaderboardManager: LeaderboardManager;
-  protected friendsManager: FriendsManager;
+  friendsManager: FriendsManager;
 
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
@@ -93,6 +98,15 @@ class WavedashSDK {
     this.leaderboardManager = new LeaderboardManager(this);
     this.friendsManager = new FriendsManager(this);
     this.iframeMessenger = iframeMessenger;
+
+    // Cache current user for avatar lookups
+    this.friendsManager.cacheUsers([
+      {
+        userId: this.wavedashUser.id,
+        username: this.wavedashUser.username,
+        avatarUrl: this.wavedashUser.avatarUrl
+      }
+    ]);
 
     this.setupSessionEndListeners();
 
@@ -281,6 +295,21 @@ class WavedashSDK {
     this.logger.debug("Listing friends");
     const result = await this.friendsManager.listFriends();
     return this.formatResponse(result);
+  }
+
+  /**
+   * Get avatar URL for a cached user with size transformation.
+   * Users are cached when seen via listFriends() or lobby membership.
+   * @param userId - The user ID to get the avatar URL for
+   * @param size - Avatar size constant (AVATAR_SIZE_SMALL=0, AVATAR_SIZE_MEDIUM=1, AVATAR_SIZE_LARGE=2)
+   * @returns CDN URL with size transformation, or null if user not cached or has no avatar
+   */
+  getUserAvatarUrl(
+    userId: Id<"users">,
+    size: number = AVATAR_SIZE_MEDIUM
+  ): string | null {
+    this.ensureReady();
+    return this.friendsManager.getUserAvatarUrl(userId, size);
   }
 
   // ============
@@ -955,6 +984,9 @@ class WavedashSDK {
 // =======
 
 export { WavedashSDK };
+
+// Re-export avatar size constants
+export { AVATAR_SIZE_SMALL, AVATAR_SIZE_MEDIUM, AVATAR_SIZE_LARGE };
 
 // Re-export all types and constants
 export * from "./types";
