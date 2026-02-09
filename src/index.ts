@@ -6,6 +6,12 @@ import { LeaderboardManager } from "./services/leaderboards";
 import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
+import {
+  FriendsManager,
+  AVATAR_SIZE_SMALL,
+  AVATAR_SIZE_MEDIUM,
+  AVATAR_SIZE_LARGE
+} from "./services/friends";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
@@ -30,7 +36,8 @@ import type {
   P2PMessage,
   LobbyUser,
   Signal,
-  Lobby
+  Lobby,
+  Friend
 } from "./types";
 import {
   GAME_ENGINE,
@@ -51,12 +58,12 @@ class WavedashSDK {
   private convexHttpUrl: string;
   private eventQueue: QueuedEvent[] = [];
 
-  protected ugcHost: string;
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
   protected ugcManager: UGCManager;
   protected leaderboardManager: LeaderboardManager;
+  friendsManager: FriendsManager;
 
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
@@ -69,6 +76,8 @@ class WavedashSDK {
   iframeMessenger: IFrameMessenger;
   p2pManager: P2PManager;
   gameplayJwt: string | null = null;
+  ugcHost: string;
+  uploadsHost: string;
 
   constructor(sdkConfig: SDKConfig) {
     const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
@@ -78,6 +87,7 @@ class WavedashSDK {
     this.wavedashUser = sdkConfig.wavedashUser;
     this.gameCloudId = sdkConfig.gameCloudId;
     this.ugcHost = sdkConfig.ugcHost;
+    this.uploadsHost = sdkConfig.uploadsHost;
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
@@ -86,7 +96,17 @@ class WavedashSDK {
     this.fileSystemManager = new FileSystemManager(this);
     this.ugcManager = new UGCManager(this);
     this.leaderboardManager = new LeaderboardManager(this);
+    this.friendsManager = new FriendsManager(this);
     this.iframeMessenger = iframeMessenger;
+
+    // Cache current user for avatar lookups
+    this.friendsManager.cacheUsers([
+      {
+        userId: this.wavedashUser.id,
+        username: this.wavedashUser.username,
+        avatarUrl: this.wavedashUser.avatarUrl
+      }
+    ]);
 
     this.setupSessionEndListeners();
 
@@ -264,6 +284,32 @@ class WavedashSDK {
   getUserId(): Id<"users"> {
     this.ensureReady();
     return this.wavedashUser.id;
+  }
+
+  // ============
+  // Friends
+  // ============
+
+  async listFriends(): Promise<string | WavedashResponse<Friend[]>> {
+    this.ensureReady();
+    this.logger.debug("Listing friends");
+    const result = await this.friendsManager.listFriends();
+    return this.formatResponse(result);
+  }
+
+  /**
+   * Get avatar URL for a cached user with size transformation.
+   * Users are cached when seen via listFriends() or lobby membership.
+   * @param userId - The user ID to get the avatar URL for
+   * @param size - Avatar size constant (AVATAR_SIZE_SMALL=0, AVATAR_SIZE_MEDIUM=1, AVATAR_SIZE_LARGE=2)
+   * @returns CDN URL with size transformation, or null if user not cached or has no avatar
+   */
+  getUserAvatarUrl(
+    userId: Id<"users">,
+    size: number = AVATAR_SIZE_MEDIUM
+  ): string | null {
+    this.ensureReady();
+    return this.friendsManager.getUserAvatarUrl(userId, size);
   }
 
   // ============
@@ -938,6 +984,9 @@ class WavedashSDK {
 // =======
 
 export { WavedashSDK };
+
+// Re-export avatar size constants
+export { AVATAR_SIZE_SMALL, AVATAR_SIZE_MEDIUM, AVATAR_SIZE_LARGE };
 
 // Re-export all types and constants
 export * from "./types";
