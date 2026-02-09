@@ -5,7 +5,7 @@
  */
 function deriveParentOrigin(): string {
   if (typeof window === "undefined") return "";
-  const iframeHost = window.location.hostname;
+  const iframeHost = window.location.host;
   const match = iframeHost.match(/^[\w-]+\.(builds|sandbox)\.(.+)$/);
   if (match) {
     const parentDomain = match[2];
