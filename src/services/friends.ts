@@ -70,7 +70,9 @@ export class FriendsManager {
     return getCdnImageUrl(user.avatarR2Key, this.sdk.uploadsHost, {
       width: dimension,
       height: dimension,
-      fit: "cover"
+      fit: "cover",
+      quality: "high",
+      sharpen: 1
     });
   }
 
