@@ -370,6 +370,9 @@ export class LobbyManager {
     this.lobbyUsers = response.users;
     this.lobbyMetadata = response.metadata;
 
+    // Cache initial lobby users for avatar lookups
+    this.sdk.friendsManager.cacheUsers(response.users);
+
     // Error handler for subscription failures (e.g., kicked from lobby)
     const onLobbySubscriptionError = (error: Error) => {
       this.sdk.logger.error(`Lobby subscription error: ${error.message}`);
@@ -581,6 +584,9 @@ export class LobbyManager {
    * @param newUsers - The updated list of lobby users
    */
   private processUserUpdates = (newUsers: LobbyUser[]): void => {
+    // Cache users for avatar lookups
+    this.sdk.friendsManager.cacheUsers(newUsers);
+
     const previousUsers = this.lobbyUsers;
     const previousUserIds = new Set(previousUsers.map((user) => user.userId));
     const newUserIds = new Set(newUsers.map((user) => user.userId));
@@ -679,9 +685,10 @@ export class LobbyManager {
       }
 
       // Convert to WavedashUser format
-      const wavedashUsers: SDKUser[] = newUsers.map((lobbyUser) => ({
+      const wavedashUsers: SDKUser[] = newUsers.map((lobbyUser: LobbyUser) => ({
         id: lobbyUser.userId,
-        username: lobbyUser.username
+        username: lobbyUser.username,
+        avatarUrl: lobbyUser.userAvatarUrl
       }));
 
       // Initialize or update P2P - the P2P manager handles both cases
