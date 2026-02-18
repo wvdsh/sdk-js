@@ -36,6 +36,10 @@ export class IFrameMessenger {
 
   // Arrow function automatically captures 'this' from the class instance
   private handleMessage = (event: MessageEvent): void => {
+    // Only process messages from the parent window; silently ignore
+    // self-originated messages (e.g. game engine internals like Godot).
+    if (event.source !== window.parent) return;
+
     // Validate origin to prevent JWT spoofing and other attacks
     if (event.origin !== parentOrigin) {
       console.warn(`Ignored message from untrusted origin: ${event.origin}`);
