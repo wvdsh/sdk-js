@@ -158,6 +158,9 @@ export class StatsManager {
       this.stats.push({ identifier, value });
       this.updatedStatIdentifiers.add(identifier);
     }
+    if (this.updatedStatIdentifiers.has(identifier)) {
+      this.storeStats();
+    }
   }
 
   getStat(identifier: string): number {
