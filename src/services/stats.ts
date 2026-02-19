@@ -137,6 +137,7 @@ export class StatsManager {
     if (!this.achievementIdentifiers.has(identifier)) {
       this.achievementIdentifiers.add(identifier);
       this.updatedAchievementIdentifiers.add(identifier);
+      this.storeStats();
     }
   }
 
