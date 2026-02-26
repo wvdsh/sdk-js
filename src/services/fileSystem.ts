@@ -329,7 +329,7 @@ export class FileSystemManager {
     }
 
     if (this.sdk.ugcHost) {
-      this.remoteStorageOrigin = this.sdk.ugcHost;
+      this.remoteStorageOrigin = this.sdk.ugcHost.startsWith("http") ? this.sdk.ugcHost : `https://${this.sdk.ugcHost}`;
       return this.remoteStorageOrigin;
     }
 
