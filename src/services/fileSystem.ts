@@ -58,6 +58,35 @@ export class FileSystemManager {
   }
 
   /**
+   * Deletes a remote file from storage
+   * @param filePath - The path of the remote file to delete
+   * @returns The path of the remote file that was deleted
+   */
+  async deleteRemoteFile(filePath: string): Promise<WavedashResponse<string>> {
+    const args = { filePath };
+
+    try {
+      // @ts-expect-error property does not exist on type
+      await this.sdk.convexClient.action(api.sdk.remoteFileStorage.deleteFile, {
+        path: args.filePath
+      });
+      return {
+        success: true,
+        data: args.filePath,
+        args: args
+      };
+    } catch (error) {
+      this.sdk.logger.error(`Failed to delete remote file: ${error}`);
+      return {
+        success: false,
+        data: null,
+        args: args,
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  }
+
+  /**
    * Downloads a remote file to a local location
    * @param filePath - The path of the remote file to download
    * @returns The path of the local file that the remote file was downloaded to
@@ -129,6 +158,8 @@ export class FileSystemManager {
   async downloadRemoteDirectory(
     path: string
   ): Promise<WavedashResponse<string>> {
+    this.sdk.logger.debug(`Downloading remote directory: ${path}`);
+
     const args = { path };
 
     try {

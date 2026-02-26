@@ -499,6 +499,20 @@ class WavedashSDK {
   // ================================
 
   /**
+   * Deletes a remote file from storage
+   * @param filePath - The path of the remote file to delete
+   * @returns The path of the remote file that was deleted
+   */
+  async deleteRemoteFile(
+    filePath: string
+  ): Promise<string | WavedashResponse<string>> {
+    this.ensureReady();
+    this.logger.debug(`Deleting remote file: ${filePath}`);
+    const result = await this.fileSystemManager.deleteRemoteFile(filePath);
+    return this.formatResponse(result);
+  }
+
+  /**
    * Downloads a remote file to a local location
    * @param filePath - The path of the remote file to download
    * @param downloadTo - Optionally provide a path to download the file to, defaults to the same path as the remote file
@@ -551,7 +565,6 @@ class WavedashSDK {
     path: string
   ): Promise<string | WavedashResponse<string>> {
     this.ensureReady();
-    this.logger.debug(`Downloading remote directory: ${path}`);
     const result = await this.fileSystemManager.downloadRemoteDirectory(path);
     return this.formatResponse(result);
   }
@@ -566,7 +579,6 @@ class WavedashSDK {
    */
   async writeLocalFile(filePath: string, data: Uint8Array): Promise<boolean> {
     this.ensureReady();
-    this.logger.debug(`Writing local file: ${filePath}`);
     const result = await this.fileSystemManager.writeLocalFile(filePath, data);
     return result;
   }
@@ -580,7 +592,6 @@ class WavedashSDK {
    */
   async readLocalFile(filePath: string): Promise<Uint8Array | null> {
     this.ensureReady();
-    this.logger.debug(`Reading local file: ${filePath}`);
     const result = await this.fileSystemManager.readLocalFile(filePath);
     return result;
   }
