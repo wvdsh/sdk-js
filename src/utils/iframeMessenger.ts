@@ -11,6 +11,11 @@ import { parentOrigin } from "./parentOrigin";
 
 const RESPONSE_TIMEOUT_MS = 5_000;
 
+// Known SDK message types for filtering relevant messages on the shared window bus
+const SDK_MESSAGE_TYPES: ReadonlySet<string> = new Set(
+  Object.values(IFRAME_MESSAGE_TYPE)
+);
+
 // Track pending requests - response can be any value from IFrameResponseMap
 type IFrameResponseValue = IFrameResponseMap[keyof IFrameResponseMap];
 
@@ -36,7 +41,13 @@ export class IFrameMessenger {
 
   // Arrow function automatically captures 'this' from the class instance
   private handleMessage = (event: MessageEvent): void => {
-    // Validate origin to prevent JWT spoofing and other attacks
+    // Only process messages that match the SDK protocol.
+    // This avoids reacting to unrelated messages on the shared window bus
+    // (e.g. js-dos emulator communication, third-party libraries).
+    const data = event.data;
+    if (!data?.requestId && !SDK_MESSAGE_TYPES.has(data?.type)) return;
+
+    // Validate origin for SDK-shaped messages
     if (event.origin !== parentOrigin) {
       console.warn(`Ignored message from untrusted origin: ${event.origin}`);
       return;
