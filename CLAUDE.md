@@ -12,14 +12,16 @@ The Wavedash JavaScript SDK (`@wvdsh/js`) is a TypeScript SDK that enables game 
 # Build the SDK for production
 npm run build
 
-# Build browser bundle (IIFE format with global WavedashSDK)
-npm run build:browser
-
 # Development mode with file watching
 npm run dev
 
 # Install dependencies
 npm install
+
+# Linting and formatting
+npm run typecheck
+npm run eslint:check
+npm run prettier:check
 ```
 
 ## Architecture
@@ -97,10 +99,9 @@ Later:
 
 ## Build System
 
-- **tsup**: Modern TypeScript bundler with multiple output formats
-- **Outputs**: ESM (.mjs), CommonJS (.js), and TypeScript declarations (.d.ts)
-- **External Dependencies**: Convex is marked as external (peer dependency)
-- **Browser Bundle**: Separate IIFE build for direct browser usage
+- **tsup**: Modern TypeScript bundler
+- **Outputs**: ESM (.js) and TypeScript declarations (.d.ts)
+- **Dependencies**: Convex and lodash.unionby are bundled (noExternal)
 
 ## Installation & Distribution
 
@@ -108,11 +109,11 @@ The package is distributed via GitHub Packages Registry and requires authenticat
 
 - Published to `@wvdsh:registry=https://npm.pkg.github.com`
 - Requires `NODE_AUTH_TOKEN` environment variable for installation
-- Version managed in `package.json` (currently 0.0.4)
+- Version managed in `package.json`
 
 ## Development Notes
 
 - No test framework is configured
-- No linting tools are present in the current setup
+- ESLint and Prettier are configured for linting and formatting
 - Uses TypeScript strict mode with ES2020 target
 - The SDK expects a Convex client to be provided during initialization
