@@ -83,10 +83,10 @@ export class P2PManager {
   private readonly CHECK_CONNECTION_INTERVAL_MS = 1_000; // 1 second
 
   private readonly QUEUE_SIZE = 1024; // Number of messages per direction per channel
-  private readonly MESSAGE_SIZE = 2048; // Max bytes per message slot
+  private readonly MESSAGE_SIZE = 4096; // Max bytes per message slot
   private readonly MESSAGE_SLOT_HEADER_SIZE = 4; // Size prefix at start of each message slot
   private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
-  private readonly DEFAULT_NUM_CHANNELS = 3; // Default number of channels to pre-allocate
+  private readonly DEFAULT_NUM_CHANNELS = 2; // Default number of channels to pre-allocate
 
   // Binary message format offsets
   private readonly USERID_SIZE = 32; // TODO: Switch to int handles so this can be 4 bytes instead of 32
