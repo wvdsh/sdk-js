@@ -22,15 +22,17 @@ import type { WavedashSDK } from "../index";
 import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/types";
 
 // Default P2P configuration
-const DEFAULT_P2P_CONFIG: P2PConfig = {
+const DEFAULT_P2P_CONFIG: Required<P2PConfig> = {
   maxPeers: 8,
   enableReliableChannel: true,
-  enableUnreliableChannel: true
+  enableUnreliableChannel: true,
+  messageSize: 4096,
+  maxIncomingMessages: 1024
 };
 
 export class P2PManager {
   private sdk: WavedashSDK;
-  private config: P2PConfig;
+  private config: Required<P2PConfig>;
   private currentConnection: P2PConnection | null = null;
 
   // WebRTC connection state
@@ -95,9 +97,7 @@ export class P2PManager {
   private readonly PAYLOAD_OFFSET =
     this.USERID_SIZE + this.CHANNEL_SIZE + this.DATALENGTH_SIZE;
 
-  // Default and limit constants for configurable sizing
-  private static readonly DEFAULT_MESSAGE_SIZE = 4096;
-  private static readonly DEFAULT_MAX_INCOMING_MESSAGES = 1024;
+  // Limits for configurable sizing
   // 64KB - safe cross-browser WebRTC floor, avoids SCTP fragmentation
   private static readonly MAX_MESSAGE_SIZE = 64 * 1024;
   private static readonly MEMORY_WARNING_THRESHOLD_BYTES = 64 * 1024 * 1024;
@@ -120,10 +120,8 @@ export class P2PManager {
     // Initialize configurable message sizing
     const minMessageSize =
       this.MESSAGE_SLOT_HEADER_SIZE + this.PAYLOAD_OFFSET + 1;
-    const rawMessageSize =
-      this.config.messageSize ?? P2PManager.DEFAULT_MESSAGE_SIZE;
-    const rawQueueSize =
-      this.config.maxIncomingMessages ?? P2PManager.DEFAULT_MAX_INCOMING_MESSAGES;
+    const rawMessageSize = this.config.messageSize;
+    const rawQueueSize = this.config.maxIncomingMessages;
 
     if (rawMessageSize < minMessageSize) {
       throw new Error(
