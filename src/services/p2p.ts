@@ -100,7 +100,7 @@ export class P2PManager {
   // Limits for configurable sizing
   // 64KB - safe cross-browser WebRTC floor, avoids SCTP fragmentation
   private static readonly MAX_MESSAGE_SIZE = 64 * 1024;
-  private static readonly MEMORY_WARNING_THRESHOLD_BYTES = 64 * 1024 * 1024;
+  private static readonly MEMORY_WARNING_THRESHOLD_BYTES = 128 * 1024 * 1024;
 
   // Configurable sizing (initialized from P2PConfig in constructor)
   private readonly QUEUE_SIZE: number;
