@@ -651,6 +651,15 @@ class WavedashSDK {
   // ============
 
   /**
+   * Get the maximum payload size in bytes for a single P2P message.
+   * This is derived from the configured messageSize minus protocol overhead.
+   */
+  getP2PMaxPayloadSize(): number {
+    this.ensureReady();
+    return this.p2pManager.getMaxPayloadSize();
+  }
+
+  /**
    * Get a pre-allocated scratch buffer for outgoing messages
    * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
    */
