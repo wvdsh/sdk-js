@@ -26,7 +26,7 @@ const DEFAULT_P2P_CONFIG: Required<P2PConfig> = {
   maxPeers: 8,
   enableReliableChannel: true,
   enableUnreliableChannel: true,
-  messageSize: 4096,
+  messageSize: 2048,
   maxIncomingMessages: 1024
 };
 
