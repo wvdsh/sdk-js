@@ -22,15 +22,17 @@ import type { WavedashSDK } from "../index";
 import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/types";
 
 // Default P2P configuration
-const DEFAULT_P2P_CONFIG: P2PConfig = {
+const DEFAULT_P2P_CONFIG: Required<P2PConfig> = {
   maxPeers: 8,
   enableReliableChannel: true,
-  enableUnreliableChannel: true
+  enableUnreliableChannel: true,
+  messageSize: 2048,
+  maxIncomingMessages: 1024
 };
 
 export class P2PManager {
   private sdk: WavedashSDK;
-  private config: P2PConfig;
+  private config: Required<P2PConfig>;
   private currentConnection: P2PConnection | null = null;
 
   // WebRTC connection state
@@ -82,8 +84,6 @@ export class P2PManager {
 
   private readonly CHECK_CONNECTION_INTERVAL_MS = 1_000; // 1 second
 
-  private readonly QUEUE_SIZE = 1024; // Number of messages per direction per channel
-  private readonly MESSAGE_SIZE = 4096; // Max bytes per message slot
   private readonly MESSAGE_SLOT_HEADER_SIZE = 4; // Size prefix at start of each message slot
   private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
   private readonly DEFAULT_NUM_CHANNELS = 2; // Default number of channels to pre-allocate
@@ -96,20 +96,79 @@ export class P2PManager {
   private readonly DATALENGTH_OFFSET = this.USERID_SIZE + this.CHANNEL_SIZE;
   private readonly PAYLOAD_OFFSET =
     this.USERID_SIZE + this.CHANNEL_SIZE + this.DATALENGTH_SIZE;
-  // Max payload = slot size - slot header - message header (PAYLOAD_OFFSET)
-  private readonly MAX_PAYLOAD_SIZE =
-    this.MESSAGE_SIZE - this.MESSAGE_SLOT_HEADER_SIZE - this.PAYLOAD_OFFSET;
+
+  // Limits for configurable sizing
+  // 64KB - safe cross-browser WebRTC floor, avoids SCTP fragmentation
+  private static readonly MAX_MESSAGE_SIZE = 64 * 1024;
+  private static readonly MEMORY_WARNING_THRESHOLD_BYTES = 128 * 1024 * 1024;
+
+  // Configurable sizing (set in init() from P2PConfig)
+  private QUEUE_SIZE!: number;
+  private MESSAGE_SIZE!: number;
+  private MAX_PAYLOAD_SIZE!: number;
 
   // Pre-allocated buffer for outgoing messages to avoid repeated allocations
   // Game engine writes payload here, then calls sendP2PMessage
-  private outgoingMessageBuffer = new Uint8Array(this.MAX_PAYLOAD_SIZE);
+  private outgoingMessageBuffer!: Uint8Array;
   private textEncoder: TextEncoder = new TextEncoder();
   private textDecoder: TextDecoder = new TextDecoder();
 
-  constructor(sdk: WavedashSDK, config?: Partial<P2PConfig>) {
+  private initialized = false;
+
+  constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
+    this.config = { ...DEFAULT_P2P_CONFIG };
+  }
+
+  private ensureInitialized(): void {
+    if (!this.initialized) {
+      throw new Error("P2PManager.init() must be called before use");
+    }
+  }
+
+  init(config?: Partial<P2PConfig>): void {
     this.config = { ...DEFAULT_P2P_CONFIG, ...config };
+
+    const minMessageSize =
+      this.MESSAGE_SLOT_HEADER_SIZE + this.PAYLOAD_OFFSET + 1;
+    const rawMessageSize = this.config.messageSize;
+    const rawQueueSize = this.config.maxIncomingMessages;
+
+    if (rawMessageSize < minMessageSize) {
+      throw new Error(
+        `P2P messageSize must be at least ${minMessageSize} bytes (got ${rawMessageSize})`
+      );
+    }
+    if (rawMessageSize > P2PManager.MAX_MESSAGE_SIZE) {
+      console.warn(
+        `P2P messageSize ${rawMessageSize} exceeds max ${P2PManager.MAX_MESSAGE_SIZE}, clamping to ${P2PManager.MAX_MESSAGE_SIZE}`
+      );
+    }
+    if (rawQueueSize < 1) {
+      throw new Error(
+        `P2P maxIncomingMessages must be at least 1 (got ${rawQueueSize})`
+      );
+    }
+
+    this.MESSAGE_SIZE = Math.min(rawMessageSize, P2PManager.MAX_MESSAGE_SIZE);
+    this.QUEUE_SIZE = rawQueueSize;
+    this.MAX_PAYLOAD_SIZE =
+      this.MESSAGE_SIZE - this.MESSAGE_SLOT_HEADER_SIZE - this.PAYLOAD_OFFSET;
+    this.outgoingMessageBuffer = new Uint8Array(this.MAX_PAYLOAD_SIZE);
+
+    // Warn if total memory usage is high
+    const numChannels = this.DEFAULT_NUM_CHANNELS;
+    const totalMemory = this.MESSAGE_SIZE * this.QUEUE_SIZE * numChannels;
+    if (totalMemory > P2PManager.MEMORY_WARNING_THRESHOLD_BYTES) {
+      console.warn(
+        `P2P ring buffer memory usage is ${(totalMemory / 1024 / 1024).toFixed(1)}MB ` +
+          `(messageSize=${this.MESSAGE_SIZE} × maxIncomingMessages=${this.QUEUE_SIZE} × ${numChannels} channels). ` +
+          `Consider reducing maxIncomingMessages if memory is a concern.`
+      );
+    }
+
     this.initializeMessageQueue();
+    this.initialized = true;
   }
 
   // ================
@@ -120,6 +179,7 @@ export class P2PManager {
     lobbyId: Id<"lobbies">,
     members: SDKUser[]
   ): Promise<WavedashResponse<P2PConnection>> {
+    this.ensureInitialized();
     try {
       // If we already have a connection for this lobby, update it
       if (
@@ -1061,6 +1121,7 @@ export class P2PManager {
     payload: Uint8Array,
     payloadSize: number = payload.length // use this when using the reusable outgoingMessageBuffer to send only the intended bytes from the buffer
   ): boolean {
+    this.ensureInitialized();
     try {
       if (!this.currentConnection || !payload) {
         return false;
@@ -1239,9 +1300,7 @@ export class P2PManager {
     return this.currentConnection;
   }
 
-  updateConfig(config: Partial<P2PConfig>): void {
-    this.config = { ...this.config, ...config };
-  }
+
 
   // Check if channels are ready for a specific peer
   isPeerReady(userId: Id<"users">): boolean {
@@ -1404,22 +1463,16 @@ export class P2PManager {
     }
   }
 
-  // Public method to get queue info for debugging
-  getMessageQueueInfo(): {
-    channels: number;
-    queueSize: number;
-    messageSize: number;
-    totalSize: number;
-  } {
-    const totalSize =
-      this.channelQueues.size * (this.MESSAGE_SIZE * this.QUEUE_SIZE);
+  // Returns the max payload size (what game engines should report as max packet size)
+  getMaxPayloadSize(): number {
+    this.ensureInitialized();
+    return this.MAX_PAYLOAD_SIZE;
+  }
 
-    return {
-      channels: this.channelQueues.size,
-      queueSize: this.QUEUE_SIZE,
-      messageSize: this.MESSAGE_SIZE,
-      totalSize: totalSize
-    };
+  // Returns the configured max incoming messages per channel queue
+  getMaxIncomingMessages(): number {
+    this.ensureInitialized();
+    return this.QUEUE_SIZE;
   }
 
   // Get pre-allocated buffer for outgoing messages (for game engine to write directly)
@@ -1427,6 +1480,7 @@ export class P2PManager {
   // Godot uses this to write binary payloads to a pre-allocated place that JS can read from.
   // Not needed in Unity because Unity can pass along a direct view into its own WASM heap
   getOutgoingMessageBuffer(): Uint8Array {
+    this.ensureInitialized();
     return this.outgoingMessageBuffer;
   }
 
@@ -1439,6 +1493,7 @@ export class P2PManager {
     rawBinary: boolean = true,
     peek: boolean = false
   ): Uint8Array | P2PMessage | null {
+    this.ensureInitialized();
     const returnRawBinary = rawBinary || this.sdk.engineInstance;
     const queue = this.channelQueues.get(appChannel);
     if (!queue) {
@@ -1490,6 +1545,7 @@ export class P2PManager {
   // If no buffer provided, allocates exact size needed and drains all messages
   // Returns subarray of buffer containing only the written data (use .length to know how many bytes were written)
   drainChannelToBuffer(appChannel: number, buffer?: Uint8Array): Uint8Array {
+    this.ensureInitialized();
     const queue = this.channelQueues.get(appChannel);
     if (!queue || queue.messageCount === 0) {
       return new Uint8Array(0);
