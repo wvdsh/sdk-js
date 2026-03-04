@@ -1469,6 +1469,12 @@ export class P2PManager {
     return this.MAX_PAYLOAD_SIZE;
   }
 
+  // Returns the configured max incoming messages per channel queue
+  getMaxIncomingMessages(): number {
+    this.ensureInitialized();
+    return this.QUEUE_SIZE;
+  }
+
   // Get pre-allocated buffer for outgoing messages (for game engine to write directly)
   // Game engine can write payload here, then call sendP2PMessage with the same buffer
   // Godot uses this to write binary payloads to a pre-allocated place that JS can read from.

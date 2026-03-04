@@ -658,6 +658,14 @@ class WavedashSDK {
   }
 
   /**
+   * Get the configured max incoming messages per channel queue.
+   */
+  getP2PMaxIncomingMessages(): number {
+    this.ensureReady();
+    return this.p2pManager.getMaxIncomingMessages();
+  }
+
+  /**
    * Get a pre-allocated scratch buffer for outgoing messages
    * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
    */
