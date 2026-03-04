@@ -201,10 +201,8 @@ class WavedashSDK {
       this.config.debug ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN
     );
 
-    // Update P2P manager configuration if provided
-    if (this.config.p2p) {
-      this.p2pManager.updateConfig(this.config.p2p);
-    }
+    // Initialize P2P manager with config (validates and allocates ring buffers)
+    this.p2pManager.init(this.config.p2p);
 
     this.logger.debug("Initialized with config:", this.config);
     // Start heartbeat service

@@ -102,10 +102,10 @@ export class P2PManager {
   private static readonly MAX_MESSAGE_SIZE = 64 * 1024;
   private static readonly MEMORY_WARNING_THRESHOLD_BYTES = 128 * 1024 * 1024;
 
-  // Configurable sizing (initialized from P2PConfig in constructor)
-  private readonly QUEUE_SIZE: number;
-  private readonly MESSAGE_SIZE: number;
-  private readonly MAX_PAYLOAD_SIZE: number;
+  // Configurable sizing (initialized in init() from P2PConfig)
+  private QUEUE_SIZE: number;
+  private MESSAGE_SIZE: number;
+  private MAX_PAYLOAD_SIZE: number;
 
   // Pre-allocated buffer for outgoing messages to avoid repeated allocations
   // Game engine writes payload here, then calls sendP2PMessage
@@ -113,11 +113,22 @@ export class P2PManager {
   private textEncoder: TextEncoder = new TextEncoder();
   private textDecoder: TextDecoder = new TextDecoder();
 
-  constructor(sdk: WavedashSDK, config?: Partial<P2PConfig>) {
+  constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
-    this.config = { ...DEFAULT_P2P_CONFIG, ...config };
+    this.config = { ...DEFAULT_P2P_CONFIG };
+    this.QUEUE_SIZE = this.config.maxIncomingMessages;
+    this.MESSAGE_SIZE = this.config.messageSize;
+    this.MAX_PAYLOAD_SIZE =
+      this.MESSAGE_SIZE - this.MESSAGE_SLOT_HEADER_SIZE - this.PAYLOAD_OFFSET;
+    this.outgoingMessageBuffer = new Uint8Array(this.MAX_PAYLOAD_SIZE);
+    this.initializeMessageQueue();
+  }
 
-    // Initialize configurable message sizing
+  init(config?: Partial<P2PConfig>): void {
+    if (config) {
+      this.config = { ...DEFAULT_P2P_CONFIG, ...config };
+    }
+
     const minMessageSize =
       this.MESSAGE_SLOT_HEADER_SIZE + this.PAYLOAD_OFFSET + 1;
     const rawMessageSize = this.config.messageSize;
@@ -134,7 +145,9 @@ export class P2PManager {
       );
     }
     if (rawQueueSize < 1) {
-      throw new Error(`P2P maxIncomingMessages must be at least 1 (got ${rawQueueSize})`);
+      throw new Error(
+        `P2P maxIncomingMessages must be at least 1 (got ${rawQueueSize})`
+      );
     }
 
     this.MESSAGE_SIZE = Math.min(rawMessageSize, P2PManager.MAX_MESSAGE_SIZE);
@@ -1284,9 +1297,7 @@ export class P2PManager {
     return this.currentConnection;
   }
 
-  updateConfig(config: Partial<P2PConfig>): void {
-    this.config = { ...this.config, ...config };
-  }
+
 
   // Check if channels are ready for a specific peer
   isPeerReady(userId: Id<"users">): boolean {
