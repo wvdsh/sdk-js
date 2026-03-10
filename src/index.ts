@@ -92,7 +92,7 @@ class WavedashSDK {
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
-    this.heartbeatManager = new HeartbeatManager(this);
+    this.heartbeatManager = new HeartbeatManager(this, sdkConfig.deviceFingerprint);
     this.fileSystemManager = new FileSystemManager(this);
     this.ugcManager = new UGCManager(this);
     this.leaderboardManager = new LeaderboardManager(this);

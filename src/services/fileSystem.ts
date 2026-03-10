@@ -66,7 +66,6 @@ export class FileSystemManager {
     const args = { filePath };
 
     try {
-      // @ts-expect-error property does not exist on type
       await this.sdk.convexClient.action(api.sdk.remoteFileStorage.deleteFile, {
         path: args.filePath
       });

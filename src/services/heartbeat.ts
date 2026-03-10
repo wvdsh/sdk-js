@@ -6,7 +6,7 @@
  * Lets the game update userPresence in the backend
  */
 
-import { api } from "@wvdsh/types";
+import { api, DeviceFingerprint } from "@wvdsh/types";
 import type { WavedashSDK } from "../index";
 import { Signals } from "../signals";
 import type { ConnectionState } from "convex/browser";
@@ -14,6 +14,7 @@ import type { BackendConnectionPayload } from "../types";
 
 export class HeartbeatManager {
   private sdk: WavedashSDK;
+  private deviceFingerprint: DeviceFingerprint | undefined = undefined;
   private testConnectionInterval: ReturnType<typeof setInterval> | null = null;
   private isConnected: boolean = false;
   private sentDisconnectedSignal: boolean = false;
@@ -21,8 +22,9 @@ export class HeartbeatManager {
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
   private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
 
-  constructor(sdk: WavedashSDK) {
+  constructor(sdk: WavedashSDK, deviceFingerprint?: DeviceFingerprint) {
     this.sdk = sdk;
+    this.deviceFingerprint = deviceFingerprint;
   }
 
   start(): void {
@@ -59,7 +61,8 @@ export class HeartbeatManager {
       // Add a default value to guarantee that the presence is updated
       const dataToSend = data ?? { forceUpdate: true };
       await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
-        data: dataToSend
+        data: dataToSend,
+        deviceFingerprint: this.deviceFingerprint
       });
       return true;
     } catch (error) {
