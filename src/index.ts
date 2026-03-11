@@ -211,7 +211,7 @@ class WavedashSDK {
 
     this.logger.debug("Initialized with config:", this.config);
     // Start heartbeat service
-    this.heartbeatManager.start();
+    this.heartbeatManager.init();
     // Initialize lobby manager
     this.lobbyManager.init();
 

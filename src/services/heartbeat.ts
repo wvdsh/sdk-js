@@ -31,39 +31,55 @@ export class HeartbeatManager {
     this.deviceFingerprint = deviceFingerprint;
   }
 
-  start(): void {
-    // Stop any existing heartbeat
-    this.stop();
-
+  /** One-time setup — populates initial state and registers listeners */
+  init(): void {
     // Populate initial connection state
     this.isConnected =
       this.sdk.convexClient.client.connectionState().isWebSocketConnected;
 
-    // Start periodic heartbeat
+    // Listen for visibility changes (idempotent — remove first to avoid duplicates)
+    document.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange
+    );
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
+
+    // Kick off intervals
+    this.start();
+  }
+
+  /** Start heartbeat and connection-check intervals */
+  start(): void {
+    // Stop any existing intervals before starting fresh
+    this.stop();
+
     this.isFirstTick = true;
+    this.heartbeatInFlight = false;
     this.tickHeartbeat();
     this.heartbeatInterval = setInterval(() => {
       this.tickHeartbeat();
     }, HEARTBEAT.CLIENT_INTERVAL_MS);
 
-    // Check connection interval
     this.testConnectionInterval = setInterval(() => {
       this.testConnection();
     }, this.TEST_CONNECTION_INTERVAL_MS);
-
-    // Listen for visibility changes
-    document.addEventListener("visibilitychange", this.handleVisibilityChange);
   }
 
+  /** Stop heartbeat and connection-check intervals */
   stop(): void {
-    if (this.testConnectionInterval !== null) {
-      clearInterval(this.testConnectionInterval);
-      this.testConnectionInterval = null;
-    }
     if (this.heartbeatInterval !== null) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
     }
+    if (this.testConnectionInterval !== null) {
+      clearInterval(this.testConnectionInterval);
+      this.testConnectionInterval = null;
+    }
+  }
+
+  /** Full teardown — stops intervals and removes all listeners */
+  destroy(): void {
+    this.stop();
     document.removeEventListener(
       "visibilitychange",
       this.handleVisibilityChange
@@ -72,26 +88,9 @@ export class HeartbeatManager {
 
   private handleVisibilityChange = (): void => {
     if (document.visibilityState === "visible") {
-      // Resume heartbeats
-      this.tickHeartbeat();
-      this.heartbeatInterval = setInterval(() => {
-        this.tickHeartbeat();
-      }, HEARTBEAT.CLIENT_INTERVAL_MS);
-
-      // Resume connection monitor
-      this.testConnectionInterval = setInterval(() => {
-        this.testConnection();
-      }, this.TEST_CONNECTION_INTERVAL_MS);
+      this.start();
     } else {
-      // Pause all intervals
-      if (this.heartbeatInterval !== null) {
-        clearInterval(this.heartbeatInterval);
-        this.heartbeatInterval = null;
-      }
-      if (this.testConnectionInterval !== null) {
-        clearInterval(this.testConnectionInterval);
-        this.testConnectionInterval = null;
-      }
+      this.stop();
     }
   };
 
@@ -115,7 +114,7 @@ export class HeartbeatManager {
   }
 
   private sendHeartbeat(reestablish: boolean): void {
-    if (this.heartbeatInFlight) return;
+    if (!reestablish && this.heartbeatInFlight) return;
     this.heartbeatInFlight = true;
 
     this.sdk.convexClient
