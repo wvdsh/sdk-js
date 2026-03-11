@@ -44,6 +44,10 @@ export class HeartbeatManager {
     );
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
 
+    // Mark first tick so the initial heartbeat forces a reestablish
+    this.isFirstTick = true;
+    this.heartbeatInFlight = false;
+
     // Kick off intervals
     this.start();
   }
@@ -53,8 +57,6 @@ export class HeartbeatManager {
     // Stop any existing intervals before starting fresh
     this.stop();
 
-    this.isFirstTick = true;
-    this.heartbeatInFlight = false;
     this.tickHeartbeat();
     this.heartbeatInterval = setInterval(() => {
       this.tickHeartbeat();
