@@ -6,7 +6,7 @@
  * Lets the game update userPresence in the backend
  */
 
-import { api, DeviceFingerprint } from "@wvdsh/types";
+import { api, DeviceFingerprint, HEARTBEAT } from "@wvdsh/types";
 import type { WavedashSDK } from "../index";
 import { Signals } from "../signals";
 import type { ConnectionState } from "convex/browser";
@@ -16,9 +16,13 @@ export class HeartbeatManager {
   private sdk: WavedashSDK;
   private deviceFingerprint: DeviceFingerprint | undefined = undefined;
   private testConnectionInterval: ReturnType<typeof setInterval> | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private isConnected: boolean = false;
   private sentDisconnectedSignal: boolean = false;
   private disconnectedAt: number | null = null;
+  private lastHeartbeatTime: number = 0;
+  private heartbeatInFlight: boolean = false;
+  private isFirstTick: boolean = true;
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
   private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
 
@@ -38,10 +42,20 @@ export class HeartbeatManager {
     // Let the backend know we've started the game
     this.updateUserPresence();
 
+    // Start periodic heartbeat
+    this.isFirstTick = true;
+    this.tickHeartbeat();
+    this.heartbeatInterval = setInterval(() => {
+      this.tickHeartbeat();
+    }, HEARTBEAT.CLIENT_INTERVAL_MS);
+
     // Check connection interval
     this.testConnectionInterval = setInterval(() => {
       this.testConnection();
     }, this.TEST_CONNECTION_INTERVAL_MS);
+
+    // Listen for visibility changes
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
   }
 
   stop(): void {
@@ -49,6 +63,80 @@ export class HeartbeatManager {
       clearInterval(this.testConnectionInterval);
       this.testConnectionInterval = null;
     }
+    if (this.heartbeatInterval !== null) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
+    document.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange
+    );
+  }
+
+  private handleVisibilityChange = (): void => {
+    if (document.visibilityState === "visible") {
+      // Resume heartbeats
+      this.tickHeartbeat();
+      this.heartbeatInterval = setInterval(() => {
+        this.tickHeartbeat();
+      }, HEARTBEAT.CLIENT_INTERVAL_MS);
+
+      // Resume connection monitor
+      this.testConnectionInterval = setInterval(() => {
+        this.testConnection();
+      }, this.TEST_CONNECTION_INTERVAL_MS);
+    } else {
+      // Pause all intervals
+      if (this.heartbeatInterval !== null) {
+        clearInterval(this.heartbeatInterval);
+        this.heartbeatInterval = null;
+      }
+      if (this.testConnectionInterval !== null) {
+        clearInterval(this.testConnectionInterval);
+        this.testConnectionInterval = null;
+      }
+    }
+  };
+
+  private tickHeartbeat(): void {
+    const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
+    const needsReestablish =
+      this.isFirstTick ||
+      this.lastHeartbeatTime === 0 ||
+      timeSinceLastHeartbeat >= HEARTBEAT.CLIENT_REESTABLISH_THRESHOLD_MS;
+    this.isFirstTick = false;
+
+    if (needsReestablish) {
+      this.sendHeartbeat(true);
+    } else if (
+      !this.heartbeatInFlight &&
+      timeSinceLastHeartbeat >=
+        HEARTBEAT.CLIENT_INTERVAL_MS - HEARTBEAT.CLIENT_GRACE_MS
+    ) {
+      this.sendHeartbeat(false);
+    }
+  }
+
+  private sendHeartbeat(reestablish: boolean): void {
+    if (this.heartbeatInFlight) return;
+    this.heartbeatInFlight = true;
+
+    this.sdk.convexClient
+      .mutation(api.sdk.presence.heartbeat, {
+        ...(reestablish ? { data: { forceUpdate: true } } : {}),
+        deviceFingerprint: this.deviceFingerprint
+      })
+      .then((accepted: boolean) => {
+        if (accepted) {
+          this.lastHeartbeatTime = Date.now();
+        }
+      })
+      .catch((error: unknown) => {
+        this.sdk.logger.error(`Heartbeat failed: ${error}`);
+      })
+      .finally(() => {
+        this.heartbeatInFlight = false;
+      });
   }
 
   /**

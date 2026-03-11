@@ -45,6 +45,7 @@ import {
   SDKConfig,
   SDKUser
 } from "@wvdsh/types";
+import { parentOrigin } from "./utils/parentOrigin";
 
 interface QueuedEvent {
   signal: Signal;
@@ -116,9 +117,13 @@ class WavedashSDK {
   }
 
   private async getAuthToken(): Promise<string> {
-    this.gameplayJwt = await iframeMessenger.requestFromParent(
-      IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN
-    );
+    const response = await fetch(`${parentOrigin}/auth/gameplay_token`, {
+      credentials: "include"
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch gameplay token: ${response.status}`);
+    }
+    this.gameplayJwt = await response.text();
     return this.gameplayJwt;
   }
 
