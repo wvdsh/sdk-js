@@ -151,6 +151,7 @@ class WavedashSDK {
       this.sessionEndSent = true;
 
       this.lobbyManager.destroy();
+      this.heartbeatManager.destroy();
       const pendingData = this.statsManager.getPendingData();
       const sessionEndData: Record<string, unknown> = {};
       if (pendingData?.stats?.length) {
