@@ -39,9 +39,6 @@ export class HeartbeatManager {
     this.isConnected =
       this.sdk.convexClient.client.connectionState().isWebSocketConnected;
 
-    // Let the backend know we've started the game
-    this.updateUserPresence();
-
     // Start periodic heartbeat
     this.isFirstTick = true;
     this.tickHeartbeat();
