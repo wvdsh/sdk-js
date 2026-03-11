@@ -45,6 +45,7 @@ import {
   SDKConfig,
   SDKUser
 } from "@wvdsh/types";
+import { parentOrigin } from "./utils/parentOrigin";
 
 interface QueuedEvent {
   signal: Signal;
@@ -116,9 +117,13 @@ class WavedashSDK {
   }
 
   private async getAuthToken(): Promise<string> {
-    this.gameplayJwt = await iframeMessenger.requestFromParent(
-      IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN
-    );
+    const response = await fetch(`${parentOrigin}/auth/gameplay_token`, {
+      credentials: "include"
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch gameplay token: ${response.status}`);
+    }
+    this.gameplayJwt = await response.text();
     return this.gameplayJwt;
   }
 
@@ -146,6 +151,7 @@ class WavedashSDK {
       this.sessionEndSent = true;
 
       this.lobbyManager.destroy();
+      this.heartbeatManager.destroy();
       const pendingData = this.statsManager.getPendingData();
       const sessionEndData: Record<string, unknown> = {};
       if (pendingData?.stats?.length) {
@@ -206,7 +212,7 @@ class WavedashSDK {
 
     this.logger.debug("Initialized with config:", this.config);
     // Start heartbeat service
-    this.heartbeatManager.start();
+    this.heartbeatManager.init();
     // Initialize lobby manager
     this.lobbyManager.init();
 

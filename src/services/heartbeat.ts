@@ -6,7 +6,7 @@
  * Lets the game update userPresence in the backend
  */
 
-import { api, DeviceFingerprint } from "@wvdsh/types";
+import { api, DeviceFingerprint, HEARTBEAT } from "@wvdsh/types";
 import type { WavedashSDK } from "../index";
 import { Signals } from "../signals";
 import type { ConnectionState } from "convex/browser";
@@ -16,9 +16,13 @@ export class HeartbeatManager {
   private sdk: WavedashSDK;
   private deviceFingerprint: DeviceFingerprint | undefined = undefined;
   private testConnectionInterval: ReturnType<typeof setInterval> | null = null;
+  private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private isConnected: boolean = false;
   private sentDisconnectedSignal: boolean = false;
   private disconnectedAt: number | null = null;
+  private lastHeartbeatTime: number = 0;
+  private heartbeatInFlight: boolean = false;
+  private isFirstTick: boolean = true;
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
   private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
 
@@ -27,28 +31,108 @@ export class HeartbeatManager {
     this.deviceFingerprint = deviceFingerprint;
   }
 
-  start(): void {
-    // Stop any existing heartbeat
-    this.stop();
-
+  /** One-time setup — populates initial state and registers listeners */
+  init(): void {
     // Populate initial connection state
     this.isConnected =
       this.sdk.convexClient.client.connectionState().isWebSocketConnected;
 
-    // Let the backend know we've started the game
-    this.updateUserPresence();
+    // Listen for visibility changes (idempotent — remove first to avoid duplicates)
+    document.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange
+    );
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
 
-    // Check connection interval
+    // Mark first tick so the initial heartbeat forces a reestablish
+    this.isFirstTick = true;
+    this.heartbeatInFlight = false;
+
+    // Kick off intervals
+    this.start();
+  }
+
+  /** Start heartbeat and connection-check intervals */
+  start(): void {
+    // Stop any existing intervals before starting fresh
+    this.stop();
+
+    this.tickHeartbeat();
+    this.heartbeatInterval = setInterval(() => {
+      this.tickHeartbeat();
+    }, HEARTBEAT.CLIENT_INTERVAL_MS);
+
     this.testConnectionInterval = setInterval(() => {
       this.testConnection();
     }, this.TEST_CONNECTION_INTERVAL_MS);
   }
 
+  /** Stop heartbeat and connection-check intervals */
   stop(): void {
+    if (this.heartbeatInterval !== null) {
+      clearInterval(this.heartbeatInterval);
+      this.heartbeatInterval = null;
+    }
     if (this.testConnectionInterval !== null) {
       clearInterval(this.testConnectionInterval);
       this.testConnectionInterval = null;
     }
+  }
+
+  /** Full teardown — stops intervals and removes all listeners */
+  destroy(): void {
+    this.stop();
+    document.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange
+    );
+  }
+
+  private handleVisibilityChange = (): void => {
+    if (document.visibilityState === "visible") {
+      this.start();
+    } else {
+      this.stop();
+    }
+  };
+
+  private tickHeartbeat(): void {
+    const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
+    const needsReestablish =
+      this.isFirstTick ||
+      timeSinceLastHeartbeat >= HEARTBEAT.CLIENT_REESTABLISH_THRESHOLD_MS;
+    this.isFirstTick = false;
+
+    if (needsReestablish) {
+      this.sendHeartbeat(true);
+    } else if (
+      timeSinceLastHeartbeat >=
+        HEARTBEAT.CLIENT_INTERVAL_MS - HEARTBEAT.CLIENT_GRACE_MS
+    ) {
+      this.sendHeartbeat(false);
+    }
+  }
+
+  private sendHeartbeat(reestablish: boolean): void {
+    if (!reestablish && this.heartbeatInFlight) return;
+    this.heartbeatInFlight = true;
+
+    this.sdk.convexClient
+      .mutation(api.sdk.presence.heartbeat, {
+        ...(reestablish ? { data: { forceUpdate: true } } : {}),
+        deviceFingerprint: this.deviceFingerprint
+      })
+      .then((accepted: boolean) => {
+        if (accepted) {
+          this.lastHeartbeatTime = Date.now();
+        }
+      })
+      .catch((error: unknown) => {
+        this.sdk.logger.error(`Heartbeat failed: ${error}`);
+      })
+      .finally(() => {
+        this.heartbeatInFlight = false;
+      });
   }
 
   /**
