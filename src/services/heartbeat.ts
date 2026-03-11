@@ -100,14 +100,12 @@ export class HeartbeatManager {
     const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
     const needsReestablish =
       this.isFirstTick ||
-      this.lastHeartbeatTime === 0 ||
       timeSinceLastHeartbeat >= HEARTBEAT.CLIENT_REESTABLISH_THRESHOLD_MS;
     this.isFirstTick = false;
 
     if (needsReestablish) {
       this.sendHeartbeat(true);
     } else if (
-      !this.heartbeatInFlight &&
       timeSinceLastHeartbeat >=
         HEARTBEAT.CLIENT_INTERVAL_MS - HEARTBEAT.CLIENT_GRACE_MS
     ) {
