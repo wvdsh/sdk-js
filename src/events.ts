@@ -7,7 +7,7 @@
  * The game engine listens for these events to react to SDK updates.
  */
 
-export const Events = {
+export const WavedashEvents = {
   // Lobby events
   LOBBY_MESSAGE: "LobbyMessage",
   LOBBY_JOINED: "LobbyJoined",

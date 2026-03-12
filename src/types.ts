@@ -1,7 +1,7 @@
 import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 
-import { Events } from "./events";
+import { WavedashEvents } from "./events";
 import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/types";
 
 // Extract types from the API
@@ -56,8 +56,8 @@ export type P2PSignalingMessage = Omit<
 };
 
 // Type helper to get event values as a union type
-export type Event = (typeof Events)[keyof typeof Events];
-export { Events };
+export type WavedashEvent = (typeof WavedashEvents)[keyof typeof WavedashEvents];
+export { WavedashEvents };
 
 // Configuration and user types
 export interface WavedashConfig {
@@ -84,7 +84,7 @@ export interface EngineInstance {
   // Exposed natively by Unity's engine instance, added manually by Wavedash Godot SDK
   SendMessage(
     objectName: string,
-    methodName: Event,
+    methodName: WavedashEvent,
     value?: string | number | boolean
   ): void;
   // Standard Emscripten filesystem API: https://emscripten.org/docs/api_reference/Filesystem-API.html

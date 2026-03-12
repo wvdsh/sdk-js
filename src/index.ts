@@ -15,7 +15,7 @@ import {
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
-import { Events } from "./types";
+import { WavedashEvents } from "./types";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
@@ -36,7 +36,7 @@ import type {
   RemoteFileMetadata,
   P2PMessage,
   LobbyUser,
-  Event,
+  WavedashEvent,
   Lobby,
   Friend
 } from "./types";
@@ -49,7 +49,7 @@ import {
 import { parentOrigin } from "./utils/parentOrigin";
 
 interface QueuedEvent {
-  event: Event;
+  event: WavedashEvent;
   payload: string | number | boolean | object;
 }
 
@@ -60,7 +60,7 @@ class WavedashSDK extends EventTarget {
   private convexHttpUrl: string;
   private eventQueue: QueuedEvent[] = [];
 
-  Events = Events;
+  Events = WavedashEvents;
 
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
@@ -86,7 +86,7 @@ class WavedashSDK extends EventTarget {
   constructor(sdkConfig: SDKConfig) {
     super();
     const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
-    convexClient.setAuth(this.getAuthToken);
+    convexClient.setAuth(() => this.getAuthToken());
     this.convexClient = convexClient;
     this.convexHttpUrl = sdkConfig.convexHttpUrl;
     this.wavedashUser = sdkConfig.wavedashUser;
@@ -920,7 +920,7 @@ class WavedashSDK extends EventTarget {
   // ==============================
   // JS -> Game Event Broadcasting
   // ==============================
-  notifyGame(event: Event, payload: string | number | boolean | object): void {
+  notifyGame(event: WavedashEvent, payload: string | number | boolean | object): void {
     // Queue events if game is not ready for them yet
     if (this.config?.deferEvents) {
       this.eventQueue.push({ event, payload });
@@ -936,7 +936,7 @@ class WavedashSDK extends EventTarget {
   }
 
   private sendGameEvent(
-    event: Event,
+    event: WavedashEvent,
     payload: string | number | boolean | object
   ): void {
     const data =

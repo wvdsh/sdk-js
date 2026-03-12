@@ -8,7 +8,7 @@
 
 import { api, DeviceFingerprint, HEARTBEAT } from "@wvdsh/types";
 import type { WavedashSDK } from "../index";
-import { Events } from "../events";
+import { WavedashEvents } from "../events";
 import type { ConnectionState } from "convex/browser";
 import type { BackendConnectionPayload } from "../types";
 
@@ -177,14 +177,14 @@ export class HeartbeatManager {
         // Reconnected
         this.disconnectedAt = null;
         this.sentDisconnectedEvent = false;
-        this.sdk.notifyGame(Events.BACKEND_CONNECTED, connection);
+        this.sdk.notifyGame(WavedashEvents.BACKEND_CONNECTED, connection);
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedAt = Date.now();
         this.sdk.logger.warn(
           "Backend disconnected - attempting to reconnect..."
         );
-        this.sdk.notifyGame(Events.BACKEND_RECONNECTING, connection);
+        this.sdk.notifyGame(WavedashEvents.BACKEND_RECONNECTING, connection);
       } else if (!this.isConnected && !wasConnected) {
         // Still disconnected
         // After threshold, notify as truly disconnected
@@ -193,7 +193,7 @@ export class HeartbeatManager {
           !this.sentDisconnectedEvent &&
           Date.now() - this.disconnectedAt > this.DISCONNECTED_TIMEOUT_MS
         ) {
-          this.sdk.notifyGame(Events.BACKEND_DISCONNECTED, connection);
+          this.sdk.notifyGame(WavedashEvents.BACKEND_DISCONNECTED, connection);
           this.sentDisconnectedEvent = true;
         }
       } else if (this.isConnected && wasConnected) {
