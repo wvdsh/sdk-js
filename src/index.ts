@@ -45,6 +45,7 @@ import {
   SDKConfig,
   SDKUser
 } from "@wvdsh/types";
+import { parentOrigin } from "./utils/parentOrigin";
 
 interface QueuedEvent {
   signal: Signal;
@@ -92,7 +93,7 @@ class WavedashSDK {
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
-    this.heartbeatManager = new HeartbeatManager(this);
+    this.heartbeatManager = new HeartbeatManager(this, sdkConfig.deviceFingerprint);
     this.fileSystemManager = new FileSystemManager(this);
     this.ugcManager = new UGCManager(this);
     this.leaderboardManager = new LeaderboardManager(this);
@@ -116,9 +117,13 @@ class WavedashSDK {
   }
 
   private async getAuthToken(): Promise<string> {
-    this.gameplayJwt = await iframeMessenger.requestFromParent(
-      IFRAME_MESSAGE_TYPE.GET_AUTH_TOKEN
-    );
+    const response = await fetch(`${parentOrigin}/auth/gameplay_token`, {
+      credentials: "include"
+    });
+    if (!response.ok) {
+      throw new Error(`Failed to fetch gameplay token: ${response.status}`);
+    }
+    this.gameplayJwt = await response.text();
     return this.gameplayJwt;
   }
 
@@ -146,6 +151,7 @@ class WavedashSDK {
       this.sessionEndSent = true;
 
       this.lobbyManager.destroy();
+      this.heartbeatManager.destroy();
       const pendingData = this.statsManager.getPendingData();
       const sessionEndData: Record<string, unknown> = {};
       if (pendingData?.stats?.length) {
@@ -201,14 +207,12 @@ class WavedashSDK {
       this.config.debug ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN
     );
 
-    // Update P2P manager configuration if provided
-    if (this.config.p2p) {
-      this.p2pManager.updateConfig(this.config.p2p);
-    }
+    // Initialize P2P manager with config (validates and allocates ring buffers)
+    this.p2pManager.init(this.config.p2p);
 
     this.logger.debug("Initialized with config:", this.config);
     // Start heartbeat service
-    this.heartbeatManager.start();
+    this.heartbeatManager.init();
     // Initialize lobby manager
     this.lobbyManager.init();
 
@@ -649,6 +653,23 @@ class WavedashSDK {
   // ============
   // P2P Networking
   // ============
+
+  /**
+   * Get the maximum payload size in bytes for a single P2P message.
+   * This is derived from the configured messageSize minus protocol overhead.
+   */
+  getP2PMaxPayloadSize(): number {
+    this.ensureReady();
+    return this.p2pManager.getMaxPayloadSize();
+  }
+
+  /**
+   * Get the configured max incoming messages per channel queue.
+   */
+  getP2PMaxIncomingMessages(): number {
+    this.ensureReady();
+    return this.p2pManager.getMaxIncomingMessages();
+  }
 
   /**
    * Get a pre-allocated scratch buffer for outgoing messages

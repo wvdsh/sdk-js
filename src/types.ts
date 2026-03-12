@@ -235,6 +235,8 @@ export interface P2PConfig {
   maxPeers: number;
   enableReliableChannel: boolean;
   enableUnreliableChannel: boolean;
+  messageSize?: number; // Max bytes per message slot. Default: 4096. Must be > 44, capped at 65536.
+  maxIncomingMessages?: number; // Max queued incoming messages per channel. Default: 1024.
 }
 
 // Re-export Id for convenience

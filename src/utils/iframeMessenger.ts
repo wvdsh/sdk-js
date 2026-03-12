@@ -9,7 +9,7 @@ import { IFRAME_MESSAGE_TYPE, IFrameResponseMap } from "@wvdsh/types";
 import { takeFocus } from "./focusManager";
 import { parentOrigin } from "./parentOrigin";
 
-const RESPONSE_TIMEOUT_MS = 5_000;
+const RESPONSE_TIMEOUT_MS = 15_000;
 
 // Track pending requests - response can be any value from IFrameResponseMap
 type IFrameResponseValue = IFrameResponseMap[keyof IFrameResponseMap];
