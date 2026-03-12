@@ -36,9 +36,12 @@ export class IFrameMessenger {
 
   // Arrow function automatically captures 'this' from the class instance
   private handleMessage = (event: MessageEvent): void => {
-    // Validate origin to prevent JWT spoofing and other attacks
+    // Validate origin to prevent JWT spoofing and other attacks.
+    // Skip messages from our own window (e.g. js-dos sleep-sync postMessage traffic).
     if (event.origin !== parentOrigin) {
-      console.warn(`Ignored message from untrusted origin: ${event.origin}`);
+      if (event.source !== window) {
+        console.warn(`Ignored message from untrusted origin: ${event.origin}`);
+      }
       return;
     }
 
