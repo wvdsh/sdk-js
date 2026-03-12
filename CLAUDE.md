@@ -30,6 +30,7 @@ npm run prettier:check
 
 - **`src/index.ts`**: Main SDK class (`WavedashSDK`) and setup function (`setupWavedashSDK`)
 - **`src/types.ts`**: TypeScript type definitions and interfaces
+- **`src/events.ts`**: SDK event constants (`Events`) emitted to game engines
 - **`src/convex_api.ts`**: Auto-generated API types from Convex backend
 - **`src/constants.ts`**: SDK constants and configuration values
 

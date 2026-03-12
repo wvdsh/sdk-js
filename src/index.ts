@@ -15,6 +15,7 @@ import {
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
+import { WavedashEvents } from "./types";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
@@ -35,7 +36,7 @@ import type {
   RemoteFileMetadata,
   P2PMessage,
   LobbyUser,
-  Signal,
+  WavedashEvent,
   Lobby,
   Friend
 } from "./types";
@@ -48,16 +49,18 @@ import {
 import { parentOrigin } from "./utils/parentOrigin";
 
 interface QueuedEvent {
-  signal: Signal;
+  event: WavedashEvent;
   payload: string | number | boolean | object;
 }
 
-class WavedashSDK {
+class WavedashSDK extends EventTarget {
   private initialized: boolean = false;
   private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
   private eventQueue: QueuedEvent[] = [];
+
+  Events = WavedashEvents;
 
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
@@ -81,6 +84,7 @@ class WavedashSDK {
   uploadsHost: string;
 
   constructor(sdkConfig: SDKConfig) {
+    super();
     const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
     convexClient.setAuth(() => this.getAuthToken());
     this.convexClient = convexClient;
@@ -798,8 +802,8 @@ class WavedashSDK {
    * @param visibility - The visibility of the lobby
    * @param maxPlayers - Optional maximum number of players
    * @returns A WavedashResponse with the created lobbyId.
-   *          Full lobby context is provided via the LOBBY_JOINED signal.
-   * @emits LOBBY_JOINED signal to the game engine with full lobby context
+   *          Full lobby context is provided via the LOBBY_JOINED event.
+   * @emits LOBBY_JOINED event to the game engine with full lobby context
    */
   async createLobby(
     visibility: LobbyVisibility,
@@ -820,8 +824,8 @@ class WavedashSDK {
    * Join an existing lobby.
    * @param lobbyId - The ID of the lobby to join
    * @returns A WavedashResponse with success/failure.
-   *          Full lobby context is provided via the LOBBY_JOINED signal.
-   * @emits LOBBY_JOINED signal to the game engine with full lobby context
+   *          Full lobby context is provided via the LOBBY_JOINED event.
+   * @emits LOBBY_JOINED event to the game engine with full lobby context
    */
   async joinLobby(
     lobbyId: Id<"lobbies">
@@ -882,7 +886,7 @@ class WavedashSDK {
   }
 
   // Fire and forget, returns true if the message was sent out successfully
-  // Game can listen for the LobbyMessage signal to get the message that was posted
+  // Game can listen for the LobbyMessage event to get the message that was posted
   sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
     this.ensureReady();
     return this.lobbyManager.sendLobbyMessage(lobbyId, message);
@@ -916,34 +920,31 @@ class WavedashSDK {
   // ==============================
   // JS -> Game Event Broadcasting
   // ==============================
-  notifyGame(
-    signal: Signal,
-    payload: string | number | boolean | object
-  ): void {
+  notifyGame(event: WavedashEvent, payload: string | number | boolean | object): void {
     // Queue events if game is not ready for them yet
     if (this.config?.deferEvents) {
-      this.eventQueue.push({ signal, payload });
-      this.logger.debug(`Queued event: ${signal}`);
+      this.eventQueue.push({ event, payload });
+      this.logger.debug(`Queued event: ${event}`);
       return;
     }
 
-    this.sendGameEvent(signal, payload);
+    if (!this.engineInstance) {
+      this.dispatchEvent(new CustomEvent(event, { detail: payload }));
+    } else {
+      this.sendGameEvent(event, payload);
+    }
   }
 
   private sendGameEvent(
-    signal: Signal,
+    event: WavedashEvent,
     payload: string | number | boolean | object
   ): void {
     const data =
       typeof payload === "object" ? JSON.stringify(payload) : payload;
     if (this.engineInstance?.SendMessage) {
-      this.engineInstance.SendMessage(
-        this.engineCallbackReceiver,
-        signal,
-        data
-      );
+      this.engineInstance.SendMessage(this.engineCallbackReceiver, event, data);
     } else {
-      this.logger.error("Engine instance not set. Dropping signal:", signal);
+      this.logger.error("Engine instance not set. Dropping event:", event);
     }
   }
 
@@ -952,8 +953,8 @@ class WavedashSDK {
       return;
     }
     this.logger.debug(`Flushing ${this.eventQueue.length} queued events`);
-    for (const event of this.eventQueue) {
-      this.sendGameEvent(event.signal, event.payload);
+    for (const queuedEvent of this.eventQueue) {
+      this.notifyGame(queuedEvent.event, queuedEvent.payload);
     }
     this.eventQueue = [];
   }

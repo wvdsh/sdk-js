@@ -1,7 +1,7 @@
 import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 
-import { Signals } from "./signals";
+import { WavedashEvents } from "./events";
 import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/types";
 
 // Extract types from the API
@@ -22,9 +22,7 @@ export type LobbyJoinResponse = FunctionReturnType<
 export type LobbyInvite = FunctionReturnType<
   typeof api.sdk.gameLobby.getLobbyInvites
 >[0];
-export type Friend = FunctionReturnType<
-  typeof api.sdk.friends.listFriends
->[0];
+export type Friend = FunctionReturnType<typeof api.sdk.friends.listFriends>[0];
 export type UGCType =
   PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
 export type UGCVisibility =
@@ -57,8 +55,9 @@ export type P2PSignalingMessage = Omit<
   data: RTCSessionDescriptionInit | RTCIceCandidateInit;
 };
 
-// Type helper to get signal values as a union type
-export type Signal = (typeof Signals)[keyof typeof Signals];
+// Type helper to get event values as a union type
+export type WavedashEvent = (typeof WavedashEvents)[keyof typeof WavedashEvents];
+export { WavedashEvents };
 
 // Configuration and user types
 export interface WavedashConfig {
@@ -66,7 +65,7 @@ export interface WavedashConfig {
   remoteStorageOrigin?: string;
   p2p?: Partial<P2PConfig>;
   disableAchievementsAndStats?: boolean; // true for demo games so we don't fill up achievements and stats with live demo data
-  deferEvents?: boolean; // if true wait until game calls readyForEvents to start sending Signal event messages to game
+  deferEvents?: boolean; // if true wait until game calls readyForEvents to start sending event messages to game
 }
 
 export interface RemoteFileMetadata {
@@ -85,7 +84,7 @@ export interface EngineInstance {
   // Exposed natively by Unity's engine instance, added manually by Wavedash Godot SDK
   SendMessage(
     objectName: string,
-    methodName: Signal,
+    methodName: WavedashEvent,
     value?: string | number | boolean
   ): void;
   // Standard Emscripten filesystem API: https://emscripten.org/docs/api_reference/Filesystem-API.html
@@ -117,13 +116,13 @@ export interface WavedashResponse<T> {
 }
 
 // =============================================================================
-// Signal Payloads
-// These are the payload types for each signal that the SDK emits to the game engine.
+// Event Payloads
+// These are the payload types for each event that the SDK emits to the game engine.
 // =============================================================================
 
-// --- Lobby Signals ---
+// --- Lobby Events ---
 
-/** Payload for LOBBY_JOINED signal - emitted on lobby join attempt (success or failure), as well successful lobby create */
+/** Payload for LOBBY_JOINED event - emitted on lobby join attempt (success or failure), as well successful lobby create */
 export interface LobbyJoinedPayload {
   success: boolean;
   lobbyId: Id<"lobbies">;
@@ -143,7 +142,7 @@ export const LobbyKickedReason = {
 export type LobbyKickedReason =
   (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason];
 
-/** Payload for LOBBY_KICKED signal - emitted when removed from a lobby */
+/** Payload for LOBBY_KICKED event - emitted when removed from a lobby */
 export interface LobbyKickedPayload {
   lobbyId: Id<"lobbies">;
   reason: LobbyKickedReason;
@@ -157,44 +156,44 @@ export const LobbyUserChangeType = {
 export type LobbyUserChangeType =
   (typeof LobbyUserChangeType)[keyof typeof LobbyUserChangeType];
 
-/** Payload for LOBBY_USERS_UPDATED signal - emitted when a user joins or leaves */
+/** Payload for LOBBY_USERS_UPDATED event - emitted when a user joins or leaves */
 export interface LobbyUsersUpdatedPayload extends LobbyUser {
   changeType: LobbyUserChangeType;
 }
 
-/** Payload for LOBBY_DATA_UPDATED signal - the full lobby metadata */
+/** Payload for LOBBY_DATA_UPDATED event - the full lobby metadata */
 export type LobbyDataUpdatedPayload = Record<string, unknown>;
 
-/** Payload for LOBBY_MESSAGE signal - a message received in the lobby */
+/** Payload for LOBBY_MESSAGE event - a message received in the lobby */
 export type LobbyMessagePayload = LobbyMessage;
 
-/** Payload for LOBBY_INVITE signal - an invite to join a lobby */
+/** Payload for LOBBY_INVITE event - an invite to join a lobby */
 export type LobbyInvitePayload = LobbyInvite;
 
-// --- P2P Signals ---
+// --- P2P Events ---
 
-/** Payload for P2P_CONNECTION_ESTABLISHED signal */
+/** Payload for P2P_CONNECTION_ESTABLISHED event */
 export interface P2PConnectionEstablishedPayload {
   userId: Id<"users">;
   username: string;
 }
 
-/** Payload for P2P_CONNECTION_FAILED signal */
+/** Payload for P2P_CONNECTION_FAILED event */
 export interface P2PConnectionFailedPayload {
   userId: Id<"users">;
   username: string;
   error: string;
 }
 
-/** Payload for P2P_PEER_DISCONNECTED signal */
+/** Payload for P2P_PEER_DISCONNECTED event */
 export interface P2PPeerDisconnectedPayload {
   userId: Id<"users">;
   username: string;
 }
 
-// --- Backend Connection Signals ---
+// --- Backend Connection Events ---
 
-/** Payload for BACKEND_CONNECTED, BACKEND_DISCONNECTED, BACKEND_RECONNECTING signals */
+/** Payload for BACKEND_CONNECTED, BACKEND_DISCONNECTED, BACKEND_RECONNECTING events */
 export interface BackendConnectionPayload {
   isConnected: boolean;
   hasEverConnected: boolean;
