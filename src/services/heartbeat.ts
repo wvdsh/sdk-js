@@ -29,26 +29,12 @@ export class HeartbeatManager {
   constructor(sdk: WavedashSDK, deviceFingerprint?: DeviceFingerprint) {
     this.sdk = sdk;
     this.deviceFingerprint = deviceFingerprint;
-  }
 
-  /** One-time setup — populates initial state and registers listeners */
-  init(): void {
-    // Populate initial connection state
     this.isConnected =
       this.sdk.convexClient.client.connectionState().isWebSocketConnected;
 
-    // Listen for visibility changes (idempotent — remove first to avoid duplicates)
-    document.removeEventListener(
-      "visibilitychange",
-      this.handleVisibilityChange
-    );
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
 
-    // Mark first tick so the initial heartbeat forces a reestablish
-    this.isFirstTick = true;
-    this.heartbeatInFlight = false;
-
-    // Kick off intervals
     this.start();
   }
 
