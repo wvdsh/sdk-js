@@ -215,8 +215,6 @@ class WavedashSDK extends EventTarget {
     this.p2pManager.init(this.config.p2p);
 
     this.logger.debug("Initialized with config:", this.config);
-    // Start heartbeat service
-    this.heartbeatManager.init();
     // Initialize lobby manager
     this.lobbyManager.init();
 
