@@ -70,8 +70,8 @@ export interface WavedashConfig {
 
 export interface RemoteFileMetadata {
   exists: boolean; // Whether the entry exists
-  key: string; // R2 Key of the entry
-  name: string; // Name of the entry relative to the requested directory path
+  key: string; // Absolute file path of the entry, this is the path downloadRemoteDirectory will download to (ex: /idbfs/<hash>/save.dat)
+  name: string; // Name of the entry relative to the requested directory path (ex: save.dat)
   lastModified: number; // Last modified timestamp of the entry (ISO format)
   size: number; // Size of the entry in bytes
   etag: string; // ETag of the entry
@@ -100,6 +100,8 @@ export interface EngineInstance {
     analyzePath(path: string): { exists: boolean };
     // ... other functions
   };
+  // Unity specific property, should be set to Application.persistentDataPath
+  unityPersistentDataPath?: string;
   // ... other internal properties and methods
 }
 
