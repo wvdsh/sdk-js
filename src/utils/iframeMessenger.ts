@@ -67,7 +67,8 @@ export class IFrameMessenger {
   }
 
   async requestFromParent<T extends keyof IFrameResponseMap>(
-    requestType: T
+    requestType: T,
+    data?: Record<string, unknown>
   ): Promise<IFrameResponseMap[T]> {
     return new Promise((resolve, reject) => {
       if (typeof window === "undefined" || !parentOrigin) {
@@ -92,7 +93,10 @@ export class IFrameMessenger {
         timeout
       });
 
-      window.parent.postMessage({ type: requestType, requestId }, parentOrigin);
+      window.parent.postMessage(
+        { type: requestType, requestId, ...data },
+        parentOrigin
+      );
     });
   }
 }
