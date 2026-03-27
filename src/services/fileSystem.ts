@@ -198,8 +198,6 @@ export class FileSystemManager {
     const args = { path };
 
     try {
-      const localDir = path.endsWith("/") ? path : path + "/";
-
       const response = await this.listRemoteDirectory(path);
       if (!response.success) {
         throw new Error(response.message);
@@ -207,9 +205,8 @@ export class FileSystemManager {
       const files = response.data as RemoteFileMetadata[];
 
       const downloadPromises = files.map(async (file) => {
-        const localDest = localDir + file.name;
-        const url = this.getRemoteStorageUrl(localDest);
-        const success = await this.download(url, localDest);
+        const url = this.getRemoteStorageUrl(file.key);
+        const success = await this.download(url, file.key);
         return { fileName: file.name, success };
       });
 
@@ -225,7 +222,7 @@ export class FileSystemManager {
       }
       return {
         success: true,
-        data: localDir,
+        data: path,
         args: args
       };
     } catch (error) {
