@@ -900,6 +900,15 @@ class WavedashSDK extends EventTarget {
     return this.formatResponse(result);
   }
 
+  async getLobbyInviteLink(
+    copyToClipboard: boolean = false
+  ): Promise<string | WavedashResponse<string>> {
+    this.ensureReady();
+    this.logger.debug("Getting lobby invite link");
+    const result = await this.lobbyManager.getLobbyInviteLink(copyToClipboard);
+    return this.formatResponse(result);
+  }
+
   // ==============================
   // User Presence
   // ==============================
