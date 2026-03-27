@@ -15,12 +15,45 @@ import { api } from "@wvdsh/types";
 // TODO: Should storage folder be configurable?
 const REMOTE_STORAGE_FOLDER = "userfs";
 
+// Stable path used as the remote key prefix, replacing the per-build Unity persistentDataPath
+const WAVEDASH_PERSISTENT_DATA_PATH = "/idbfs/wavedash";
+
 export class FileSystemManager {
   private sdk: WavedashSDK;
   private remoteStorageOrigin: string | undefined;
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
+  }
+
+  /**
+   * Converts a local filesystem path into a full R2 object key.
+   * Normalizes the Unity persistentDataPath and prepends the R2 prefix.
+   */
+  private toRemoteKey(localPath: string): string {
+    const unityPersistentDataPath = this.sdk.engineInstance?.unityPersistentDataPath;
+    const normalized = unityPersistentDataPath
+      ? localPath.replace(unityPersistentDataPath, WAVEDASH_PERSISTENT_DATA_PATH)
+      : localPath;
+    const relative = normalized.startsWith("/")
+      ? normalized.slice(1)
+      : normalized;
+    return `${this.sdk.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.sdk.wavedashUser.id}/${relative}`;
+  }
+
+  /**
+   * Converts a full R2 object key back into the local filesystem path
+   * the engine expects. Inverse of toRemoteKey.
+   */
+  private toLocalPath(r2Key: string): string {
+    const prefix = `${this.sdk.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.sdk.wavedashUser.id}/`;
+    const stripped = r2Key.startsWith(prefix)
+      ? "/" + r2Key.slice(prefix.length)
+      : r2Key;
+    const unityPersistentDataPath = this.sdk.engineInstance?.unityPersistentDataPath;
+    return unityPersistentDataPath
+      ? stripped.replace(WAVEDASH_PERSISTENT_DATA_PATH, unityPersistentDataPath)
+      : stripped;
   }
 
   // ================
@@ -36,11 +69,9 @@ export class FileSystemManager {
     const args = { filePath };
 
     try {
-      const storagePath = indexedDBUtils.normalizeFilePathForRemote(filePath);
-
       const uploadUrl = await this.sdk.convexClient.mutation(
         api.sdk.remoteFileStorage.getUploadUrl,
-        { path: storagePath }
+        { path: this.toRemoteKey(filePath) }
       );
       const success = await this.upload(uploadUrl, args.filePath);
       return {
@@ -69,7 +100,7 @@ export class FileSystemManager {
 
     try {
       await this.sdk.convexClient.action(api.sdk.remoteFileStorage.deleteFile, {
-        path: args.filePath
+        path: this.toRemoteKey(filePath)
       });
       return {
         success: true,
@@ -97,11 +128,8 @@ export class FileSystemManager {
   ): Promise<WavedashResponse<string>> {
     const args = { filePath };
 
-    const remoteStoragePath =
-      indexedDBUtils.normalizeFilePathForRemote(filePath);
-
     try {
-      const url = this.getRemoteStorageUrl(remoteStoragePath);
+      const url = this.getRemoteStorageUrl(filePath);
       const success = await this.download(url, args.filePath);
       return {
         success: success,
@@ -140,9 +168,12 @@ export class FileSystemManager {
         throw new Error(`${response.status} (${response.statusText})`);
       }
       const responseJson = await response.json();
-      const files = responseJson.files.filter(
-        (file: RemoteFileMetadata) => !file.key.endsWith("/")
-      );
+      const files = responseJson.files
+        .filter((file: RemoteFileMetadata) => !file.key.endsWith("/"))
+        .map((file: RemoteFileMetadata) => ({
+          ...file,
+          key: this.toLocalPath(file.key)
+        }));
       return {
         success: true,
         data: files,
@@ -167,23 +198,20 @@ export class FileSystemManager {
     const args = { path };
 
     try {
-      const normalizedPath = path.endsWith("/") ? path : path + "/";
-      const response = await this.listRemoteDirectory(args.path);
+      const response = await this.listRemoteDirectory(path);
       if (!response.success) {
         throw new Error(response.message);
       }
       const files = response.data as RemoteFileMetadata[];
-      // Download all files in parallel since thread support is enabled
-      // Subdirectories will be created recursively if needed
+
       const downloadPromises = files.map(async (file) => {
-        const url = this.getRemoteStorageUrl(normalizedPath + file.name);
-        const success = await this.download(url, normalizedPath + file.name);
+        const url = this.getRemoteStorageUrl(file.key);
+        const success = await this.download(url, file.key);
         return { fileName: file.name, success };
       });
 
       const downloadResults = await Promise.all(downloadPromises);
 
-      // Check if any downloads failed
       const failedDownloads = downloadResults.filter(
         (result) => !result.success
       );
@@ -194,7 +222,7 @@ export class FileSystemManager {
       }
       return {
         success: true,
-        data: normalizedPath,
+        data: path,
         args: args
       };
     } catch (error) {
@@ -351,12 +379,9 @@ export class FileSystemManager {
     throw new Error("Remote storage origin cannot be determined.");
   }
 
-  private getRemoteStorageUrl(filePath: string): string {
-    const ORIGIN = this.getRemoteStorageOrigin();
-    const relativePath = filePath.startsWith("/")
-      ? filePath.slice(1)
-      : filePath;
-    return `${ORIGIN}/${this.sdk.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.sdk.wavedashUser.id}/${relativePath}`;
+  private getRemoteStorageUrl(localPath: string): string {
+    const origin = this.getRemoteStorageOrigin();
+    return `${origin}/${this.toRemoteKey(localPath)}`;
   }
 
   private async uploadFromIndexedDb(

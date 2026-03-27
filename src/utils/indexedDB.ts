@@ -16,10 +16,6 @@ type IndexedDBValue =
 const LOCAL_STORAGE_DB_NAME = "/userfs";
 const LOCAL_STORAGE_STORE_NAME = "FILE_DATA";
 
-export function normalizeFilePathForRemote(path: string): string {
-  return path.replace(/^\/idbfs\/[a-f0-9]{32}/, "/idbfs/wavedash-persist");
-}
-
 export async function writeToIndexedDB(
   key: string,
   data: Uint8Array
