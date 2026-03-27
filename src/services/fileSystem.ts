@@ -36,9 +36,11 @@ export class FileSystemManager {
     const args = { filePath };
 
     try {
+      const storagePath = indexedDBUtils.normalizeFilePathForRemote(filePath);
+
       const uploadUrl = await this.sdk.convexClient.mutation(
         api.sdk.remoteFileStorage.getUploadUrl,
-        { path: args.filePath }
+        { path: storagePath }
       );
       const success = await this.upload(uploadUrl, args.filePath);
       return {
@@ -95,8 +97,11 @@ export class FileSystemManager {
   ): Promise<WavedashResponse<string>> {
     const args = { filePath };
 
+    const remoteStoragePath =
+      indexedDBUtils.normalizeFilePathForRemote(filePath);
+
     try {
-      const url = this.getRemoteStorageUrl(args.filePath);
+      const url = this.getRemoteStorageUrl(remoteStoragePath);
       const success = await this.download(url, args.filePath);
       return {
         success: success,
@@ -328,7 +333,9 @@ export class FileSystemManager {
     }
 
     if (this.sdk.ugcHost) {
-      this.remoteStorageOrigin = this.sdk.ugcHost.startsWith("http") ? this.sdk.ugcHost : `https://${this.sdk.ugcHost}`;
+      this.remoteStorageOrigin = this.sdk.ugcHost.startsWith("http")
+        ? this.sdk.ugcHost
+        : `https://${this.sdk.ugcHost}`;
       return this.remoteStorageOrigin;
     }
 
