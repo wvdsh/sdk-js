@@ -365,7 +365,8 @@ export class LobbyManager {
     let inviteLink: string;
     try {
       inviteLink = await this.sdk.iframeMessenger.requestFromParent(
-        IFRAME_MESSAGE_TYPE.GET_LOBBY_INVITE_LINK
+        IFRAME_MESSAGE_TYPE.GET_LOBBY_INVITE_LINK,
+        { lobbyId: this.lobbyId, copyToClipboard }
       );
     } catch {
       this.sdk.logger.error(
@@ -381,7 +382,7 @@ export class LobbyManager {
 
     if (!inviteLink) {
       this.sdk.logger.error(
-        "Cannot get invite link: parent could not generate invite link for current lobby"
+        "Cannot get invite link: parent returned empty string"
       );
       return {
         success: false,
@@ -389,14 +390,6 @@ export class LobbyManager {
         args: { copyToClipboard },
         message: "Parent could not generate invite link"
       };
-    }
-
-    if (copyToClipboard) {
-      try {
-        await navigator.clipboard.writeText(inviteLink);
-      } catch {
-        this.sdk.logger.error("Failed to copy invite link to clipboard");
-      }
     }
 
     return {
