@@ -31,9 +31,9 @@ export class FileSystemManager {
    * Normalizes the Unity persistentDataPath and prepends the R2 prefix.
    */
   private toRemoteKey(localPath: string): string {
-    const pdp = this.sdk.engineInstance?.unityPersistentDataPath;
-    const normalized = pdp
-      ? localPath.replace(pdp, WAVEDASH_PERSISTENT_DATA_PATH)
+    const unityPersistentDataPath = this.sdk.engineInstance?.unityPersistentDataPath;
+    const normalized = unityPersistentDataPath
+      ? localPath.replace(unityPersistentDataPath, WAVEDASH_PERSISTENT_DATA_PATH)
       : localPath;
     const relative = normalized.startsWith("/")
       ? normalized.slice(1)
@@ -41,20 +41,20 @@ export class FileSystemManager {
     return `${this.sdk.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.sdk.wavedashUser.id}/${relative}`;
   }
 
-/**
- * Converts a full R2 object key back into the local filesystem path
- * the engine expects. Inverse of toRemoteKey.
- */
-private toLocalPath(r2Key: string): string {
-  const prefix = `${this.sdk.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.sdk.wavedashUser.id}/`;
-  const stripped = r2Key.startsWith(prefix)
-    ? "/" + r2Key.slice(prefix.length)
-    : r2Key;
-  const pdp = this.sdk.engineInstance?.unityPersistentDataPath;
-  return pdp
-    ? stripped.replace(WAVEDASH_PERSISTENT_DATA_PATH, pdp)
-    : stripped;
-}
+  /**
+   * Converts a full R2 object key back into the local filesystem path
+   * the engine expects. Inverse of toRemoteKey.
+   */
+  private toLocalPath(r2Key: string): string {
+    const prefix = `${this.sdk.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.sdk.wavedashUser.id}/`;
+    const stripped = r2Key.startsWith(prefix)
+      ? "/" + r2Key.slice(prefix.length)
+      : r2Key;
+    const unityPersistentDataPath = this.sdk.engineInstance?.unityPersistentDataPath;
+    return unityPersistentDataPath
+      ? stripped.replace(WAVEDASH_PERSISTENT_DATA_PATH, unityPersistentDataPath)
+      : stripped;
+  }
 
   // ================
   // Public Methods
