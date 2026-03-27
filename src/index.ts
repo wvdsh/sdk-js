@@ -215,8 +215,6 @@ class WavedashSDK extends EventTarget {
     this.p2pManager.init(this.config.p2p);
 
     this.logger.debug("Initialized with config:", this.config);
-    // Start heartbeat service
-    this.heartbeatManager.init();
     // Initialize lobby manager
     this.lobbyManager.init();
 
@@ -899,6 +897,15 @@ class WavedashSDK extends EventTarget {
     this.ensureReady();
     this.logger.debug(`Inviting user ${userId} to lobby ${lobbyId}`);
     const result = await this.lobbyManager.inviteUserToLobby(lobbyId, userId);
+    return this.formatResponse(result);
+  }
+
+  async getLobbyInviteLink(
+    copyToClipboard: boolean = false
+  ): Promise<string | WavedashResponse<string>> {
+    this.ensureReady();
+    this.logger.debug("Getting lobby invite link");
+    const result = await this.lobbyManager.getLobbyInviteLink(copyToClipboard);
     return this.formatResponse(result);
   }
 

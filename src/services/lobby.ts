@@ -349,6 +349,56 @@ export class LobbyManager {
     }
   }
 
+  async getLobbyInviteLink(
+    copyToClipboard: boolean = false
+  ): Promise<WavedashResponse<string>> {
+    if (!this.lobbyId) {
+      this.sdk.logger.error("Cannot get invite link: not in a lobby");
+      return {
+        success: false,
+        data: null,
+        args: { copyToClipboard },
+        message: "User is not in a lobby"
+      };
+    }
+
+    let inviteLink: string;
+    try {
+      inviteLink = await this.sdk.iframeMessenger.requestFromParent(
+        IFRAME_MESSAGE_TYPE.GET_LOBBY_INVITE_LINK,
+        { lobbyId: this.lobbyId, copyToClipboard }
+      );
+    } catch {
+      this.sdk.logger.error(
+        "Cannot get invite link: parent did not respond to GetLobbyInviteLink"
+      );
+      return {
+        success: false,
+        data: null,
+        args: { copyToClipboard },
+        message: "Could not get invite link from parent"
+      };
+    }
+
+    if (!inviteLink) {
+      this.sdk.logger.error(
+        "Cannot get invite link: parent returned empty string"
+      );
+      return {
+        success: false,
+        data: null,
+        args: { copyToClipboard },
+        message: "Parent could not generate invite link"
+      };
+    }
+
+    return {
+      success: true,
+      data: inviteLink,
+      args: { copyToClipboard }
+    };
+  }
+
   // ================
   // Private Methods
   // ================
