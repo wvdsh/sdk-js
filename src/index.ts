@@ -86,18 +86,22 @@ class WavedashSDK extends EventTarget {
   constructor(sdkConfig: SDKConfig) {
     super();
     const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
+    this.gameCloudId = sdkConfig.gameCloudId; // needs to be above getAuthToken don't move this
     convexClient.setAuth(() => this.getAuthToken());
     this.convexClient = convexClient;
     this.convexHttpUrl = sdkConfig.convexHttpUrl;
     this.wavedashUser = sdkConfig.wavedashUser;
-    this.gameCloudId = sdkConfig.gameCloudId;
+
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
     this.logger = new WavedashLogger();
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
-    this.heartbeatManager = new HeartbeatManager(this, sdkConfig.deviceFingerprint);
+    this.heartbeatManager = new HeartbeatManager(
+      this,
+      sdkConfig.deviceFingerprint
+    );
     this.fileSystemManager = new FileSystemManager(this);
     this.ugcManager = new UGCManager(this);
     this.leaderboardManager = new LeaderboardManager(this);
@@ -121,9 +125,12 @@ class WavedashSDK extends EventTarget {
   }
 
   private async getAuthToken(): Promise<string> {
-    const response = await fetch(`${parentOrigin}/auth/gameplay_token?gcid=${this.gameCloudId}`, {
-      credentials: "include"
-    });
+    const response = await fetch(
+      `${parentOrigin}/auth/gameplay_token?gcid=${this.gameCloudId}`,
+      {
+        credentials: "include"
+      }
+    );
     if (!response.ok) {
       throw new Error(`Failed to fetch gameplay token: ${response.status}`);
     }
@@ -927,7 +934,10 @@ class WavedashSDK extends EventTarget {
   // ==============================
   // JS -> Game Event Broadcasting
   // ==============================
-  notifyGame(event: WavedashEvent, payload: string | number | boolean | object): void {
+  notifyGame(
+    event: WavedashEvent,
+    payload: string | number | boolean | object
+  ): void {
     // Queue events if game is not ready for them yet
     if (this.config?.deferEvents) {
       this.eventQueue.push({ event, payload });
