@@ -85,10 +85,9 @@ class WavedashSDK extends EventTarget {
 
   constructor(sdkConfig: SDKConfig) {
     super();
-    const convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
+    this.convexClient = new ConvexClient(sdkConfig.convexCloudUrl);
     this.gameCloudId = sdkConfig.gameCloudId; // needs to be above getAuthToken don't move this
-    convexClient.setAuth(() => this.getAuthToken());
-    this.convexClient = convexClient;
+    this.convexClient.setAuth(() => this.getAuthToken());
     this.convexHttpUrl = sdkConfig.convexHttpUrl;
     this.wavedashUser = sdkConfig.wavedashUser;
 
