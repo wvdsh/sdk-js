@@ -1003,16 +1003,18 @@ class WavedashSDK extends EventTarget {
   // ============
   // Entrypoint Helpers
   // ============
-  loadScript(src: string) {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.type = "text/javascript";
-      script.src = src;
-      script.crossOrigin = "use-credentials"; // Enable CORS with credentials (cookies, auth)
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
+  async loadScript(src: string) {
+    const response = await fetch(src, { credentials: "include" });
+    if (!response.ok) {
+      throw new Error(`Failed to load script: ${src} (${response.status})`);
+    }
+    const text = await response.text();
+    // Use indirect eval so the script executes in global scope
+    const result = (0, eval)(text);
+    // If the script returns a Promise (e.g. async IIFE), await it
+    if (result && typeof result.then === "function") {
+      await result;
+    }
   }
 
   updateLoadProgressZeroToOne(progress: number) {
