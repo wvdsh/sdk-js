@@ -288,6 +288,7 @@ class WavedashSDK extends EventTarget {
     return this.formatResponse(this.wavedashUser);
   }
 
+  /** @deprecated Use `getUser().username` instead */
   getUsername(): string {
     this.ensureReady();
     return this.wavedashUser.username;
