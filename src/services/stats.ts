@@ -1,5 +1,5 @@
 import { api } from "@wvdsh/types";
-import { WavedashSDK } from "..";
+import type { WavedashSDK } from "..";
 import unionBy from "lodash.unionby";
 import debounce from "lodash.debounce";
 

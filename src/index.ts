@@ -18,6 +18,15 @@ import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
 import { WavedashEvents } from "./types";
 
+type WavedashService = 
+  | LobbyManager
+  | FileSystemManager
+  | UGCManager
+  | LeaderboardManager
+  | P2PManager
+  | HeartbeatManager
+  | FriendsManager;
+
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
 
@@ -38,8 +47,7 @@ import type {
   P2PMessage,
   LobbyUser,
   Lobby,
-  Friend,
-  WavedashServiceManager
+  Friend
 } from "./types";
 import {
   GAME_ENGINE,
@@ -859,7 +867,7 @@ class WavedashSDK extends EventTarget {
   }
 
   private async apiCall<
-    T extends WavedashServiceManager,
+    T extends WavedashService,
     K extends string & keyof T
   >(
     manager: T,
@@ -879,7 +887,7 @@ class WavedashSDK extends EventTarget {
   }
 
   private apiCallSync<
-    T extends WavedashServiceManager,
+    T extends WavedashService,
     K extends string & keyof T
   >(
     target: T,

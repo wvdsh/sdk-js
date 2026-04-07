@@ -3,23 +3,6 @@ import { type FunctionReturnType } from "convex/server";
 
 import { WavedashEvents } from "./events";
 import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/types";
-import { LobbyManager } from "./services/lobby";
-import { LeaderboardManager } from "./services/leaderboards";
-import { UGCManager } from "./services/ugc";
-import { FileSystemManager } from "./services/fileSystem";
-import { FriendsManager } from "./services/friends";
-import { GameEventManager } from "./services/gameEvents";
-import { HeartbeatManager } from "./services/heartbeat";
-
-// Services
-export type WavedashServiceManager =
-  | LobbyManager
-  | LeaderboardManager
-  | UGCManager
-  | FileSystemManager
-  | FriendsManager
-  | GameEventManager
-  | HeartbeatManager;
 
 // Extract types from the API
 export type LobbyVisibility =
