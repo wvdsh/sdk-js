@@ -724,8 +724,8 @@ class WavedashSDK extends EventTarget {
    * @param visibility - The visibility of the lobby
    * @param maxPlayers - Optional maximum number of players
    * @returns A WavedashResponse with the created lobbyId.
-   *          Full lobby context is provided via the LOBBY_JOINED event.
-   * @emits LOBBY_JOINED event to the game engine with full lobby context
+   *          Full lobby context is provided via the LobbyJoined event.
+   * @emits LobbyJoined event on success with full lobby context
    */
   async createLobby(
     visibility: LobbyVisibility,
@@ -743,8 +743,8 @@ class WavedashSDK extends EventTarget {
    * Join an existing lobby.
    * @param lobbyId - The ID of the lobby to join
    * @returns A WavedashResponse with success/failure.
-   *          Full lobby context is provided via the LOBBY_JOINED event.
-   * @emits LOBBY_JOINED event to the game engine with full lobby context
+   *          Full lobby context is provided via the LobbyJoined event.
+   * @emits LobbyJoined event on success with full lobby context
    */
   async joinLobby(
     lobbyId: Id<"lobbies">

@@ -10,8 +10,7 @@
 export const WavedashEvents = {
   // Lobby events
   LOBBY_MESSAGE: "LobbyMessage",
-  LOBBY_JOINED: "LobbyJoined",
-  LOBBY_JOIN_FAILED: "LobbyJoinFailed",
+  LOBBY_JOINED: "LobbyJoined", // player successfully joined a lobby
   LOBBY_KICKED: "LobbyKicked", // player was removed from lobby (kicked by host or disconnected)
   LOBBY_USERS_UPDATED: "LobbyUsersUpdated",
   LOBBY_DATA_UPDATED: "LobbyDataUpdated",

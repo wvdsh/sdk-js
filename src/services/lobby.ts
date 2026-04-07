@@ -12,7 +12,6 @@ import type {
   LobbyMessage,
   LobbyInvite,
   LobbyJoinedPayload,
-  LobbyJoinFailedPayload,
   LobbyKickedPayload,
   LobbyUsersUpdatedPayload,
   LobbyDataUpdatedPayload,
@@ -102,25 +101,16 @@ export class LobbyManager {
   /**
    * Join a lobby
    * @param lobbyId - The ID of the lobby to join
-   * @returns true on success. Full lobby context comes via LOBBY_JOINED event.
-   * @emits LOBBY_JOINED event on success with full lobby context
-   * @emits LOBBY_JOIN_FAILED event on failure with error message
+   * @returns true on success. Full lobby context comes via LobbyJoined event.
+   * @emits LobbyJoined event on success with full lobby context
    */
   async joinLobby(lobbyId: Id<"lobbies">): Promise<boolean> {
-    try {
-      const result = await this.sdk.convexClient.mutation(
-        api.sdk.gameLobby.joinLobby,
-        { lobbyId }
-      );
-      this.handleLobbyJoin(result);
-      return true;
-    } catch (error) {
-      this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_JOIN_FAILED, {
-        lobbyId,
-        message: error instanceof Error ? error.message : String(error)
-      } satisfies LobbyJoinFailedPayload);
-      throw error;
-    }
+    const result = await this.sdk.convexClient.mutation(
+      api.sdk.gameLobby.joinLobby,
+      { lobbyId }
+    );
+    this.handleLobbyJoin(result);
+    return true;
   }
 
   getLobbyUsers(lobbyId: Id<"lobbies">): LobbyUser[] {
@@ -275,7 +265,7 @@ export class LobbyManager {
   /**
    * Initialize local lobby state and subscribe to all relevant updates.
    * Sets up Convex subscriptions for messages, users, and metadata.
-   * Emits LOBBY_JOINED event to the game engine.
+   * Emits LobbyJoined event to the game engine.
    * @precondition - The user has already joined the lobby via mutation
    * @param response - The full response from createAndJoinLobby or joinLobby mutation
    */
@@ -616,21 +606,13 @@ export class LobbyManager {
         avatarUrl: lobbyUser.userAvatarUrl
       }));
 
-      // Initialize or update P2P - the P2P manager handles both cases
-      const result = await this.sdk.p2pManager.initializeP2PForCurrentLobby(
+      await this.sdk.p2pManager.initializeP2PForCurrentLobby(
         this.lobbyId,
         wavedashUsers
       );
-      if (!result.success) {
-        this.sdk.logger.error(
-          "Failed to initialize/update P2P connections:",
-          result.message
-        );
-      } else {
-        this.sdk.logger.debug(
-          `P2P connections updated for lobby ${this.lobbyId} with ${wavedashUsers.length} users`
-        );
-      }
+      this.sdk.logger.debug(
+        `P2P connections updated for lobby ${this.lobbyId} with ${wavedashUsers.length} users`
+      );
     } catch (error) {
       this.sdk.logger.error("Error updating P2P connections:", error);
     }

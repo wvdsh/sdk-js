@@ -137,18 +137,12 @@ export interface WavedashResponse<T> {
 
 // --- Lobby Events ---
 
-/** Payload for LOBBY_JOINED event - emitted on successful lobby join or create */
+/** Payload for LobbyJoined event - emitted on successful lobby join or create */
 export interface LobbyJoinedPayload {
   lobbyId: Id<"lobbies">;
   hostId: Id<"users">;
   users: LobbyUser[];
   metadata: Record<string, unknown>;
-}
-
-/** Payload for LOBBY_JOIN_FAILED event - emitted when a joinLobby attempt fails */
-export interface LobbyJoinFailedPayload {
-  lobbyId: Id<"lobbies">;
-  message: string;
 }
 
 /** Reasons why a user was kicked from a lobby */
@@ -159,7 +153,7 @@ export const LobbyKickedReason = {
 export type LobbyKickedReason =
   (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason];
 
-/** Payload for LOBBY_KICKED event - emitted when removed from a lobby */
+/** Payload for LobbyKicked event - emitted when removed from a lobby */
 export interface LobbyKickedPayload {
   lobbyId: Id<"lobbies">;
   reason: LobbyKickedReason;
@@ -173,36 +167,36 @@ export const LobbyUserChangeType = {
 export type LobbyUserChangeType =
   (typeof LobbyUserChangeType)[keyof typeof LobbyUserChangeType];
 
-/** Payload for LOBBY_USERS_UPDATED event - emitted when a user joins or leaves */
+/** Payload for LobbyUsersUpdated event - emitted when a user joins or leaves */
 export interface LobbyUsersUpdatedPayload extends LobbyUser {
   changeType: LobbyUserChangeType;
 }
 
-/** Payload for LOBBY_DATA_UPDATED event - the full lobby metadata */
+/** Payload for LobbyDataUpdated event - the full lobby metadata */
 export type LobbyDataUpdatedPayload = Record<string, unknown>;
 
-/** Payload for LOBBY_MESSAGE event - a message received in the lobby */
+/** Payload for LobbyMessage event - a message received in the lobby */
 export type LobbyMessagePayload = LobbyMessage;
 
-/** Payload for LOBBY_INVITE event - an invite to join a lobby */
+/** Payload for LobbyInvite event - an invite to join a lobby */
 export type LobbyInvitePayload = LobbyInvite;
 
 // --- P2P Events ---
 
-/** Payload for P2P_CONNECTION_ESTABLISHED event */
+/** Payload for P2PConnectionEstablished event */
 export interface P2PConnectionEstablishedPayload {
   userId: Id<"users">;
   username: string;
 }
 
-/** Payload for P2P_CONNECTION_FAILED event */
+/** Payload for P2PConnectionFailed event */
 export interface P2PConnectionFailedPayload {
   userId: Id<"users">;
   username: string;
   error: string;
 }
 
-/** Payload for P2P_PEER_DISCONNECTED event */
+/** Payload for P2PPeerDisconnected event */
 export interface P2PPeerDisconnectedPayload {
   userId: Id<"users">;
   username: string;
@@ -210,7 +204,7 @@ export interface P2PPeerDisconnectedPayload {
 
 // --- Backend Connection Events ---
 
-/** Payload for BACKEND_CONNECTED, BACKEND_DISCONNECTED, BACKEND_RECONNECTING events */
+/** Payload for BackendConnected, BackendDisconnected, BackendReconnecting events */
 export interface BackendConnectionPayload {
   isConnected: boolean;
   hasEverConnected: boolean;
