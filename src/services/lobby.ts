@@ -146,7 +146,7 @@ export class LobbyManager {
       this.sdk.logger.error(`Error joining lobby: ${message}`);
 
       // Emit LOBBY_JOINED event with failure so all SDKs receive consistent shape
-      this.sdk.notifyGame(WavedashEvents.LOBBY_JOINED, {
+      this.sdk._notifyGame(WavedashEvents.LOBBY_JOINED, {
         success: false,
         lobbyId,
         message
@@ -448,7 +448,7 @@ export class LobbyManager {
       { lobbyId: response.lobbyId },
       (lobbyMetadata: Record<string, unknown>) => {
         this.lobbyMetadata = lobbyMetadata;
-        this.sdk.notifyGame(
+        this.sdk._notifyGame(
           WavedashEvents.LOBBY_DATA_UPDATED,
           lobbyMetadata satisfies LobbyDataUpdatedPayload
         );
@@ -481,7 +481,7 @@ export class LobbyManager {
     });
 
     // Emit LOBBY_JOINED event with full lobby context
-    this.sdk.notifyGame(WavedashEvents.LOBBY_JOINED, {
+    this.sdk._notifyGame(WavedashEvents.LOBBY_JOINED, {
       success: true,
       lobbyId: response.lobbyId,
       hostId: response.hostId,
@@ -513,7 +513,7 @@ export class LobbyManager {
     });
 
     // Emit LOBBY_KICKED event
-    this.sdk.notifyGame(WavedashEvents.LOBBY_KICKED, {
+    this.sdk._notifyGame(WavedashEvents.LOBBY_KICKED, {
       lobbyId,
       reason
     } satisfies LobbyKickedPayload);
@@ -648,7 +648,7 @@ export class LobbyManager {
         this.lobbyHostId = user.userId;
       }
       if (!previousUserIds.has(user.userId)) {
-        this.sdk.notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
+        this.sdk._notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
           ...user,
           changeType: LobbyUserChangeType.JOINED
         } satisfies LobbyUsersUpdatedPayload);
@@ -665,7 +665,7 @@ export class LobbyManager {
         }
         // For now, we can't distinguish between LEFT, DISCONNECTED, or KICKED
         // from the basic lobby users update. Default to LEFT.
-        this.sdk.notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
+        this.sdk._notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
           ...user,
           isHost: false,
           changeType: LobbyUserChangeType.LEFT
@@ -688,7 +688,7 @@ export class LobbyManager {
     for (const message of newMessages) {
       if (!this.recentMessageIds.includes(message.messageId)) {
         this.recentMessageIds.push(message.messageId);
-        this.sdk.notifyGame(
+        this.sdk._notifyGame(
           WavedashEvents.LOBBY_MESSAGE,
           message satisfies LobbyMessagePayload
         );
@@ -701,7 +701,7 @@ export class LobbyManager {
     for (const invite of invites) {
       if (!this.seenInviteIds.has(invite.notificationId)) {
         this.seenInviteIds.add(invite.notificationId);
-        this.sdk.notifyGame(
+        this.sdk._notifyGame(
           WavedashEvents.LOBBY_INVITE,
           invite satisfies LobbyInvitePayload
         );

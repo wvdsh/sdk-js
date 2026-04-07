@@ -934,7 +934,7 @@ class WavedashSDK extends EventTarget {
   // ==============================
   // JS -> Game Event Broadcasting
   // ==============================
-  notifyGame(
+  _notifyGame(
     event: WavedashEvent,
     payload: string | number | boolean | object
   ): void {
@@ -971,7 +971,7 @@ class WavedashSDK extends EventTarget {
     }
     this.logger.debug(`Flushing ${this.eventQueue.length} queued events`);
     for (const queuedEvent of this.eventQueue) {
-      this.notifyGame(queuedEvent.event, queuedEvent.payload);
+      this._notifyGame(queuedEvent.event, queuedEvent.payload);
     }
     this.eventQueue = [];
   }
