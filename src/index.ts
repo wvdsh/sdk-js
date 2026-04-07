@@ -59,7 +59,8 @@ class WavedashSDK extends EventTarget {
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
   private eventQueue: QueuedEvent[] = [];
-
+  private gameFinishedLoading: boolean = false;
+  
   Events = WavedashEvents;
 
   protected lobbyManager: LobbyManager;
@@ -72,7 +73,6 @@ class WavedashSDK extends EventTarget {
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
   gameCloudId: string;
-  gameLoaded: boolean = false;
   fileSystemManager: FileSystemManager;
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
@@ -1023,11 +1023,15 @@ class WavedashSDK extends EventTarget {
   }
 
   loadComplete() {
-    this.gameLoaded = true;
+    this.gameFinishedLoading = true;
     this.heartbeatManager.start();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
     // Take focus when loading is complete
     takeFocus();
+  }
+
+  get gameLoaded(): boolean {
+    return this.gameFinishedLoading;
   }
 }
 
