@@ -38,7 +38,6 @@
   "dependencies": {
     "@wvdsh/types": "^1.0.387",
     "convex": "^1.28.0",
-    "lodash.debounce": "^4.0.8",
-    "lodash.unionby": "^4.8.0"
+    "lodash.debounce": "^4.0.8"
   }
 }

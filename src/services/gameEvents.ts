@@ -53,13 +53,10 @@ export class GameEventManager {
   }
 
   flushEventQueue(): void {
-    if (this.eventQueue.length === 0) {
-      return;
-    }
-    this.sdk.logger.debug(`Flushing ${this.eventQueue.length} queued events`);
-    for (const queuedEvent of this.eventQueue) {
+    const toFlush = this.eventQueue;
+    this.eventQueue = [];
+    for (const queuedEvent of toFlush) {
       this.notifyGame(queuedEvent.event, queuedEvent.payload);
     }
-    this.eventQueue = [];
   }
 }

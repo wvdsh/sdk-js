@@ -540,11 +540,11 @@ class WavedashSDK extends EventTarget {
   getStat(identifier: string): number {
     return this.apiCallSync(this.statsManager, "getStat", identifier);
   }
-  setAchievement(identifier: string): void {
-    this.apiCallSync(this.statsManager, "setAchievement", identifier);
+  setAchievement(identifier: string): boolean {
+    return this.apiCallSync(this.statsManager, "setAchievement", identifier);
   }
-  setStat(identifier: string, value: number): void {
-    this.apiCallSync(this.statsManager, "setStat", identifier, value);
+  setStat(identifier: string, value: number, storeNow: boolean = false): boolean {
+    return this.apiCallSync(this.statsManager, "setStat", identifier, value, storeNow);
   }
   async requestStats(): Promise<WavedashResponse<boolean>> {
     return this.apiCall(this.statsManager, "requestStats");

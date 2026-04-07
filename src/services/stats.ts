@@ -1,10 +1,8 @@
 import { api } from "@wvdsh/types";
 import type { WavedashSDK } from "..";
-import unionBy from "lodash.unionby";
 import debounce from "lodash.debounce";
 
-type Stats = Array<{ identifier: string; value: number }>;
-type Achievements = Set<string>;
+type StatEntry = { identifier: string; value: number };
 
 const STORE_STATS_DEBOUNCE_MS = 5000;
 
@@ -14,8 +12,8 @@ const DISABLED_MESSAGE =
 export class StatsManager {
   private sdk: WavedashSDK;
   private disabled: boolean = false;
-  private stats: Stats = [];
-  private achievementIdentifiers: Achievements = new Set();
+  private stats: Map<string, number> = new Map();
+  private achievementIdentifiers: Set<string> = new Set();
 
   private updatedStatIdentifiers: Set<string> = new Set();
   private updatedAchievementIdentifiers: Set<string> = new Set();
@@ -38,13 +36,10 @@ export class StatsManager {
     }
   }
 
-  private ensureLoaded(): void {
-    this.ensureEnabled();
-    if (!this.hasLoadedStats || !this.hasLoadedAchievements) {
-      throw new Error(
-        "Stats and achievements not loaded, make sure to call requestStats() first"
-      );
-    }
+  private isReady(): boolean {
+    return (
+      !this.disabled && this.hasLoadedStats && this.hasLoadedAchievements
+    );
   }
 
   async requestStats(): Promise<boolean> {
@@ -52,12 +47,16 @@ export class StatsManager {
     await Promise.all([
       // One-time fetch for stats (local is source of truth)
       (async () => {
-        const newStats = await this.sdk.convexClient.query(
+        const newStats: StatEntry[] = await this.sdk.convexClient.query(
           api.sdk.gameAchievements.getMyStatsForGame,
           {}
         );
         this.hasLoadedStats = true;
-        this.stats = unionBy(this.stats, newStats, "identifier");
+        for (const stat of newStats) {
+          if (!this.stats.has(stat.identifier)) {
+            this.stats.set(stat.identifier, stat.value);
+          }
+        }
       })(),
       // Subscription for achievements (server can unlock them)
       new Promise((resolve, reject) => {
@@ -66,10 +65,9 @@ export class StatsManager {
           {},
           (achievements) => {
             this.hasLoadedAchievements = true;
-            this.achievementIdentifiers = new Set([
-              ...this.achievementIdentifiers,
-              ...achievements.map(({ achievement }) => achievement.identifier)
-            ]);
+            for (const { achievement } of achievements) {
+              this.achievementIdentifiers.add(achievement.identifier);
+            }
             resolve(undefined);
           },
           (error) => {
@@ -88,15 +86,14 @@ export class StatsManager {
   );
 
   storeStats(): boolean {
-    this.ensureEnabled();
+    if (!this.isReady()) return false;
     this.debouncedStoreStats();
-
     return true;
   }
 
   private async storeStatsInternal(): Promise<boolean> {
     try {
-      this.ensureLoaded();
+      if (!this.isReady()) return false;
 
       // Atomically capture and clear identifiers to avoid race conditions
       const statIdentifiersToStore = new Set(this.updatedStatIdentifiers);
@@ -107,9 +104,14 @@ export class StatsManager {
       this.updatedStatIdentifiers.clear();
       this.updatedAchievementIdentifiers.clear();
 
-      const updatedStats = this.stats.filter((stat) =>
-        statIdentifiersToStore.has(stat.identifier)
-      );
+      const updatedStats: StatEntry[] = [];
+      for (const id of statIdentifiersToStore) {
+        const value = this.stats.get(id);
+        if (value !== undefined) {
+          updatedStats.push({ identifier: id, value });
+        }
+      }
+
       const updatedAchievements = Array.from(
         this.achievementIdentifiers
       ).filter((achievement) => achievementIdentifiersToStore.has(achievement));
@@ -135,44 +137,46 @@ export class StatsManager {
     }
   }
 
-  setAchievement(identifier: string): void {
-    this.ensureLoaded();
+  setAchievement(identifier: string): boolean {
+    if (!this.isReady()) return false;
     if (!this.achievementIdentifiers.has(identifier)) {
       this.achievementIdentifiers.add(identifier);
       this.updatedAchievementIdentifiers.add(identifier);
     }
+    return true;
   }
 
   getAchievement(identifier: string): boolean {
-    this.ensureLoaded();
+    if (!this.isReady()) return false;
     return this.achievementIdentifiers.has(identifier);
   }
 
-  setStat(identifier: string, value: number): void {
-    this.ensureLoaded();
-    const stat = this.stats.find((s) => s.identifier === identifier);
-    if (stat) {
-      if (stat.value !== value) {
-        stat.value = value;
-        this.updatedStatIdentifiers.add(identifier);
-      }
-    } else {
-      this.stats.push({ identifier, value });
+  setStat(identifier: string, value: number, storeNow: boolean = false): boolean {
+    if (!this.isReady()) return false;
+    const current = this.stats.get(identifier);
+    if (current !== value) {
+      this.stats.set(identifier, value);
       this.updatedStatIdentifiers.add(identifier);
     }
+    if (storeNow) {
+      this.storeStats();
+    }
+    return true;
   }
 
   getStat(identifier: string): number {
-    this.ensureLoaded();
-    const stat = this.stats.find((s) => s.identifier === identifier);
-    const value = stat ? stat.value : 0;
-    return value;
+    if (!this.isReady()) return 0;
+    return this.stats.get(identifier) ?? 0;
   }
 
-  getPendingData(): { stats: Stats; achievements: string[] } | null {
-    const pendingStats = this.stats.filter((stat) =>
-      this.updatedStatIdentifiers.has(stat.identifier)
-    );
+  getPendingData(): { stats: StatEntry[]; achievements: string[] } | null {
+    const pendingStats: StatEntry[] = [];
+    for (const id of this.updatedStatIdentifiers) {
+      const value = this.stats.get(id);
+      if (value !== undefined) {
+        pendingStats.push({ identifier: id, value });
+      }
+    }
     const pendingAchievements = Array.from(this.achievementIdentifiers).filter(
       (id) => this.updatedAchievementIdentifiers.has(id)
     );
