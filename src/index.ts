@@ -25,7 +25,8 @@ type WavedashService =
   | LeaderboardManager
   | P2PManager
   | HeartbeatManager
-  | FriendsManager;
+  | FriendsManager
+  | StatsManager;
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
@@ -165,6 +166,10 @@ class WavedashSDK extends EventTarget {
     // Initialize P2P manager with config (validates and allocates ring buffers)
     this.p2pManager.init(this.config.p2p);
 
+    if (this.config.disableAchievementsAndStats) {
+      this.statsManager.setDisabled(true);
+    }
+
     this.logger.debug("Initialized with config:", this.config);
     // Initialize lobby manager
     this.lobbyManager.init();
@@ -243,17 +248,14 @@ class WavedashSDK extends EventTarget {
   // ============
 
   getUser(): SDKUser {
-    this.ensureReady();
     return this.formatResponse(this.wavedashUser);
   }
 
   getUsername(): string {
-    this.ensureReady();
     return this.wavedashUser.username;
   }
 
   getUserId(): Id<"users"> {
-    this.ensureReady();
     return this.wavedashUser.id;
   }
 
@@ -535,53 +537,22 @@ class WavedashSDK extends EventTarget {
   // Achievements + Stats
   // ============
   getAchievement(identifier: string): boolean {
-    this.ensureReady();
-    if (this.config?.disableAchievementsAndStats) {
-      return false;
-    }
-    return this.statsManager.getAchievement(identifier);
+    return this.apiCallSync(this.statsManager, "getAchievement", identifier);
   }
   getStat(identifier: string): number {
-    this.ensureReady();
-    if (this.config?.disableAchievementsAndStats) {
-      return 0;
-    }
-    return this.statsManager.getStat(identifier);
+    return this.apiCallSync(this.statsManager, "getStat", identifier);
   }
   setAchievement(identifier: string): void {
-    this.ensureReady();
-    if (this.config?.disableAchievementsAndStats) {
-      return;
-    }
-    this.statsManager.setAchievement(identifier);
+    this.apiCallSync(this.statsManager, "setAchievement", identifier);
   }
   setStat(identifier: string, value: number): void {
-    this.ensureReady();
-    if (this.config?.disableAchievementsAndStats) {
-      return;
-    }
-    this.statsManager.setStat(identifier, value);
+    this.apiCallSync(this.statsManager, "setStat", identifier, value);
   }
   async requestStats(): Promise<WavedashResponse<boolean>> {
-    this.ensureReady();
-    if (this.config?.disableAchievementsAndStats) {
-      return this.formatResponse({ success: false, data: false });
-    }
-    try {
-      const data = await this.statsManager.requestStats();
-      return this.formatResponse({ success: true, data });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.error("requestStats", message);
-      return this.formatResponse({ success: false, data: null, message });
-    }
+    return this.apiCall(this.statsManager, "requestStats");
   }
   storeStats(): boolean {
-    this.ensureReady();
-    if (this.config?.disableAchievementsAndStats) {
-      return false;
-    }
-    return this.statsManager.storeStats();
+    return this.apiCallSync(this.statsManager, "storeStats");
   }
 
   // ============

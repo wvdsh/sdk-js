@@ -8,8 +8,12 @@ type Achievements = Set<string>;
 
 const STORE_STATS_DEBOUNCE_MS = 5000;
 
+const DISABLED_MESSAGE =
+  "Stats and achievements were disabled in the init config";
+
 export class StatsManager {
   private sdk: WavedashSDK;
+  private disabled: boolean = false;
   private stats: Stats = [];
   private achievementIdentifiers: Achievements = new Set();
 
@@ -24,7 +28,18 @@ export class StatsManager {
     this.sdk = sdk;
   }
 
-  ensureLoaded(): void {
+  setDisabled(disabled: boolean): void {
+    this.disabled = disabled;
+  }
+
+  private ensureEnabled(): void {
+    if (this.disabled) {
+      throw new Error(DISABLED_MESSAGE);
+    }
+  }
+
+  private ensureLoaded(): void {
+    this.ensureEnabled();
     if (!this.hasLoadedStats || !this.hasLoadedAchievements) {
       throw new Error(
         "Stats and achievements not loaded, make sure to call requestStats() first"
@@ -33,6 +48,7 @@ export class StatsManager {
   }
 
   async requestStats(): Promise<boolean> {
+    this.ensureEnabled();
     await Promise.all([
       // One-time fetch for stats (local is source of truth)
       (async () => {
@@ -72,6 +88,7 @@ export class StatsManager {
   );
 
   storeStats(): boolean {
+    this.ensureEnabled();
     this.debouncedStoreStats();
 
     return true;
