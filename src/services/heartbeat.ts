@@ -34,12 +34,14 @@ export class HeartbeatManager {
       this.sdk.convexClient.client.connectionState().isWebSocketConnected;
 
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
-
-    this.start();
   }
 
   /** Start heartbeat and connection-check intervals */
   start(): void {
+    if (!this.sdk.gameLoaded) {
+      return;
+    }
+
     // Stop any existing intervals before starting fresh
     this.stop();
 

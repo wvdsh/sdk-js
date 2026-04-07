@@ -59,7 +59,8 @@ class WavedashSDK extends EventTarget {
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
   private eventQueue: QueuedEvent[] = [];
-
+  private gameFinishedLoading: boolean = false;
+  
   Events = WavedashEvents;
 
   protected lobbyManager: LobbyManager;
@@ -1007,8 +1008,8 @@ class WavedashSDK extends EventTarget {
     return new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.type = "text/javascript";
+      script.crossOrigin = "anonymous";
       script.src = src;
-      script.crossOrigin = "use-credentials"; // Enable CORS with credentials (cookies, auth)
       script.onload = resolve;
       script.onerror = reject;
       document.head.appendChild(script);
@@ -1022,9 +1023,15 @@ class WavedashSDK extends EventTarget {
   }
 
   loadComplete() {
+    this.gameFinishedLoading = true;
+    this.heartbeatManager.start();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
     // Take focus when loading is complete
     takeFocus();
+  }
+
+  get gameLoaded(): boolean {
+    return this.gameFinishedLoading;
   }
 }
 
