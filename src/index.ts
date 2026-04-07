@@ -72,6 +72,7 @@ class WavedashSDK extends EventTarget {
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
   gameCloudId: string;
+  gameLoaded: boolean = false;
   fileSystemManager: FileSystemManager;
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
@@ -1008,7 +1009,6 @@ class WavedashSDK extends EventTarget {
       const script = document.createElement("script");
       script.type = "text/javascript";
       script.src = src;
-      script.crossOrigin = "use-credentials"; // Enable CORS with credentials (cookies, auth)
       script.onload = resolve;
       script.onerror = reject;
       document.head.appendChild(script);
@@ -1022,6 +1022,8 @@ class WavedashSDK extends EventTarget {
   }
 
   loadComplete() {
+    this.gameLoaded = true;
+    this.heartbeatManager.start();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
     // Take focus when loading is complete
     takeFocus();
