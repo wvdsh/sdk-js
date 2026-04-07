@@ -818,7 +818,7 @@ export class P2PManager {
       this.sdk.logger.error(
         `No ICE servers available for peer ${remoteUserId}`
       );
-      this.sdk._notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
+      this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
         userId: remoteUserId,
         username: connection.peers[remoteUserId]?.username || "",
         error: "No ICE servers available"
@@ -1012,7 +1012,7 @@ export class P2PManager {
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
-        this.sdk._notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
+        this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
           userId: peer.userId,
           username: peer.username,
           error: "ICE restart failed after maximum attempts"
@@ -1068,7 +1068,7 @@ export class P2PManager {
       if (this.isPeerReady(remoteUserId)) {
         const peer = this.currentConnection?.peers[remoteUserId];
         if (peer) {
-          this.sdk._notifyGame(WavedashEvents.P2P_CONNECTION_ESTABLISHED, {
+          this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_CONNECTION_ESTABLISHED, {
             userId: peer.userId,
             username: peer.username
           } satisfies P2PConnectionEstablishedPayload);
@@ -1088,7 +1088,7 @@ export class P2PManager {
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
-        this.sdk._notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
+        this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
           userId: peer.userId,
           username: peer.username,
           error: error.toString()
@@ -1102,7 +1102,7 @@ export class P2PManager {
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
-        this.sdk._notifyGame(WavedashEvents.P2P_PEER_DISCONNECTED, {
+        this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_PEER_DISCONNECTED, {
           userId: peer.userId,
           username: peer.username
         } satisfies P2PPeerDisconnectedPayload);

@@ -3,6 +3,23 @@ import { type FunctionReturnType } from "convex/server";
 
 import { WavedashEvents } from "./events";
 import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/types";
+import {LobbyManager} from "./services/lobby";
+import { LeaderboardManager } from "./services/leaderboards";
+import { UGCManager } from "./services/ugc";
+import { FileSystemManager } from "./services/fileSystem";
+import { FriendsManager } from "./services/friends";
+import { GameEventManager } from "./services/gameEvents";
+import { HeartbeatManager } from "./services/heartbeat";
+
+// Services
+export type WavedashServiceManager =
+  | LobbyManager
+  | LeaderboardManager
+  | UGCManager
+  | FileSystemManager
+  | FriendsManager
+  | GameEventManager
+  | HeartbeatManager;
 
 // Extract types from the API
 export type LobbyVisibility =
@@ -124,16 +141,18 @@ export interface WavedashResponse<T> {
 
 // --- Lobby Events ---
 
-/** Payload for LOBBY_JOINED event - emitted on lobby join attempt (success or failure), as well successful lobby create */
+/** Payload for LOBBY_JOINED event - emitted on successful lobby join or create */
 export interface LobbyJoinedPayload {
-  success: boolean;
   lobbyId: Id<"lobbies">;
-  // Present on success
-  hostId?: Id<"users">;
-  users?: LobbyUser[];
-  metadata?: Record<string, unknown>;
-  // Present on failure
-  message?: string;
+  hostId: Id<"users">;
+  users: LobbyUser[];
+  metadata: Record<string, unknown>;
+}
+
+/** Payload for LOBBY_JOIN_FAILED event - emitted when a joinLobby attempt fails */
+export interface LobbyJoinFailedPayload {
+  lobbyId: Id<"lobbies">;
+  message: string;
 }
 
 /** Reasons why a user was kicked from a lobby */

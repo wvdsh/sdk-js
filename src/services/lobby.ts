@@ -13,6 +13,7 @@ import type {
   LobbyMessage,
   LobbyInvite,
   LobbyJoinedPayload,
+  LobbyJoinFailedPayload,
   LobbyKickedPayload,
   LobbyUsersUpdatedPayload,
   LobbyDataUpdatedPayload,
@@ -121,8 +122,8 @@ export class LobbyManager {
   /**
    * Join a lobby
    * @param lobbyId - The ID of the lobby to join
-   * @returns A WavedashResponse with success/failure. Full lobby context comes via LOBBY_JOINED event.
-   * @emits LOBBY_JOINED event to the game engine with full lobby context
+   * @returns A WavedashResponse with success/failure. Full lobby context comes via LOBBY_JOINED event on success.
+   * @emits LOBBY_JOINED event on success with full lobby context
    */
   async joinLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<boolean>> {
     const args = { lobbyId };
@@ -145,12 +146,10 @@ export class LobbyManager {
       const message = error instanceof Error ? error.message : String(error);
       this.sdk.logger.error(`Error joining lobby: ${message}`);
 
-      // Emit LOBBY_JOINED event with failure so all SDKs receive consistent shape
-      this.sdk._notifyGame(WavedashEvents.LOBBY_JOINED, {
-        success: false,
+      this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_JOIN_FAILED, {
         lobbyId,
         message
-      } satisfies LobbyJoinedPayload);
+      } satisfies LobbyJoinFailedPayload);
 
       return {
         success: false,
@@ -448,7 +447,7 @@ export class LobbyManager {
       { lobbyId: response.lobbyId },
       (lobbyMetadata: Record<string, unknown>) => {
         this.lobbyMetadata = lobbyMetadata;
-        this.sdk._notifyGame(
+        this.sdk.gameEventManager.notifyGame(
           WavedashEvents.LOBBY_DATA_UPDATED,
           lobbyMetadata satisfies LobbyDataUpdatedPayload
         );
@@ -480,9 +479,7 @@ export class LobbyManager {
       lobbyId: response.lobbyId
     });
 
-    // Emit LOBBY_JOINED event with full lobby context
-    this.sdk._notifyGame(WavedashEvents.LOBBY_JOINED, {
-      success: true,
+    this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_JOINED, {
       lobbyId: response.lobbyId,
       hostId: response.hostId,
       users: response.users,
@@ -513,7 +510,7 @@ export class LobbyManager {
     });
 
     // Emit LOBBY_KICKED event
-    this.sdk._notifyGame(WavedashEvents.LOBBY_KICKED, {
+    this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_KICKED, {
       lobbyId,
       reason
     } satisfies LobbyKickedPayload);
@@ -648,7 +645,7 @@ export class LobbyManager {
         this.lobbyHostId = user.userId;
       }
       if (!previousUserIds.has(user.userId)) {
-        this.sdk._notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
+        this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
           ...user,
           changeType: LobbyUserChangeType.JOINED
         } satisfies LobbyUsersUpdatedPayload);
@@ -665,7 +662,7 @@ export class LobbyManager {
         }
         // For now, we can't distinguish between LEFT, DISCONNECTED, or KICKED
         // from the basic lobby users update. Default to LEFT.
-        this.sdk._notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
+        this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
           ...user,
           isHost: false,
           changeType: LobbyUserChangeType.LEFT
@@ -688,7 +685,7 @@ export class LobbyManager {
     for (const message of newMessages) {
       if (!this.recentMessageIds.includes(message.messageId)) {
         this.recentMessageIds.push(message.messageId);
-        this.sdk._notifyGame(
+        this.sdk.gameEventManager.notifyGame(
           WavedashEvents.LOBBY_MESSAGE,
           message satisfies LobbyMessagePayload
         );
@@ -701,7 +698,7 @@ export class LobbyManager {
     for (const invite of invites) {
       if (!this.seenInviteIds.has(invite.notificationId)) {
         this.seenInviteIds.add(invite.notificationId);
-        this.sdk._notifyGame(
+        this.sdk.gameEventManager.notifyGame(
           WavedashEvents.LOBBY_INVITE,
           invite satisfies LobbyInvitePayload
         );

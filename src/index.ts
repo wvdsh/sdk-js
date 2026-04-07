@@ -6,6 +6,7 @@ import { LeaderboardManager } from "./services/leaderboards";
 import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
+import { GameEventManager } from "./services/gameEvents";
 import {
   FriendsManager,
   AVATAR_SIZE_SMALL,
@@ -36,9 +37,9 @@ import type {
   RemoteFileMetadata,
   P2PMessage,
   LobbyUser,
-  WavedashEvent,
   Lobby,
-  Friend
+  Friend,
+  WavedashServiceManager
 } from "./types";
 import {
   GAME_ENGINE,
@@ -48,17 +49,15 @@ import {
 } from "@wvdsh/types";
 import { parentOrigin } from "./utils/parentOrigin";
 
-interface QueuedEvent {
-  event: WavedashEvent;
-  payload: string | number | boolean | object;
-}
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type AnyFn = (...args: any[]) => any;
+type Formatted<T> = T extends object ? T | string : T;
 
 class WavedashSDK extends EventTarget {
   private initialized: boolean = false;
   private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
-  private eventQueue: QueuedEvent[] = [];
   private gameFinishedLoading: boolean = false;
   
   Events = WavedashEvents;
@@ -68,6 +67,7 @@ class WavedashSDK extends EventTarget {
   protected heartbeatManager: HeartbeatManager;
   protected ugcManager: UGCManager;
   protected leaderboardManager: LeaderboardManager;
+  gameEventManager: GameEventManager;
   friendsManager: FriendsManager;
 
   config: WavedashConfig | null = null;
@@ -106,6 +106,7 @@ class WavedashSDK extends EventTarget {
     this.ugcManager = new UGCManager(this);
     this.leaderboardManager = new LeaderboardManager(this);
     this.friendsManager = new FriendsManager(this);
+    this.gameEventManager = new GameEventManager(this);
     this.iframeMessenger = iframeMessenger;
 
     // Cache current user for avatar lookups
@@ -237,25 +238,6 @@ class WavedashSDK extends EventTarget {
     return true;
   }
 
-  /**
-   * Set or update the engine instance (Unity or Godot).
-   * This method is additive - it merges properties into any existing instance.
-   * Can be called multiple times in any order (e.g., JSLib sets FS first, runner sets the unityInstance later).
-   * This handles the race condition where a Unity game can actually start running BEFORE window.createUnityInstance resolves
-   * @param engineInstance - The engine instance or partial attributes to merge.
-   */
-  setEngineInstance(engineInstance: Partial<EngineInstance>): void {
-    if (this.engineInstance) {
-      Object.assign(this.engineInstance, engineInstance);
-    } else {
-      this.engineInstance = engineInstance as EngineInstance;
-    }
-  }
-
-  isReady(): boolean {
-    return this.initialized;
-  }
-
   readyForEvents(): void {
     this.ensureReady();
     if (!this.config?.deferEvents) {
@@ -264,7 +246,7 @@ class WavedashSDK extends EventTarget {
     this.config!.deferEvents = false;
 
     // Flush any queued events now that the game is ready
-    this.flushEventQueue();
+    this.gameEventManager.flushEventQueue();
 
     // Game is now ready for event messages, join a lobby if provided (from invite link or external source)
     if (this.lobbyIdToJoinOnStartup) {
@@ -274,6 +256,39 @@ class WavedashSDK extends EventTarget {
           this.logger.error("Could not join lobby on startup:", error);
         });
     }
+  }
+
+  // ==================
+  // Entrypoint Helpers
+  // ==================
+  loadScript(src: string) {
+    return new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.type = "text/javascript";
+      script.crossOrigin = "anonymous";
+      script.src = src;
+      script.onload = resolve;
+      script.onerror = reject;
+      document.head.appendChild(script);
+    });
+  }
+
+  updateLoadProgressZeroToOne(progress: number) {
+    iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE, {
+      progress
+    });
+  }
+
+  loadComplete() {
+    this.gameFinishedLoading = true;
+    this.heartbeatManager.start();
+    iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
+    // Take focus when loading is complete
+    takeFocus();
+  }
+
+  get gameLoaded(): boolean {
+    return this.gameFinishedLoading;
   }
 
   toggleOverlay(): void {
@@ -304,10 +319,7 @@ class WavedashSDK extends EventTarget {
   // ============
 
   async listFriends(): Promise<string | WavedashResponse<Friend[]>> {
-    this.ensureReady();
-    this.logger.debug("Listing friends");
-    const result = await this.friendsManager.listFriends();
-    return this.formatResponse(result);
+    return this.apiCall(this.friendsManager, "listFriends");
   }
 
   /**
@@ -332,10 +344,7 @@ class WavedashSDK extends EventTarget {
   async getLeaderboard(
     name: string
   ): Promise<string | WavedashResponse<Leaderboard>> {
-    this.ensureReady();
-    this.logger.debug(`Getting leaderboard: ${name}`);
-    const result = await this.leaderboardManager.getLeaderboard(name);
-    return this.formatResponse(result);
+    return this.apiCall(this.leaderboardManager, "getLeaderboard", name);
   }
 
   async getOrCreateLeaderboard(
@@ -343,23 +352,12 @@ class WavedashSDK extends EventTarget {
     sortOrder: LeaderboardSortOrder,
     displayType: LeaderboardDisplayType
   ): Promise<string | WavedashResponse<Leaderboard>> {
-    this.ensureReady();
-    this.logger.debug(`Getting or creating leaderboard: ${name}`);
-    const result = await this.leaderboardManager.getOrCreateLeaderboard(
-      name,
-      sortOrder,
-      displayType
-    );
-    return this.formatResponse(result);
+    return this.apiCall(this.leaderboardManager, "getOrCreateLeaderboard", name, sortOrder, displayType);
   }
 
   // Synchronously get leaderboard entry count from cache
   getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
-    this.ensureReady();
-    this.logger.debug(
-      `Getting leaderboard entry count for leaderboard: ${leaderboardId}`
-    );
-    return this.leaderboardManager.getLeaderboardEntryCount(leaderboardId);
+    return this.apiCallSync(this.leaderboardManager, "getLeaderboardEntryCount", leaderboardId);
   }
 
   // This is called get my "entries" but under the hood we enforce one entry per user
@@ -367,13 +365,7 @@ class WavedashSDK extends EventTarget {
   async getMyLeaderboardEntries(
     leaderboardId: Id<"leaderboards">
   ): Promise<string | WavedashResponse<LeaderboardEntries>> {
-    this.ensureReady();
-    this.logger.debug(
-      `Getting logged in user's leaderboard entry for leaderboard: ${leaderboardId}`
-    );
-    const result =
-      await this.leaderboardManager.getMyLeaderboardEntries(leaderboardId);
-    return this.formatResponse(result);
+    return this.apiCall(this.leaderboardManager, "getMyLeaderboardEntries", leaderboardId);
   }
 
   async listLeaderboardEntriesAroundUser(
@@ -382,18 +374,7 @@ class WavedashSDK extends EventTarget {
     countBehind: number,
     friendsOnly: boolean = false
   ): Promise<string | WavedashResponse<LeaderboardEntries>> {
-    this.ensureReady();
-    this.logger.debug(
-      `Listing entries around user for leaderboard: ${leaderboardId}`
-    );
-    const result =
-      await this.leaderboardManager.listLeaderboardEntriesAroundUser(
-        leaderboardId,
-        countAhead,
-        countBehind,
-        friendsOnly
-      );
-    return this.formatResponse(result);
+    return this.apiCall(this.leaderboardManager, "listLeaderboardEntriesAroundUser", leaderboardId, countAhead, countBehind, friendsOnly);
   }
 
   async listLeaderboardEntries(
@@ -402,15 +383,7 @@ class WavedashSDK extends EventTarget {
     limit: number,
     friendsOnly: boolean = false
   ): Promise<string | WavedashResponse<LeaderboardEntries>> {
-    this.ensureReady();
-    this.logger.debug(`Listing entries for leaderboard: ${leaderboardId}`);
-    const result = await this.leaderboardManager.listLeaderboardEntries(
-      leaderboardId,
-      offset,
-      limit,
-      friendsOnly
-    );
-    return this.formatResponse(result);
+    return this.apiCall(this.leaderboardManager, "listLeaderboardEntries", leaderboardId, offset, limit, friendsOnly);
   }
 
   async uploadLeaderboardScore(
@@ -419,17 +392,7 @@ class WavedashSDK extends EventTarget {
     keepBest: boolean,
     ugcId?: Id<"userGeneratedContent">
   ): Promise<string | WavedashResponse<UpsertedLeaderboardEntry>> {
-    this.ensureReady();
-    this.logger.debug(
-      `Uploading score ${score} to leaderboard: ${leaderboardId}`
-    );
-    const result = await this.leaderboardManager.uploadLeaderboardScore(
-      leaderboardId,
-      score,
-      keepBest,
-      ugcId
-    );
-    return this.formatResponse(result);
+    return this.apiCall(this.leaderboardManager, "uploadLeaderboardScore", leaderboardId, score, keepBest, ugcId);
   }
 
   // ======================
@@ -452,18 +415,7 @@ class WavedashSDK extends EventTarget {
     visibility?: UGCVisibility,
     filePath?: string
   ): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
-    this.ensureReady();
-    this.logger.debug(
-      `Creating UGC item of type: ${ugcType} ${filePath ? `from file: ${filePath}` : ""}`
-    );
-    const result = await this.ugcManager.createUGCItem(
-      ugcType,
-      title,
-      description,
-      visibility,
-      filePath
-    );
-    return this.formatResponse(result);
+    return this.apiCall(this.ugcManager, "createUGCItem", ugcType, title, description, visibility, filePath);
   }
 
   /**
@@ -483,28 +435,14 @@ class WavedashSDK extends EventTarget {
     visibility?: UGCVisibility,
     filePath?: string
   ): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
-    this.ensureReady();
-    this.logger.debug(
-      `Updating UGC item: ${ugcId} ${filePath ? `from file: ${filePath}` : ""}`
-    );
-    const result = await this.ugcManager.updateUGCItem(
-      ugcId,
-      title,
-      description,
-      visibility,
-      filePath
-    );
-    return this.formatResponse(result);
+    return this.apiCall(this.ugcManager, "updateUGCItem", ugcId, title, description, visibility, filePath);
   }
 
   async downloadUGCItem(
     ugcId: Id<"userGeneratedContent">,
     filePath: string
   ): Promise<string | WavedashResponse<Id<"userGeneratedContent">>> {
-    this.ensureReady();
-    this.logger.debug(`Downloading UGC item: ${ugcId} to: ${filePath}`);
-    const result = await this.ugcManager.downloadUGCItem(ugcId, filePath);
-    return this.formatResponse(result);
+    return this.apiCall(this.ugcManager, "downloadUGCItem", ugcId, filePath);
   }
 
   // ================================
@@ -519,10 +457,7 @@ class WavedashSDK extends EventTarget {
   async deleteRemoteFile(
     filePath: string
   ): Promise<string | WavedashResponse<string>> {
-    this.ensureReady();
-    this.logger.debug(`Deleting remote file: ${filePath}`);
-    const result = await this.fileSystemManager.deleteRemoteFile(filePath);
-    return this.formatResponse(result);
+    return this.apiCall(this.fileSystemManager, "deleteRemoteFile", filePath);
   }
 
   /**
@@ -534,10 +469,7 @@ class WavedashSDK extends EventTarget {
   async downloadRemoteFile(
     filePath: string
   ): Promise<string | WavedashResponse<string>> {
-    this.ensureReady();
-    this.logger.debug(`Downloading remote file: ${filePath}`);
-    const result = await this.fileSystemManager.downloadRemoteFile(filePath);
-    return this.formatResponse(result);
+    return this.apiCall(this.fileSystemManager, "downloadRemoteFile", filePath);
   }
 
   /**
@@ -549,10 +481,7 @@ class WavedashSDK extends EventTarget {
   async uploadRemoteFile(
     filePath: string
   ): Promise<string | WavedashResponse<string>> {
-    this.ensureReady();
-    this.logger.debug(`Uploading remote file: ${filePath}`);
-    const result = await this.fileSystemManager.uploadRemoteFile(filePath);
-    return this.formatResponse(result);
+    return this.apiCall(this.fileSystemManager, "uploadRemoteFile", filePath);
   }
 
   /**
@@ -563,10 +492,7 @@ class WavedashSDK extends EventTarget {
   async listRemoteDirectory(
     path: string
   ): Promise<string | WavedashResponse<RemoteFileMetadata[]>> {
-    this.ensureReady();
-    this.logger.debug(`Listing remote directory: ${path}`);
-    const result = await this.fileSystemManager.listRemoteDirectory(path);
-    return this.formatResponse(result);
+    return this.apiCall(this.fileSystemManager, "listRemoteDirectory", path);
   }
 
   /**
@@ -577,9 +503,7 @@ class WavedashSDK extends EventTarget {
   async downloadRemoteDirectory(
     path: string
   ): Promise<string | WavedashResponse<string>> {
-    this.ensureReady();
-    const result = await this.fileSystemManager.downloadRemoteDirectory(path);
-    return this.formatResponse(result);
+    return this.apiCall(this.fileSystemManager, "downloadRemoteDirectory", path);
   }
 
   /**
@@ -814,15 +738,7 @@ class WavedashSDK extends EventTarget {
     visibility: LobbyVisibility,
     maxPlayers?: number
   ): Promise<string | WavedashResponse<Id<"lobbies">>> {
-    this.ensureReady();
-    this.logger.debug(
-      "Creating lobby with visibility:",
-      visibility,
-      "and max players:",
-      maxPlayers
-    );
-    const result = await this.lobbyManager.createLobby(visibility, maxPlayers);
-    return this.formatResponse(result);
+    return this.apiCall(this.lobbyManager, "createLobby", visibility, maxPlayers);
   }
 
   /**
@@ -835,33 +751,21 @@ class WavedashSDK extends EventTarget {
   async joinLobby(
     lobbyId: Id<"lobbies">
   ): Promise<string | WavedashResponse<boolean>> {
-    this.ensureReady();
-    this.logger.debug(`Joining lobby: ${lobbyId}`);
-    const result = await this.lobbyManager.joinLobby(lobbyId);
-    return this.formatResponse(result);
+    return this.apiCall(this.lobbyManager, "joinLobby", lobbyId);
   }
 
   async listAvailableLobbies(
     friendsOnly: boolean = false
   ): Promise<string | WavedashResponse<Lobby[]>> {
-    this.ensureReady();
-    this.logger.debug(`Listing available lobbies`);
-    const result = await this.lobbyManager.listAvailableLobbies(friendsOnly);
-    return this.formatResponse(result);
+    return this.apiCall(this.lobbyManager, "listAvailableLobbies", friendsOnly);
   }
 
   getLobbyUsers(lobbyId: Id<"lobbies">): string | LobbyUser[] {
-    this.ensureReady();
-    this.logger.debug(`Getting lobby users: ${lobbyId}`);
-    const result = this.lobbyManager.getLobbyUsers(lobbyId);
-    return this.formatResponse(result);
+    return this.apiCallSync(this.lobbyManager, "getLobbyUsers", lobbyId);
   }
 
   getNumLobbyUsers(lobbyId: Id<"lobbies">): number {
-    this.ensureReady();
-    this.logger.debug(`Getting number of lobby users: ${lobbyId}`);
-    const result = this.lobbyManager.getNumLobbyUsers(lobbyId);
-    return result;
+    return this.apiCallSync(this.lobbyManager, "getNumLobbyUsers", lobbyId);
   }
 
   getLobbyHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
@@ -870,9 +774,7 @@ class WavedashSDK extends EventTarget {
   }
 
   getLobbyData(lobbyId: Id<"lobbies">, key: string): unknown {
-    this.ensureReady();
-    this.logger.debug(`Getting lobby data: ${key} for lobby: ${lobbyId}`);
-    return this.lobbyManager.getLobbyData(lobbyId, key);
+    return this.apiCallSync(this.lobbyManager, "getLobbyData", lobbyId, key);
   }
 
   setLobbyData(lobbyId: Id<"lobbies">, key: string, value: unknown): boolean {
@@ -884,10 +786,7 @@ class WavedashSDK extends EventTarget {
   async leaveLobby(
     lobbyId: Id<"lobbies">
   ): Promise<string | WavedashResponse<Id<"lobbies">>> {
-    this.ensureReady();
-    this.logger.debug(`Leaving lobby: ${lobbyId}`);
-    const result = await this.lobbyManager.leaveLobby(lobbyId);
-    return this.formatResponse(result);
+    return this.apiCall(this.lobbyManager, "leaveLobby", lobbyId);
   }
 
   // Fire and forget, returns true if the message was sent out successfully
@@ -901,19 +800,13 @@ class WavedashSDK extends EventTarget {
     lobbyId: Id<"lobbies">,
     userId: Id<"users">
   ): Promise<string | WavedashResponse<boolean>> {
-    this.ensureReady();
-    this.logger.debug(`Inviting user ${userId} to lobby ${lobbyId}`);
-    const result = await this.lobbyManager.inviteUserToLobby(lobbyId, userId);
-    return this.formatResponse(result);
+    return this.apiCall(this.lobbyManager, "inviteUserToLobby", lobbyId, userId);
   }
 
   async getLobbyInviteLink(
     copyToClipboard: boolean = false
   ): Promise<string | WavedashResponse<string>> {
-    this.ensureReady();
-    this.logger.debug("Getting lobby invite link");
-    const result = await this.lobbyManager.getLobbyInviteLink(copyToClipboard);
-    return this.formatResponse(result);
+    return this.apiCall(this.lobbyManager, "getLobbyInviteLink", copyToClipboard);
   }
 
   // ==============================
@@ -926,54 +819,7 @@ class WavedashSDK extends EventTarget {
    * @returns true if the presence was updated successfully
    */
   async updateUserPresence(data?: Record<string, unknown>): Promise<boolean> {
-    this.ensureReady();
-    const result = await this.heartbeatManager.updateUserPresence(data);
-    return result;
-  }
-
-  // ==============================
-  // JS -> Game Event Broadcasting
-  // ==============================
-  _notifyGame(
-    event: WavedashEvent,
-    payload: string | number | boolean | object
-  ): void {
-    // Queue events if game is not ready for them yet
-    if (this.config?.deferEvents) {
-      this.eventQueue.push({ event, payload });
-      this.logger.debug(`Queued event: ${event}`);
-      return;
-    }
-
-    if (!this.engineInstance) {
-      this.dispatchEvent(new CustomEvent(event, { detail: payload }));
-    } else {
-      this.sendGameEvent(event, payload);
-    }
-  }
-
-  private sendGameEvent(
-    event: WavedashEvent,
-    payload: string | number | boolean | object
-  ): void {
-    const data =
-      typeof payload === "object" ? JSON.stringify(payload) : payload;
-    if (this.engineInstance?.SendMessage) {
-      this.engineInstance.SendMessage(this.engineCallbackReceiver, event, data);
-    } else {
-      this.logger.error("Engine instance not set. Dropping event:", event);
-    }
-  }
-
-  private flushEventQueue(): void {
-    if (this.eventQueue.length === 0) {
-      return;
-    }
-    this.logger.debug(`Flushing ${this.eventQueue.length} queued events`);
-    for (const queuedEvent of this.eventQueue) {
-      this._notifyGame(queuedEvent.event, queuedEvent.payload);
-    }
-    this.eventQueue = [];
+    return this.apiCall(this.heartbeatManager, "updateUserPresence", data);
   }
 
   // ================
@@ -987,51 +833,64 @@ class WavedashSDK extends EventTarget {
     );
   }
 
-  // Helper to format response based on context
-  // Godot callbacks expect a string, so we need to format the response accordingly
-  private formatResponse<T>(data: T): T | string {
-    return this.isGodot() ? JSON.stringify(data) : data;
+  // Godot callbacks expect strings for complex data, but can accept primitives directly
+  private formatResponse<T>(data: T): Formatted<T> {
+    if (this.isGodot() && typeof data === "object" && data !== null) {
+      return JSON.stringify(data) as Formatted<T>;
+    }
+    return data as Formatted<T>;
   }
 
   // Helper to ensure SDK is ready, throws if not
   private ensureReady(): void {
-    if (!this.isReady()) {
+    if (!this.initialized) {
       this.logger.warn("SDK not initialized. Call init() first.");
       throw new Error("SDK not initialized");
     }
   }
 
-  // ============
-  // Entrypoint Helpers
-  // ============
-  loadScript(src: string) {
-    return new Promise((resolve, reject) => {
-      const script = document.createElement("script");
-      script.type = "text/javascript";
-      script.crossOrigin = "anonymous";
-      script.src = src;
-      script.onload = resolve;
-      script.onerror = reject;
-      document.head.appendChild(script);
-    });
+  private async apiCall<T extends WavedashServiceManager, K extends string & keyof T>(
+    manager: T,
+    method: K,
+    ...args: Parameters<Extract<T[K], AnyFn>>
+  ): Promise<Formatted<Awaited<ReturnType<Extract<T[K], AnyFn>>>>> {
+    this.ensureReady();
+    this.logger.debug(method, ...args);
+    return this.formatResponse(await (manager[method] as AnyFn)(...args));
   }
 
-  updateLoadProgressZeroToOne(progress: number) {
-    iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE, {
-      progress
-    });
+  private apiCallSync<T extends WavedashServiceManager, K extends string & keyof T>(
+    target: T,
+    method: K,
+    ...args: Parameters<Extract<T[K], AnyFn>>
+  ): Formatted<ReturnType<Extract<T[K], AnyFn>>> {
+    this.ensureReady();
+    this.logger.debug(method, ...args);
+    return this.formatResponse((target[method] as AnyFn)(...args));
   }
 
-  loadComplete() {
-    this.gameFinishedLoading = true;
-    this.heartbeatManager.start();
-    iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
-    // Take focus when loading is complete
-    takeFocus();
+  /**
+   * Set or update the engine instance (Unity or Godot).
+   * This method is additive - it merges properties into any existing instance.
+   * Can be called multiple times in any order (e.g., JSLib sets FS first, runner sets the unityInstance later).
+   * This handles the race condition where a Unity game can actually start running BEFORE window.createUnityInstance resolves
+   * @param engineInstance - The engine instance or partial attributes to merge.
+   */
+  private setEngineInstance(engineInstance: Partial<EngineInstance>): void {
+    if (this.engineInstance) {
+      Object.assign(this.engineInstance, engineInstance);
+    } else {
+      this.engineInstance = engineInstance as EngineInstance;
+    }
   }
 
-  get gameLoaded(): boolean {
-    return this.gameFinishedLoading;
+  /**
+   * @deprecated
+   * Game generally shouldn't need to check this value
+   * Can always just check WavedashJS.initialized if needed
+   */
+  private isReady(): boolean {
+    return this.initialized;
   }
 }
 
@@ -1049,7 +908,6 @@ export * from "./types";
 
 // Type-safe initialization helper
 export async function setupWavedashSDK(): Promise<WavedashSDK> {
-  console.log("[WavedashJS] Setting up SDK");
   const sdkConfig = await iframeMessenger.requestFromParent(
     IFRAME_MESSAGE_TYPE.GET_SDK_CONFIG
   );
