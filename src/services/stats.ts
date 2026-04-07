@@ -1,5 +1,5 @@
 import { api } from "@wvdsh/types";
-import { WavedashResponse, WavedashSDK } from "..";
+import { WavedashSDK } from "..";
 import unionBy from "lodash.unionby";
 import debounce from "lodash.debounce";
 
@@ -32,51 +32,37 @@ export class StatsManager {
     }
   }
 
-  async requestStats(): Promise<WavedashResponse<boolean>> {
-    try {
-      await Promise.all([
-        // One-time fetch for stats (local is source of truth)
-        (async () => {
-          const newStats = await this.sdk.convexClient.query(
-            api.sdk.gameAchievements.getMyStatsForGame,
-            {}
-          );
-          this.hasLoadedStats = true;
-          this.stats = unionBy(this.stats, newStats, "identifier");
-        })(),
-        // Subscription for achievements (server can unlock them)
-        new Promise((resolve, reject) => {
-          this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
-            api.sdk.gameAchievements.getMyAchievementsForGame,
-            {},
-            (achievements) => {
-              this.hasLoadedAchievements = true;
-              this.achievementIdentifiers = new Set([
-                ...this.achievementIdentifiers,
-                ...achievements.map(({ achievement }) => achievement.identifier)
-              ]);
-              resolve(undefined);
-            },
-            (error) => {
-              reject(error);
-            }
-          );
-        })
-      ]);
-      return {
-        success: true,
-        data: true,
-        args: {}
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Error requesting stats: ${error}`);
-      return {
-        success: false,
-        data: false,
-        args: {},
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+  async requestStats(): Promise<boolean> {
+    await Promise.all([
+      // One-time fetch for stats (local is source of truth)
+      (async () => {
+        const newStats = await this.sdk.convexClient.query(
+          api.sdk.gameAchievements.getMyStatsForGame,
+          {}
+        );
+        this.hasLoadedStats = true;
+        this.stats = unionBy(this.stats, newStats, "identifier");
+      })(),
+      // Subscription for achievements (server can unlock them)
+      new Promise((resolve, reject) => {
+        this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
+          api.sdk.gameAchievements.getMyAchievementsForGame,
+          {},
+          (achievements) => {
+            this.hasLoadedAchievements = true;
+            this.achievementIdentifiers = new Set([
+              ...this.achievementIdentifiers,
+              ...achievements.map(({ achievement }) => achievement.identifier)
+            ]);
+            resolve(undefined);
+          },
+          (error) => {
+            reject(error);
+          }
+        );
+      })
+    ]);
+    return true;
   }
 
   private debouncedStoreStats = debounce(

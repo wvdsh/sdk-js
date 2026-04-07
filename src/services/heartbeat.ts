@@ -95,7 +95,7 @@ export class HeartbeatManager {
       this.sendHeartbeat(true);
     } else if (
       timeSinceLastHeartbeat >=
-        HEARTBEAT.CLIENT_INTERVAL_MS - HEARTBEAT.CLIENT_GRACE_MS
+      HEARTBEAT.CLIENT_INTERVAL_MS - HEARTBEAT.CLIENT_GRACE_MS
     ) {
       this.sendHeartbeat(false);
     }
@@ -165,14 +165,20 @@ export class HeartbeatManager {
         // Reconnected
         this.disconnectedAt = null;
         this.sentDisconnectedEvent = false;
-        this.sdk.gameEventManager.notifyGame(WavedashEvents.BACKEND_CONNECTED, connection);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.BACKEND_CONNECTED,
+          connection
+        );
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedAt = Date.now();
         this.sdk.logger.warn(
           "Backend disconnected - attempting to reconnect..."
         );
-        this.sdk.gameEventManager.notifyGame(WavedashEvents.BACKEND_RECONNECTING, connection);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.BACKEND_RECONNECTING,
+          connection
+        );
       } else if (!this.isConnected && !wasConnected) {
         // Still disconnected
         // After threshold, notify as truly disconnected
@@ -181,7 +187,10 @@ export class HeartbeatManager {
           !this.sentDisconnectedEvent &&
           Date.now() - this.disconnectedAt > this.DISCONNECTED_TIMEOUT_MS
         ) {
-          this.sdk.gameEventManager.notifyGame(WavedashEvents.BACKEND_DISCONNECTED, connection);
+          this.sdk.gameEventManager.notifyGame(
+            WavedashEvents.BACKEND_DISCONNECTED,
+            connection
+          );
           this.sentDisconnectedEvent = true;
         }
       } else if (this.isConnected && wasConnected) {

@@ -6,7 +6,6 @@
 
 import type {
   Id,
-  WavedashResponse,
   Lobby,
   LobbyVisibility,
   LobbyUser,
@@ -91,72 +90,36 @@ export class LobbyManager {
   async createLobby(
     visibility: LobbyVisibility,
     maxPlayers?: number
-  ): Promise<WavedashResponse<Id<"lobbies">>> {
-    const args = { visibility, maxPlayers };
-
-    try {
-      // Cast through unknown until Convex types are regenerated
-      const result = await this.sdk.convexClient.mutation(
-        api.sdk.gameLobby.createAndJoinLobby,
-        args
-      );
-
-      this.handleLobbyJoin(result);
-
-      return {
-        success: true,
-        data: result.lobbyId,
-        args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Error creating lobby: ${error}`);
-      return {
-        success: false,
-        data: null,
-        args,
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+  ): Promise<Id<"lobbies">> {
+    const result = await this.sdk.convexClient.mutation(
+      api.sdk.gameLobby.createAndJoinLobby,
+      { visibility, maxPlayers }
+    );
+    this.handleLobbyJoin(result);
+    return result.lobbyId;
   }
 
   /**
    * Join a lobby
    * @param lobbyId - The ID of the lobby to join
-   * @returns A WavedashResponse with success/failure. Full lobby context comes via LOBBY_JOINED event on success.
+   * @returns true on success. Full lobby context comes via LOBBY_JOINED event.
    * @emits LOBBY_JOINED event on success with full lobby context
+   * @emits LOBBY_JOIN_FAILED event on failure with error message
    */
-  async joinLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<boolean>> {
-    const args = { lobbyId };
-
+  async joinLobby(lobbyId: Id<"lobbies">): Promise<boolean> {
     try {
-      // Cast through unknown until Convex types are regenerated
       const result = await this.sdk.convexClient.mutation(
         api.sdk.gameLobby.joinLobby,
-        args
+        { lobbyId }
       );
-
       this.handleLobbyJoin(result);
-
-      return {
-        success: true,
-        data: true,
-        args
-      };
+      return true;
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.sdk.logger.error(`Error joining lobby: ${message}`);
-
       this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_JOIN_FAILED, {
         lobbyId,
-        message
+        message: error instanceof Error ? error.message : String(error)
       } satisfies LobbyJoinFailedPayload);
-
-      return {
-        success: false,
-        data: false,
-        args,
-        message
-      };
+      throw error;
     }
   }
 
@@ -229,72 +192,32 @@ export class LobbyManager {
     return this.cachedLobbies[lobbyId].playerCount;
   }
 
-  async leaveLobby(
-    lobbyId: Id<"lobbies">
-  ): Promise<WavedashResponse<Id<"lobbies">>> {
-    const args = { lobbyId };
-
-    try {
-      // Clean up subscriptions BEFORE leaving lobby so we don't trigger updates to ourselves from leaving
-      this.cleanupLobbyState();
-
-      // Now we can leave the lobby
-      await this.sdk.convexClient.mutation(api.sdk.gameLobby.leaveLobby, args);
-
-      this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
-        lobbyId
-      });
-
-      return {
-        success: true,
-        data: lobbyId,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Error leaving lobby: ${error}`);
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+  async leaveLobby(lobbyId: Id<"lobbies">): Promise<Id<"lobbies">> {
+    // Clean up subscriptions BEFORE leaving lobby so we don't trigger updates to ourselves from leaving
+    this.cleanupLobbyState();
+    await this.sdk.convexClient.mutation(api.sdk.gameLobby.leaveLobby, {
+      lobbyId
+    });
+    this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
+      lobbyId
+    });
+    return lobbyId;
   }
 
-  async listAvailableLobbies(
-    friendsOnly: boolean = false
-  ): Promise<WavedashResponse<Lobby[]>> {
-    // TODO: Implement more query filters (IP distance, arbitrary key/value matching, etc)
-    const args = { friendsOnly };
+  // TODO: Implement more query filters (IP distance, arbitrary key/value matching, etc)
+  async listAvailableLobbies(friendsOnly: boolean = false): Promise<Lobby[]> {
     const filters = friendsOnly ? { friendsOnly } : undefined;
-    try {
-      const lobbies = await this.sdk.convexClient.query(
-        api.sdk.gameLobby.listAvailable,
-        { filters }
-      );
-
-      // Filter out lobbies that are being deleted
-      const filteredLobbies = lobbies.filter(
-        (lobby) => !this.maybeBeingDeletedLobbyIds.has(lobby.lobbyId)
-      );
-
-      for (const lobby of filteredLobbies) {
-        this.cachedLobbies[lobby.lobbyId] = lobby;
-      }
-      return {
-        success: true,
-        data: filteredLobbies,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Error listing available lobbies: ${error}`);
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
+    const lobbies = await this.sdk.convexClient.query(
+      api.sdk.gameLobby.listAvailable,
+      { filters }
+    );
+    const filteredLobbies = lobbies.filter(
+      (lobby) => !this.maybeBeingDeletedLobbyIds.has(lobby.lobbyId)
+    );
+    for (const lobby of filteredLobbies) {
+      this.cachedLobbies[lobby.lobbyId] = lobby;
     }
+    return filteredLobbies;
   }
 
   sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
@@ -323,79 +246,26 @@ export class LobbyManager {
   async inviteUserToLobby(
     lobbyId: Id<"lobbies">,
     userId: Id<"users">
-  ): Promise<WavedashResponse<boolean>> {
-    const args = { lobbyId, targetUserId: userId };
-
-    try {
-      await this.sdk.convexClient.mutation(
-        api.sdk.gameLobby.inviteToLobby,
-        args
-      );
-
-      return {
-        success: true,
-        data: true,
-        args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Error inviting user to lobby: ${error}`);
-      return {
-        success: false,
-        data: false,
-        args,
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+  ): Promise<boolean> {
+    await this.sdk.convexClient.mutation(api.sdk.gameLobby.inviteToLobby, {
+      lobbyId,
+      targetUserId: userId
+    });
+    return true;
   }
 
-  async getLobbyInviteLink(
-    copyToClipboard: boolean = false
-  ): Promise<WavedashResponse<string>> {
+  async getLobbyInviteLink(copyToClipboard: boolean = false): Promise<string> {
     if (!this.lobbyId) {
-      this.sdk.logger.error("Cannot get invite link: not in a lobby");
-      return {
-        success: false,
-        data: null,
-        args: { copyToClipboard },
-        message: "User is not in a lobby"
-      };
+      throw new Error("User is not in a lobby");
     }
-
-    let inviteLink: string;
-    try {
-      inviteLink = await this.sdk.iframeMessenger.requestFromParent(
-        IFRAME_MESSAGE_TYPE.GET_LOBBY_INVITE_LINK,
-        { lobbyId: this.lobbyId, copyToClipboard }
-      );
-    } catch {
-      this.sdk.logger.error(
-        "Cannot get invite link: parent did not respond to GetLobbyInviteLink"
-      );
-      return {
-        success: false,
-        data: null,
-        args: { copyToClipboard },
-        message: "Could not get invite link from parent"
-      };
-    }
-
+    const inviteLink = await this.sdk.iframeMessenger.requestFromParent(
+      IFRAME_MESSAGE_TYPE.GET_LOBBY_INVITE_LINK,
+      { lobbyId: this.lobbyId, copyToClipboard }
+    );
     if (!inviteLink) {
-      this.sdk.logger.error(
-        "Cannot get invite link: parent returned empty string"
-      );
-      return {
-        success: false,
-        data: null,
-        args: { copyToClipboard },
-        message: "Parent could not generate invite link"
-      };
+      throw new Error("Parent could not generate invite link");
     }
-
-    return {
-      success: true,
-      data: inviteLink,
-      args: { copyToClipboard }
-    };
+    return inviteLink;
   }
 
   // ================
@@ -645,10 +515,13 @@ export class LobbyManager {
         this.lobbyHostId = user.userId;
       }
       if (!previousUserIds.has(user.userId)) {
-        this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
-          ...user,
-          changeType: LobbyUserChangeType.JOINED
-        } satisfies LobbyUsersUpdatedPayload);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.LOBBY_USERS_UPDATED,
+          {
+            ...user,
+            changeType: LobbyUserChangeType.JOINED
+          } satisfies LobbyUsersUpdatedPayload
+        );
       }
     }
 
@@ -662,11 +535,14 @@ export class LobbyManager {
         }
         // For now, we can't distinguish between LEFT, DISCONNECTED, or KICKED
         // from the basic lobby users update. Default to LEFT.
-        this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_USERS_UPDATED, {
-          ...user,
-          isHost: false,
-          changeType: LobbyUserChangeType.LEFT
-        } satisfies LobbyUsersUpdatedPayload);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.LOBBY_USERS_UPDATED,
+          {
+            ...user,
+            isHost: false,
+            changeType: LobbyUserChangeType.LEFT
+          } satisfies LobbyUsersUpdatedPayload
+        );
       }
     }
 
@@ -705,7 +581,9 @@ export class LobbyManager {
       }
     }
     // Update seen IDs to match current invites (remove stale ones)
-    this.seenInviteIds = new Set(invites.map((invite) => invite.notificationId));
+    this.seenInviteIds = new Set(
+      invites.map((invite) => invite.notificationId)
+    );
   };
 
   // ================

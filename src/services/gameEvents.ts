@@ -42,7 +42,11 @@ export class GameEventManager {
     const data =
       typeof payload === "object" ? JSON.stringify(payload) : payload;
     if (this.sdk.engineInstance?.SendMessage) {
-      this.sdk.engineInstance.SendMessage(this.sdk.engineCallbackReceiver, event, data);
+      this.sdk.engineInstance.SendMessage(
+        this.sdk.engineCallbackReceiver,
+        event,
+        data
+      );
     } else {
       this.sdk.logger.error("Engine instance not set. Dropping event:", event);
     }

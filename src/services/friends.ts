@@ -4,7 +4,7 @@
  * Implements friend-related methods for the Wavedash SDK
  */
 
-import type { Friend, WavedashResponse, Id } from "../types";
+import type { Friend, Id } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/types";
 import { getCdnImageUrl } from "../utils/cdn";
@@ -76,29 +76,12 @@ export class FriendsManager {
     });
   }
 
-  async listFriends(): Promise<WavedashResponse<Friend[]>> {
-    const args = {};
-
-    try {
-      const friends = await this.sdk.convexClient.query(
-        api.sdk.friends.listFriends,
-        args
-      );
-      // Cache friend data for avatar lookups
-      this.cacheUsers(friends);
-      return {
-        success: true,
-        data: friends,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error("Failed to list friends", error);
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+  async listFriends(): Promise<Friend[]> {
+    const friends = await this.sdk.convexClient.query(
+      api.sdk.friends.listFriends,
+      {}
+    );
+    this.cacheUsers(friends);
+    return friends;
   }
 }

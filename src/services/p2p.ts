@@ -223,7 +223,6 @@ export class P2PManager {
       return {
         success: false,
         data: null,
-        args: { lobbyId, members },
         message: error instanceof Error ? error.message : String(error)
       };
     }
@@ -261,8 +260,7 @@ export class P2PManager {
 
     return {
       success: true,
-      data: connection,
-      args: { lobbyId, members }
+      data: connection
     };
   }
 
@@ -405,15 +403,13 @@ export class P2PManager {
 
       return {
         success: true,
-        data: this.currentConnection,
-        args: { members }
+        data: this.currentConnection
       };
     } catch (error) {
       this.sdk.logger.error("Error updating P2P connection:", error);
       return {
         success: false,
         data: null,
-        args: { members },
         message: error instanceof Error ? error.message : String(error)
       };
     }
@@ -818,11 +814,14 @@ export class P2PManager {
       this.sdk.logger.error(
         `No ICE servers available for peer ${remoteUserId}`
       );
-      this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
-        userId: remoteUserId,
-        username: connection.peers[remoteUserId]?.username || "",
-        error: "No ICE servers available"
-      } satisfies P2PConnectionFailedPayload);
+      this.sdk.gameEventManager.notifyGame(
+        WavedashEvents.P2P_CONNECTION_FAILED,
+        {
+          userId: remoteUserId,
+          username: connection.peers[remoteUserId]?.username || "",
+          error: "No ICE servers available"
+        } satisfies P2PConnectionFailedPayload
+      );
       return false;
     }
     const pc = new RTCPeerConnection({
@@ -1012,11 +1011,14 @@ export class P2PManager {
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
-        this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
-          userId: peer.userId,
-          username: peer.username,
-          error: "ICE restart failed after maximum attempts"
-        } satisfies P2PConnectionFailedPayload);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.P2P_CONNECTION_FAILED,
+          {
+            userId: peer.userId,
+            username: peer.username,
+            error: "ICE restart failed after maximum attempts"
+          } satisfies P2PConnectionFailedPayload
+        );
       }
       return;
     }
@@ -1068,10 +1070,13 @@ export class P2PManager {
       if (this.isPeerReady(remoteUserId)) {
         const peer = this.currentConnection?.peers[remoteUserId];
         if (peer) {
-          this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_CONNECTION_ESTABLISHED, {
-            userId: peer.userId,
-            username: peer.username
-          } satisfies P2PConnectionEstablishedPayload);
+          this.sdk.gameEventManager.notifyGame(
+            WavedashEvents.P2P_CONNECTION_ESTABLISHED,
+            {
+              userId: peer.userId,
+              username: peer.username
+            } satisfies P2PConnectionEstablishedPayload
+          );
         }
       }
     };
@@ -1088,11 +1093,14 @@ export class P2PManager {
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
-        this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
-          userId: peer.userId,
-          username: peer.username,
-          error: error.toString()
-        } satisfies P2PConnectionFailedPayload);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.P2P_CONNECTION_FAILED,
+          {
+            userId: peer.userId,
+            username: peer.username,
+            error: error.toString()
+          } satisfies P2PConnectionFailedPayload
+        );
       }
     };
 
@@ -1102,10 +1110,13 @@ export class P2PManager {
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
-        this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_PEER_DISCONNECTED, {
-          userId: peer.userId,
-          username: peer.username
-        } satisfies P2PPeerDisconnectedPayload);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.P2P_PEER_DISCONNECTED,
+          {
+            userId: peer.userId,
+            username: peer.username
+          } satisfies P2PPeerDisconnectedPayload
+        );
       }
     };
   }
@@ -1230,8 +1241,7 @@ export class P2PManager {
       if (!this.currentConnection) {
         return {
           success: true,
-          data: true,
-          args: {}
+          data: true
         };
       }
 
@@ -1278,15 +1288,13 @@ export class P2PManager {
 
       return {
         success: true,
-        data: true,
-        args: {}
+        data: true
       };
     } catch (error) {
       this.sdk.logger.error(`Error disconnecting P2P:`, error);
       return {
         success: false,
         data: false,
-        args: {},
         message: error instanceof Error ? error.message : String(error)
       };
     }
@@ -1299,8 +1307,6 @@ export class P2PManager {
   getCurrentP2PConnection(): P2PConnection | null {
     return this.currentConnection;
   }
-
-
 
   // Check if channels are ready for a specific peer
   isPeerReady(userId: Id<"users">): boolean {

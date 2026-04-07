@@ -3,7 +3,7 @@ import { type FunctionReturnType } from "convex/server";
 
 import { WavedashEvents } from "./events";
 import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/types";
-import {LobbyManager} from "./services/lobby";
+import { LobbyManager } from "./services/lobby";
 import { LeaderboardManager } from "./services/leaderboards";
 import { UGCManager } from "./services/ugc";
 import { FileSystemManager } from "./services/fileSystem";
@@ -73,7 +73,8 @@ export type P2PSignalingMessage = Omit<
 };
 
 // Type helper to get event values as a union type
-export type WavedashEvent = (typeof WavedashEvents)[keyof typeof WavedashEvents];
+export type WavedashEvent =
+  (typeof WavedashEvents)[keyof typeof WavedashEvents];
 export { WavedashEvents };
 
 // Configuration and user types
@@ -126,12 +127,7 @@ export interface EngineInstance {
 export interface WavedashResponse<T> {
   success: boolean;
   data: T | null;
-  // Return the original args that were passed to the JS SDK so caller can reference them
-  // TODO: Caller shouldn't rely on this, remove this field
-  args: Record<string, unknown>;
-  // Error message if success is false
   message?: string;
-  // TODO: errorCode?
 }
 
 // =============================================================================
