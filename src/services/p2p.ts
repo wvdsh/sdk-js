@@ -290,89 +290,89 @@ export class P2PManager {
     currentPeerUserIds.add(this.sdk.getUserId());
     const newPeerUserIds = new Set(members.map((member) => member.id));
 
-      // Find new users who joined
-      const connectionsToCreate: Id<"users">[] = [];
-      for (const member of members) {
-        if (member.id === this.sdk.getUserId()) continue;
+    // Find new users who joined
+    const connectionsToCreate: Id<"users">[] = [];
+    for (const member of members) {
+      if (member.id === this.sdk.getUserId()) continue;
 
-        const existingPeer = this.currentConnection.peers[member.id];
-        if (existingPeer) {
-          // Update username if it was empty (from on-demand peer creation)
-          if (!existingPeer.username && member.username) {
-            existingPeer.username = member.username;
-          }
-        } else {
-          this.sdk.logger.debug(
-            `Adding new peer: ${member.username} (${member.id})`
-          );
-
-          // Add new peer to connection
-          this.currentConnection.peers[member.id] = {
-            userId: member.id,
-            username: member.username
-          };
-          connectionsToCreate.push(member.id);
+      const existingPeer = this.currentConnection.peers[member.id];
+      if (existingPeer) {
+        // Update username if it was empty (from on-demand peer creation)
+        if (!existingPeer.username && member.username) {
+          existingPeer.username = member.username;
         }
-      }
-
-      // Create connections to new peers only
-      if (connectionsToCreate.length > 0) {
-        const currentUserId = this.sdk.getUserId();
-        const connectionPromises = connectionsToCreate.map((userId) => {
-          const shouldCreateChannels = currentUserId < userId;
-          this.sdk.logger.debug(
-            `Creating connection to new peer ${userId}, shouldCreateChannels: ${shouldCreateChannels}`
-          );
-          return this.createPeerConnection(
-            userId,
-            this.currentConnection!,
-            shouldCreateChannels
-          );
-        });
-        await Promise.all(connectionPromises);
-
-        // Initiate offers to new peers where we have lower userId
-        const peersToInitiate = connectionsToCreate.filter(
-          (userId) => currentUserId < userId
+      } else {
+        this.sdk.logger.debug(
+          `Adding new peer: ${member.username} (${member.id})`
         );
 
-        if (peersToInitiate.length > 0) {
-          const offerPromises = peersToInitiate.map((userId) => {
-            this.sdk.logger.debug(
-              `Initiating offer to new peer ${userId} (lower userId rule)`
-            );
-            return this.createOfferToPeer(userId);
-          });
+        // Add new peer to connection
+        this.currentConnection.peers[member.id] = {
+          userId: member.id,
+          username: member.username
+        };
+        connectionsToCreate.push(member.id);
+      }
+    }
 
-          await Promise.all(offerPromises);
+    // Create connections to new peers only
+    if (connectionsToCreate.length > 0) {
+      const currentUserId = this.sdk.getUserId();
+      const connectionPromises = connectionsToCreate.map((userId) => {
+        const shouldCreateChannels = currentUserId < userId;
+        this.sdk.logger.debug(
+          `Creating connection to new peer ${userId}, shouldCreateChannels: ${shouldCreateChannels}`
+        );
+        return this.createPeerConnection(
+          userId,
+          this.currentConnection!,
+          shouldCreateChannels
+        );
+      });
+      await Promise.all(connectionPromises);
+
+      // Initiate offers to new peers where we have lower userId
+      const peersToInitiate = connectionsToCreate.filter(
+        (userId) => currentUserId < userId
+      );
+
+      if (peersToInitiate.length > 0) {
+        const offerPromises = peersToInitiate.map((userId) => {
           this.sdk.logger.debug(
-            `Initiated ${offerPromises.length} offers to new peers`
+            `Initiating offer to new peer ${userId} (lower userId rule)`
           );
-        }
+          return this.createOfferToPeer(userId);
+        });
+
+        await Promise.all(offerPromises);
+        this.sdk.logger.debug(
+          `Initiated ${offerPromises.length} offers to new peers`
+        );
       }
+    }
 
-      // Clean up connections to users who left
-      for (const userId of Object.keys(
-        this.currentConnection.peers
-      ) as Id<"users">[]) {
-        if (!newPeerUserIds.has(userId)) {
-          const peer = this.currentConnection.peers[userId];
-          this.sdk.logger.debug(`Peer left: ${peer.username} (${userId})`);
+    // Clean up connections to users who left
+    for (const userId of Object.keys(
+      this.currentConnection.peers
+    ) as Id<"users">[]) {
+      if (!newPeerUserIds.has(userId)) {
+        const peer = this.currentConnection.peers[userId];
+        this.sdk.logger.debug(`Peer left: ${peer.username} (${userId})`);
 
-          // Clean up WebRTC resources
-          const pc = this.peerConnections.get(userId);
-          if (pc) {
-            pc.close();
-            this.peerConnections.delete(userId);
-          }
-          this.reliableChannels.delete(userId);
-          this.unreliableChannels.delete(userId);
-          this.pendingIceCandidates.delete(userId);
-
-          // Remove from peer list
-          delete this.currentConnection.peers[userId];
+        // Clean up WebRTC resources
+        const pc = this.peerConnections.get(userId);
+        if (pc) {
+          pc.close();
+          this.peerConnections.delete(userId);
         }
+        this.reliableChannels.delete(userId);
+        this.unreliableChannels.delete(userId);
+        this.pendingIceCandidates.delete(userId);
+
+        // Remove from peer list
+        delete this.currentConnection.peers[userId];
       }
+    }
 
     return this.currentConnection;
   }

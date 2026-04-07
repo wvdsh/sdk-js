@@ -18,7 +18,7 @@ import { IFrameMessenger } from "./utils/iframeMessenger";
 import { takeFocus } from "./utils/focusManager";
 import { WavedashEvents } from "./types";
 
-type WavedashService = 
+type WavedashService =
   | LobbyManager
   | FileSystemManager
   | UGCManager
@@ -213,7 +213,7 @@ class WavedashSDK extends EventTarget {
     return new Promise((resolve, reject) => {
       const script = document.createElement("script");
       script.type = "text/javascript";
-      script.crossOrigin = "anonymous";
+      script.crossOrigin = "anonymous"; // Allow cross-origin CDN scripts if they have CORS headers
       script.src = src;
       script.onload = resolve;
       script.onerror = reject;
@@ -278,17 +278,19 @@ class WavedashSDK extends EventTarget {
     userId: Id<"users">,
     size: number = AVATAR_SIZE_MEDIUM
   ): string | null {
-    this.ensureReady();
-    return this.friendsManager.getUserAvatarUrl(userId, size);
+    return this.apiCallSync(
+      this.friendsManager,
+      "getUserAvatarUrl",
+      userId,
+      size
+    );
   }
 
   // ============
   // Leaderboards
   // ============
 
-  async getLeaderboard(
-    name: string
-  ): Promise<WavedashResponse<Leaderboard>> {
+  async getLeaderboard(name: string): Promise<WavedashResponse<Leaderboard>> {
     return this.apiCall(this.leaderboardManager, "getLeaderboard", name);
   }
 
@@ -450,9 +452,7 @@ class WavedashSDK extends EventTarget {
    * @param filePath - The path of the remote file to delete
    * @returns The path of the remote file that was deleted
    */
-  async deleteRemoteFile(
-    filePath: string
-  ): Promise<WavedashResponse<string>> {
+  async deleteRemoteFile(filePath: string): Promise<WavedashResponse<string>> {
     return this.apiCall(this.fileSystemManager, "deleteRemoteFile", filePath);
   }
 
@@ -474,9 +474,7 @@ class WavedashSDK extends EventTarget {
    * @param uploadTo - Optionally provide a path to upload the file to, defaults to the same path as the local file
    * @returns The path of the remote file that the local file was uploaded to
    */
-  async uploadRemoteFile(
-    filePath: string
-  ): Promise<WavedashResponse<string>> {
+  async uploadRemoteFile(filePath: string): Promise<WavedashResponse<string>> {
     return this.apiCall(this.fileSystemManager, "uploadRemoteFile", filePath);
   }
 
@@ -564,16 +562,14 @@ class WavedashSDK extends EventTarget {
    * This is derived from the configured messageSize minus protocol overhead.
    */
   getP2PMaxPayloadSize(): number {
-    this.ensureReady();
-    return this.p2pManager.getMaxPayloadSize();
+    return this.apiCallSync(this.p2pManager, "getMaxPayloadSize");
   }
 
   /**
    * Get the configured max incoming messages per channel queue.
    */
   getP2PMaxIncomingMessages(): number {
-    this.ensureReady();
-    return this.p2pManager.getMaxIncomingMessages();
+    return this.apiCallSync(this.p2pManager, "getMaxIncomingMessages");
   }
 
   /**
@@ -581,8 +577,7 @@ class WavedashSDK extends EventTarget {
    * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
    */
   getP2POutgoingMessageBuffer(): Uint8Array {
-    this.ensureReady();
-    return this.p2pManager.getOutgoingMessageBuffer();
+    return this.apiCallSync(this.p2pManager, "getOutgoingMessageBuffer");
   }
 
   /**
@@ -601,7 +596,7 @@ class WavedashSDK extends EventTarget {
     payload: Uint8Array,
     payloadSize: number = payload.length
   ): boolean {
-    this.ensureReady();
+    // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
     if (toUserId && !this.p2pManager.isPeerReady(toUserId)) {
       return false;
     } else if (!toUserId && !this.p2pManager.isBroadcastReady()) {
@@ -630,7 +625,7 @@ class WavedashSDK extends EventTarget {
     payload: Uint8Array,
     payloadSize: number = payload.length
   ): boolean {
-    this.ensureReady();
+    // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
     if (!this.p2pManager.isBroadcastReady()) {
       return false;
     }
@@ -652,10 +647,9 @@ class WavedashSDK extends EventTarget {
   readP2PMessageFromChannel(
     appChannel: number
   ): Uint8Array | P2PMessage | null {
-    this.ensureReady();
-    // Should we return a copy of the binary data rather than a data view?
-    // We're assuming the engine makes its own copy of the binary data when calling this function
-    // If we ever see race conditions, make this a copy, but for performance, we're returning a view
+    // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
+    // Returns a zero-copy view, not a copy. We assume the engine copies on receipt.
+    // If we ever see race conditions, change to return a copy.
     const returnRawBinary = this.engineInstance ? true : false;
     return this.p2pManager.readMessageFromChannel(appChannel, returnRawBinary);
   }
@@ -672,26 +666,8 @@ class WavedashSDK extends EventTarget {
    * @returns A Uint8Array containing each message in a tightly packed format: [size:4 bytes][msg:N bytes][size:4 bytes][msg:N bytes]...
    */
   drainP2PChannelToBuffer(appChannel: number, buffer?: Uint8Array): Uint8Array {
-    this.ensureReady();
+    // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
     return this.p2pManager.drainChannelToBuffer(appChannel, buffer);
-  }
-
-  /**
-   * Check if a specific peer is ready for messaging
-   * @param userId - The peer user ID to check
-   */
-  isPeerReady(userId: Id<"users">): boolean {
-    this.ensureReady();
-    return this.p2pManager.isPeerReady(userId);
-  }
-
-  /**
-   * Check if the broadcast is ready for messaging
-   * @returns true if at least one peer is ready for messaging
-   */
-  isBroadcastReady(): boolean {
-    this.ensureReady();
-    return this.p2pManager.isBroadcastReady();
   }
 
   // ============
@@ -725,9 +701,7 @@ class WavedashSDK extends EventTarget {
    *          Full lobby context is provided via the LobbyJoined event.
    * @emits LobbyJoined event on success with full lobby context
    */
-  async joinLobby(
-    lobbyId: Id<"lobbies">
-  ): Promise<WavedashResponse<boolean>> {
+  async joinLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<boolean>> {
     return this.apiCall(this.lobbyManager, "joinLobby", lobbyId);
   }
 
@@ -746,8 +720,7 @@ class WavedashSDK extends EventTarget {
   }
 
   getLobbyHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
-    this.ensureReady();
-    return this.lobbyManager.getHostId(lobbyId);
+    return this.apiCallSync(this.lobbyManager, "getHostId", lobbyId);
   }
 
   getLobbyData(lobbyId: Id<"lobbies">, key: string): unknown {
@@ -755,9 +728,13 @@ class WavedashSDK extends EventTarget {
   }
 
   setLobbyData(lobbyId: Id<"lobbies">, key: string, value: unknown): boolean {
-    this.ensureReady();
-    this.logger.debug(`Setting lobby data: ${key} to ${value}`);
-    return this.lobbyManager.setLobbyData(lobbyId, key, value);
+    return this.apiCallSync(
+      this.lobbyManager,
+      "setLobbyData",
+      lobbyId,
+      key,
+      value
+    );
   }
 
   async leaveLobby(
@@ -769,8 +746,12 @@ class WavedashSDK extends EventTarget {
   // Fire and forget, returns true if the message was sent out successfully
   // Game can listen for the LobbyMessage event to get the message that was posted
   sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
-    this.ensureReady();
-    return this.lobbyManager.sendLobbyMessage(lobbyId, message);
+    return this.apiCallSync(
+      this.lobbyManager,
+      "sendLobbyMessage",
+      lobbyId,
+      message
+    );
   }
 
   async inviteUserToLobby(
@@ -804,9 +785,10 @@ class WavedashSDK extends EventTarget {
    * @param data Game data to send to the backend
    * @returns true if the presence was updated successfully
    */
-  async updateUserPresence(data?: Record<string, unknown>): Promise<boolean> {
-    this.ensureReady();
-    return this.heartbeatManager.updateUserPresence(data);
+  async updateUserPresence(
+    data?: Record<string, unknown>
+  ): Promise<WavedashResponse<boolean>> {
+    return this.apiCall(this.heartbeatManager, "updateUserPresence", data);
   }
 
   // ================
@@ -820,12 +802,19 @@ class WavedashSDK extends EventTarget {
     );
   }
 
-  // Godot expects JSON strings for complex data, but can accept primitives
-  // Keep the typescript type as T so TS consumers don't have to deal with the | string type
+  // Godot receives JSON strings for plain objects/arrays; typed as T for JS consumers
   private formatResponse<T>(data: T): T {
-    if (this.isGodot() && typeof data === "object" && data !== null) {
+    if (
+      this.isGodot() &&
+      data !== null &&
+      (Array.isArray(data) || Object.getPrototypeOf(data) === Object.prototype)
+    ) {
+      // Stringify objects and arrays for Godot compatibility
+      // Do NOT stringify Uint8Arrays, Godot can receive them as JS buffers
+      // Safe to cast as T, Godot never sees this type
       return JSON.stringify(data) as unknown as T;
     }
+    // Otherwise, return the data as is
     return data;
   }
 
@@ -837,10 +826,7 @@ class WavedashSDK extends EventTarget {
     }
   }
 
-  private async apiCall<
-    T extends WavedashService,
-    K extends string & keyof T
-  >(
+  private async apiCall<T extends WavedashService, K extends string & keyof T>(
     manager: T,
     method: K,
     ...args: Parameters<Extract<T[K], AnyFn>>
@@ -857,10 +843,7 @@ class WavedashSDK extends EventTarget {
     }
   }
 
-  private apiCallSync<
-    T extends WavedashService,
-    K extends string & keyof T
-  >(
+  private apiCallSync<T extends WavedashService, K extends string & keyof T>(
     target: T,
     method: K,
     ...args: Parameters<Extract<T[K], AnyFn>>
@@ -872,6 +855,7 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Set or update the engine instance (Unity or Godot).
+   * Used internally by the Godot and Unity SDKs.
    * This method is additive - it merges properties into any existing instance.
    * Can be called multiple times in any order (e.g., JSLib sets FS first, runner sets the unityInstance later).
    * This handles the race condition where a Unity game can actually start running BEFORE window.createUnityInstance resolves
