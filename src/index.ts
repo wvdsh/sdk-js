@@ -166,10 +166,6 @@ class WavedashSDK extends EventTarget {
     // Initialize P2P manager with config (validates and allocates ring buffers)
     this.p2pManager.init(this.config.p2p);
 
-    if (this.config.disableAchievementsAndStats) {
-      this.statsManager.setDisabled(true);
-    }
-
     this.logger.debug("Initialized with config:", this.config);
     // Initialize lobby manager
     this.lobbyManager.init();
@@ -908,6 +904,7 @@ class WavedashSDK extends EventTarget {
 
       this.lobbyManager.destroy();
       this.heartbeatManager.destroy();
+      this.statsManager.destroy();
       const pendingData = this.statsManager.getPendingData();
       const sessionEndData: Record<string, unknown> = {};
       if (pendingData?.stats?.length) {

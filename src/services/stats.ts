@@ -6,12 +6,8 @@ type StatEntry = { identifier: string; value: number };
 
 const STORE_STATS_DEBOUNCE_MS = 5000;
 
-const DISABLED_MESSAGE =
-  "Stats and achievements were disabled in the init config";
-
 export class StatsManager {
   private sdk: WavedashSDK;
-  private disabled: boolean = false;
   private stats: Map<string, number> = new Map();
   private achievementIdentifiers: Set<string> = new Set();
 
@@ -24,58 +20,50 @@ export class StatsManager {
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
+    this.subscribeAchievements();
+    this.requestStats().catch((error) => {
+      this.sdk.logger.error("Initial stats fetch failed:", error);
+    });
   }
 
-  setDisabled(disabled: boolean): void {
-    this.disabled = disabled;
-  }
-
-  private ensureEnabled(): void {
-    if (this.disabled) {
-      throw new Error(DISABLED_MESSAGE);
+  destroy(): void {
+    if (this.unsubscribeAchievements) {
+      this.unsubscribeAchievements();
+      this.unsubscribeAchievements = undefined;
     }
   }
 
   private isReady(): boolean {
-    return (
-      !this.disabled && this.hasLoadedStats && this.hasLoadedAchievements
+    return this.hasLoadedStats && this.hasLoadedAchievements;
+  }
+
+  private subscribeAchievements(): void {
+    this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
+      api.sdk.gameAchievements.getMyAchievementsForGame,
+      {},
+      (achievements) => {
+        this.hasLoadedAchievements = true;
+        for (const { achievement } of achievements) {
+          this.achievementIdentifiers.add(achievement.identifier);
+        }
+      },
+      (error) => {
+        this.sdk.logger.error("Achievement subscription error:", error);
+      }
     );
   }
 
   async requestStats(): Promise<boolean> {
-    this.ensureEnabled();
-    await Promise.all([
-      // One-time fetch for stats (local is source of truth)
-      (async () => {
-        const newStats: StatEntry[] = await this.sdk.convexClient.query(
-          api.sdk.gameAchievements.getMyStatsForGame,
-          {}
-        );
-        this.hasLoadedStats = true;
-        for (const stat of newStats) {
-          if (!this.stats.has(stat.identifier)) {
-            this.stats.set(stat.identifier, stat.value);
-          }
-        }
-      })(),
-      // Subscription for achievements (server can unlock them)
-      new Promise((resolve, reject) => {
-        this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
-          api.sdk.gameAchievements.getMyAchievementsForGame,
-          {},
-          (achievements) => {
-            this.hasLoadedAchievements = true;
-            for (const { achievement } of achievements) {
-              this.achievementIdentifiers.add(achievement.identifier);
-            }
-            resolve(undefined);
-          },
-          (error) => {
-            reject(error);
-          }
-        );
-      })
-    ]);
+    const newStats: StatEntry[] = await this.sdk.convexClient.query(
+      api.sdk.gameAchievements.getMyStatsForGame,
+      {}
+    );
+    this.hasLoadedStats = true;
+    for (const stat of newStats) {
+      if (!this.stats.has(stat.identifier)) {
+        this.stats.set(stat.identifier, stat.value);
+      }
+    }
     return true;
   }
 
@@ -142,6 +130,7 @@ export class StatsManager {
     if (!this.achievementIdentifiers.has(identifier)) {
       this.achievementIdentifiers.add(identifier);
       this.updatedAchievementIdentifiers.add(identifier);
+      this.storeStats();
     }
     return true;
   }
