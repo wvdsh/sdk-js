@@ -73,6 +73,8 @@ export class StatsManager {
     { leading: true, trailing: true }
   );
 
+  // TODO: This is annoying, storeStats should return a Promise and actually fire off the request if there are any new stats to store
+  // Breaking change so saving for another PR
   storeStats(): boolean {
     if (!this.isReady()) return false;
     this.debouncedStoreStats();

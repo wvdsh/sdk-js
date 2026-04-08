@@ -65,7 +65,6 @@ export interface WavedashConfig {
   debug?: boolean;
   remoteStorageOrigin?: string;
   p2p?: Partial<P2PConfig>;
-  deferEvents?: boolean; // if true wait until game calls readyForEvents to start sending event messages to game
 }
 
 export interface RemoteFileMetadata {

@@ -62,7 +62,8 @@ import { parentOrigin } from "./utils/parentOrigin";
 type AnyFn = (...args: any[]) => any;
 
 class WavedashSDK extends EventTarget {
-  private initialized: boolean = false;
+  /** @internal */
+  initialized: boolean = false;
   private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
@@ -167,11 +168,13 @@ class WavedashSDK extends EventTarget {
     this.p2pManager.init(this.config.p2p);
 
     this.logger.debug("Initialized with config:", this.config);
-    // Initialize lobby manager
     this.lobbyManager.init();
 
+    // Flush any events that were queued before init
+    this.gameEventManager.flushEventQueue();
+
     // Join a lobby on startup if provided (from invite link or external source)
-    if (this.lobbyIdToJoinOnStartup && !this.config.deferEvents) {
+    if (this.lobbyIdToJoinOnStartup) {
       this.lobbyManager
         .joinLobby(this.lobbyIdToJoinOnStartup)
         .catch((error) => {
@@ -180,26 +183,6 @@ class WavedashSDK extends EventTarget {
     }
 
     return true;
-  }
-
-  readyForEvents(): void {
-    this.ensureReady();
-    if (!this.config?.deferEvents) {
-      return;
-    }
-    this.config!.deferEvents = false;
-
-    // Flush any queued events now that the game is ready
-    this.gameEventManager.flushEventQueue();
-
-    // Game is now ready for event messages, join a lobby if provided (from invite link or external source)
-    if (this.lobbyIdToJoinOnStartup) {
-      this.lobbyManager
-        .joinLobby(this.lobbyIdToJoinOnStartup)
-        .catch((error) => {
-          this.logger.error("Could not join lobby on startup:", error);
-        });
-    }
   }
 
   // ==================
@@ -928,15 +911,6 @@ class WavedashSDK extends EventTarget {
 
     window.addEventListener("beforeunload", endGameplaySession);
     window.addEventListener("pagehide", endGameplaySession);
-  }
-
-  /**
-   * @deprecated
-   * Game generally shouldn't need to check this value
-   * Can always just check WavedashJS.initialized if needed
-   */
-  private isReady(): boolean {
-    return this.initialized;
   }
 }
 

@@ -21,8 +21,7 @@ export class GameEventManager {
     event: WavedashEvent,
     payload: string | number | boolean | object
   ): void {
-    // Queue events if game is not ready for them yet
-    if (this.sdk.config?.deferEvents) {
+    if (!this.sdk.initialized) {
       this.eventQueue.push({ event, payload });
       this.sdk.logger.debug(`Queued event: ${event}`);
       return;
