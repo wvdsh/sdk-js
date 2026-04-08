@@ -126,7 +126,7 @@ class WavedashSDK extends EventTarget {
 
   private async getAuthToken(): Promise<string> {
     const response = await fetch(
-      `${parentOrigin}/auth/gameplay_token?gcid=${this.gameCloudId}`,
+      `${parentOrigin}/auth/gameplay_token/${this.gameCloudId}`,
       {
         credentials: "include"
       }
