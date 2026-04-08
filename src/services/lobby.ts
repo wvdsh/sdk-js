@@ -40,6 +40,7 @@ export class LobbyManager {
   private lobbyUsers: LobbyUser[] = [];
   private lobbyHostId: Id<"users"> | null = null;
   private lobbyMetadata: Record<string, unknown> = {};
+  private pendingMetadataUpdates: Record<string, string | number | boolean | null> = {};
   private recentMessageIds: Id<"lobbyMessages">[] = [];
   private lobbyDataUpdateTimeout: number | null = null;
   private maybeBeingDeletedLobbyIds: Set<Id<"lobbies">> = new Set();
@@ -133,30 +134,31 @@ export class LobbyManager {
     return this.lobbyHostId;
   }
 
-  getLobbyData(lobbyId: Id<"lobbies">, key: string): unknown {
-    // Current lobby has a subscription, so we can get the data directly
+  getLobbyData(lobbyId: Id<"lobbies">, key: string): string | number | boolean | null {
     if (this.lobbyId === lobbyId) {
-      return this.lobbyMetadata[key] ?? "";
+      return (this.lobbyMetadata[key] as string | number | boolean) ?? null;
     }
-    // Otherwise return the latest cached data from listed lobbies
     if (!this.cachedLobbies[lobbyId]) {
-      return "";
+      return null;
     }
-    return this.cachedLobbies[lobbyId].metadata[key] ?? "";
+    return (this.cachedLobbies[lobbyId].metadata[key] as string | number | boolean) ?? null;
   }
 
   // Set synchronously here and batch updates to the backend in a single request
   // That way game can easily set all the data it needs in sequential calls without multiple network requests
-  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: unknown): boolean {
+  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: string | number | boolean | null): boolean {
     if (this.lobbyId === lobbyId && this.lobbyHostId === this.sdk.getUserId()) {
       if (this.lobbyMetadata[key] !== value) {
-        this.lobbyMetadata[key] = value;
+        if (value === null) {
+          delete this.lobbyMetadata[key];
+        } else {
+          this.lobbyMetadata[key] = value;
+        }
+        this.pendingMetadataUpdates[key] = value;
         if (!this.lobbyDataUpdateTimeout) {
-          this.sdk.logger.debug("Setting timeout for lobby data update");
           this.lobbyDataUpdateTimeout = setTimeout(() => {
             this.processPendingLobbyDataUpdates();
             this.lobbyDataUpdateTimeout = null;
-            this.sdk.logger.debug("Removing timeout for lobby data update");
           }, 10);
         }
       }
@@ -475,11 +477,12 @@ export class LobbyManager {
   }
 
   private processPendingLobbyDataUpdates(): void {
-    this.sdk.logger.debug("Bulk updating lobby metadata:", this.lobbyMetadata);
+    const updates = this.pendingMetadataUpdates;
+    this.pendingMetadataUpdates = {};
     this.sdk.convexClient
       .mutation(api.sdk.gameLobby.setLobbyMetadata, {
         lobbyId: this.lobbyId!,
-        updates: this.lobbyMetadata
+        updates
       })
       .catch((error) => {
         this.sdk.logger.error("Error updating lobby metadata:", error);

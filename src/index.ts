@@ -62,8 +62,10 @@ import { parentOrigin } from "./utils/parentOrigin";
 type AnyFn = (...args: any[]) => any;
 
 class WavedashSDK extends EventTarget {
-  /** @internal */
-  initialized: boolean = false;
+  private _initialized: boolean = false;
+  get initialized(): boolean {
+    return this._initialized;
+  }
   private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
@@ -129,8 +131,10 @@ class WavedashSDK extends EventTarget {
 
     this.setupSessionEndListeners();
 
-    // TODO: Add event queueing system to handle events that happen before the game is ready for events
-    // For now this is the only event we need to wait on, so just triggering it as soon as the game is ready
+    // TODO: Consider just providing this, along with any other url param, as startupArgs
+    // and letting the game fire off its own joinLobby mutation?
+    // For now we assume a user can always join a lobby externally from the game (link / notification)
+    // So always join a lobby on startup if one is provided, trusting game to handle the LobbyJoined event
     this.lobbyIdToJoinOnStartup = sdkConfig.lobbyIdToJoin;
   }
 
@@ -139,7 +143,7 @@ class WavedashSDK extends EventTarget {
   // =============
 
   init(config: WavedashConfig): boolean {
-    if (this.initialized) {
+    if (this._initialized) {
       this.logger.warn("init called twice! Already initialized, skipping init");
       return false;
     }
@@ -157,7 +161,7 @@ class WavedashSDK extends EventTarget {
     }
 
     this.config = config;
-    this.initialized = true;
+    this._initialized = true;
 
     // Update logger debug mode based on config
     this.logger.setLogLevel(
@@ -702,11 +706,11 @@ class WavedashSDK extends EventTarget {
     return this.apiCallSync(this.lobbyManager, "getHostId", lobbyId);
   }
 
-  getLobbyData(lobbyId: Id<"lobbies">, key: string): unknown {
+  getLobbyData(lobbyId: Id<"lobbies">, key: string): string | number | boolean | null {
     return this.apiCallSync(this.lobbyManager, "getLobbyData", lobbyId, key);
   }
 
-  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: unknown): boolean {
+  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: string | number | boolean | null): boolean {
     return this.apiCallSync(
       this.lobbyManager,
       "setLobbyData",
@@ -799,7 +803,7 @@ class WavedashSDK extends EventTarget {
 
   // Helper to ensure SDK is ready, throws if not
   private ensureReady(): void {
-    if (!this.initialized) {
+    if (!this._initialized) {
       this.logger.warn("SDK not initialized. Call init() first.");
       throw new Error("SDK not initialized");
     }
@@ -839,13 +843,10 @@ class WavedashSDK extends EventTarget {
    * Can be called multiple times in any order (e.g., JSLib sets FS first, runner sets the unityInstance later).
    * This handles the race condition where a Unity game can actually start running BEFORE window.createUnityInstance resolves
    * @param engineInstance - The engine instance or partial attributes to merge.
+   * @internal
    */
-  private setEngineInstance(engineInstance: Partial<EngineInstance>): void {
-    if (this.engineInstance) {
-      Object.assign(this.engineInstance, engineInstance);
-    } else {
-      this.engineInstance = engineInstance as EngineInstance;
-    }
+  private setEngineInstance(engineInstance: EngineInstance): void {
+    this.engineInstance = engineInstance;
   }
 
   private async getAuthToken(): Promise<string> {

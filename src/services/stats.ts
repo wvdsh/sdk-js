@@ -4,7 +4,7 @@ import debounce from "lodash.debounce";
 
 type StatEntry = { identifier: string; value: number };
 
-const STORE_STATS_DEBOUNCE_MS = 5000;
+const STORE_STATS_DEBOUNCE_MS = 1000;
 
 export class StatsManager {
   private sdk: WavedashSDK;
