@@ -71,7 +71,7 @@ class WavedashSDK extends EventTarget {
   get eventsReady(): boolean {
     return this._eventsReady;
   }
-  launchParams: GameLaunchParams;
+  private launchParams: GameLaunchParams;
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
   private gameFinishedLoading: boolean = false;
@@ -243,6 +243,15 @@ class WavedashSDK extends EventTarget {
 
   getUserId(): Id<"users"> {
     return this.wavedashUser.id;
+  }
+
+  /**
+   * Get the key: value mapping of all URL query params present when the game was launched
+   * lobby - The lobby ID to join if the user launched with the intention to join a lobby
+   * @returns Dictionary of the URL query params that were present when the game was launched
+   */
+  getLaunchParams(): GameLaunchParams {
+    return this.launchParams;
   }
 
   // ============

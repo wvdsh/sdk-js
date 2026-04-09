@@ -68,11 +68,8 @@ export interface WavedashConfig {
   deferEvents?: boolean;
 }
 
-// URL query params prefixed with wvdsh_ that were present when the game was launched
-export interface GameLaunchParams {
-  wvdsh_lobby?: Id<"lobbies">;
-  [key: string]: string | undefined;
-}
+// URL query params that were present when the game was launched
+export type { GameLaunchParams } from "@wvdsh/types";
 
 export interface RemoteFileMetadata {
   exists: boolean; // Whether the entry exists
