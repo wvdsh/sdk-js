@@ -151,8 +151,7 @@ class WavedashSDK extends EventTarget {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.gameplayJwt}`
       },
-      body: JSON.stringify({ _type: "warmup" }),
-      credentials: "include"
+      body: JSON.stringify({ _type: "warmup" })
     }).catch(() => {});
 
     const endGameplaySession = (
@@ -176,7 +175,6 @@ class WavedashSDK extends EventTarget {
         method: "POST",
         body: JSON.stringify(sessionEndData),
         keepalive: true,
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.gameplayJwt}`
