@@ -851,7 +851,7 @@ class WavedashSDK extends EventTarget {
 
   private async getAuthToken(): Promise<string> {
     const response = await fetch(
-      `${parentOrigin}/auth/gameplay_token?gcid=${this.gameCloudId}`,
+      `${parentOrigin}/auth/gameplay_token/${this.gameCloudId}`,
       {
         credentials: "include"
       }
@@ -876,8 +876,7 @@ class WavedashSDK extends EventTarget {
         "Content-Type": "application/json",
         Authorization: `Bearer ${this.gameplayJwt}`
       },
-      body: JSON.stringify({ _type: "warmup" }),
-      credentials: "include"
+      body: JSON.stringify({ _type: "warmup" })
     }).catch(() => {});
 
     const endGameplaySession = (
@@ -902,7 +901,6 @@ class WavedashSDK extends EventTarget {
         method: "POST",
         body: JSON.stringify(sessionEndData),
         keepalive: true,
-        credentials: "include",
         headers: {
           "Content-Type": "application/json",
           Authorization: `Bearer ${this.gameplayJwt}`
