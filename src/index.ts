@@ -523,8 +523,8 @@ class WavedashSDK extends EventTarget {
   getStat(identifier: string): number {
     return this.apiCallSync(this.statsManager, "getStat", identifier);
   }
-  setAchievement(identifier: string): boolean {
-    return this.apiCallSync(this.statsManager, "setAchievement", identifier);
+  setAchievement(identifier: string, storeNow: boolean = false): boolean {
+    return this.apiCallSync(this.statsManager, "setAchievement", identifier, storeNow);
   }
   setStat(identifier: string, value: number, storeNow: boolean = false): boolean {
     return this.apiCallSync(this.statsManager, "setStat", identifier, value, storeNow);
@@ -710,7 +710,7 @@ class WavedashSDK extends EventTarget {
     return this.apiCallSync(this.lobbyManager, "getLobbyData", lobbyId, key);
   }
 
-  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: string | number | boolean | null): boolean {
+  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: string | number | null): boolean {
     return this.apiCallSync(
       this.lobbyManager,
       "setLobbyData",
@@ -718,6 +718,10 @@ class WavedashSDK extends EventTarget {
       key,
       value
     );
+  }
+
+  deleteLobbyData(lobbyId: Id<"lobbies">, key: string): boolean {
+    return this.apiCallSync(this.lobbyManager, "deleteLobbyData", lobbyId, key);
   }
 
   async leaveLobby(

@@ -162,6 +162,14 @@ export type LobbyMessagePayload = LobbyMessage;
 /** Payload for LobbyInvite event - an invite to join a lobby */
 export type LobbyInvitePayload = LobbyInvite;
 
+// --- Stats & Achievements Events ---
+
+/** Payload for StatsStored event - emitted when stats/achievements are persisted */
+export interface StatsStoredPayload {
+  success: boolean;
+  message?: string;
+}
+
 // --- P2P Events ---
 
 /** Payload for P2PConnectionEstablished event */

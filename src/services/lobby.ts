@@ -4,6 +4,7 @@
  * Implements each of the lobby methods of the Wavedash SDK
  */
 
+import debounce from "lodash.debounce";
 import type {
   Id,
   Lobby,
@@ -40,9 +41,8 @@ export class LobbyManager {
   private lobbyUsers: LobbyUser[] = [];
   private lobbyHostId: Id<"users"> | null = null;
   private lobbyMetadata: Record<string, unknown> = {};
-  private pendingMetadataUpdates: Record<string, string | number | boolean | null> = {};
+  private pendingMetadataUpdates: Record<string, string | number | null> = {};
   private recentMessageIds: Id<"lobbyMessages">[] = [];
-  private lobbyDataUpdateTimeout: number | null = null;
   private maybeBeingDeletedLobbyIds: Set<Id<"lobbies">> = new Set();
   private resetMaybeBeingDeletedLobbyIdTimeouts: Map<Id<"lobbies">, number> =
     new Map();
@@ -144,28 +144,29 @@ export class LobbyManager {
     return (this.cachedLobbies[lobbyId].metadata[key] as string | number | boolean) ?? null;
   }
 
-  // Set synchronously here and batch updates to the backend in a single request
-  // That way game can easily set all the data it needs in sequential calls without multiple network requests
-  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: string | number | boolean | null): boolean {
-    if (this.lobbyId === lobbyId && this.lobbyHostId === this.sdk.getUserId()) {
-      if (this.lobbyMetadata[key] !== value) {
-        if (value === null) {
-          delete this.lobbyMetadata[key];
-        } else {
-          this.lobbyMetadata[key] = value;
-        }
-        // Sending null values to the backend will delete the key from the lobby metadata
-        this.pendingMetadataUpdates[key] = value;
-        if (!this.lobbyDataUpdateTimeout) {
-          this.lobbyDataUpdateTimeout = setTimeout(() => {
-            this.processPendingLobbyDataUpdates();
-            this.lobbyDataUpdateTimeout = null;
-          }, 10);
-        }
-      }
-      return true;
+  deleteLobbyData(lobbyId: Id<"lobbies">, key: string): boolean {
+    return this.setLobbyData(lobbyId, key, null);
+  }
+
+  private debouncedMetadataUpdate = debounce(
+    () => this.processPendingLobbyDataUpdates(),
+    50
+  );
+
+  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: string | number | null): boolean {
+    if (this.lobbyId !== lobbyId || this.lobbyHostId !== this.sdk.getUserId()) {
+      return false;
     }
-    return false;
+    if (this.lobbyMetadata[key] === value) return true;
+
+    if (value === null) {
+      delete this.lobbyMetadata[key];
+    } else {
+      this.lobbyMetadata[key] = value;
+    }
+    this.pendingMetadataUpdates[key] = value;
+    this.debouncedMetadataUpdate();
+    return true;
   }
 
   getLobbyMaxPlayers(lobbyId: Id<"lobbies">): number {
@@ -390,11 +391,8 @@ export class LobbyManager {
     // Set lobbyId to null immediately to guard against multiple calls (e.g., from concurrent subscription errors)
     this.lobbyId = null;
 
-    // Clear pending lobby data update timeout
-    if (this.lobbyDataUpdateTimeout) {
-      clearTimeout(this.lobbyDataUpdateTimeout);
-      this.lobbyDataUpdateTimeout = null;
-    }
+    this.debouncedMetadataUpdate.cancel();
+    this.pendingMetadataUpdates = {};
 
     if (this.unsubscribeLobbyMessages) {
       this.unsubscribeLobbyMessages();

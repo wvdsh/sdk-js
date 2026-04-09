@@ -21,6 +21,9 @@ export const WavedashEvents = {
   P2P_CONNECTION_FAILED: "P2PConnectionFailed", // connection to peer failed
   P2P_PEER_DISCONNECTED: "P2PPeerDisconnected", // peer disconnected
 
+  // Stats & Achievements events
+  STATS_STORED: "StatsStored", // stats/achievements persisted to server
+
   // Backend connection events
   BACKEND_CONNECTED: "BackendConnected", // connected to Convex backend
   BACKEND_DISCONNECTED: "BackendDisconnected", // disconnected from Convex backend
