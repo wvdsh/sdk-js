@@ -142,13 +142,9 @@ class WavedashSDK extends EventTarget {
   // Setup methods
   // =============
 
-  init(config: WavedashConfig): boolean {
+  init(config?: WavedashConfig): boolean {
     if (this._initialized) {
       this.logger.warn("init called twice! Already initialized, skipping init");
-      return false;
-    }
-    if (!config) {
-      this.logger.error("Initialized with empty config");
       return false;
     }
     if (typeof config === "string") {
@@ -160,7 +156,7 @@ class WavedashSDK extends EventTarget {
       }
     }
 
-    this.config = config;
+    this.config = (config as WavedashConfig) ?? {};
     this._initialized = true;
 
     // Update logger debug mode based on config
@@ -496,7 +492,6 @@ class WavedashSDK extends EventTarget {
    * @returns true if the file was written successfully
    */
   async writeLocalFile(filePath: string, data: Uint8Array): Promise<boolean> {
-    this.ensureReady();
     const result = await this.fileSystemManager.writeLocalFile(filePath, data);
     return result;
   }
@@ -509,7 +504,6 @@ class WavedashSDK extends EventTarget {
    * @returns The data read from the local file (byte array)
    */
   async readLocalFile(filePath: string): Promise<Uint8Array | null> {
-    this.ensureReady();
     const result = await this.fileSystemManager.readLocalFile(filePath);
     return result;
   }
@@ -545,6 +539,7 @@ class WavedashSDK extends EventTarget {
    * This is derived from the configured messageSize minus protocol overhead.
    */
   getP2PMaxPayloadSize(): number {
+    this.ensureInit();
     return this.apiCallSync(this.p2pManager, "getMaxPayloadSize");
   }
 
@@ -552,6 +547,7 @@ class WavedashSDK extends EventTarget {
    * Get the configured max incoming messages per channel queue.
    */
   getP2PMaxIncomingMessages(): number {
+    this.ensureInit();
     return this.apiCallSync(this.p2pManager, "getMaxIncomingMessages");
   }
 
@@ -560,6 +556,7 @@ class WavedashSDK extends EventTarget {
    * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
    */
   getP2POutgoingMessageBuffer(): Uint8Array {
+    this.ensureInit();
     return this.apiCallSync(this.p2pManager, "getOutgoingMessageBuffer");
   }
 
@@ -669,6 +666,7 @@ class WavedashSDK extends EventTarget {
     visibility: LobbyVisibility,
     maxPlayers?: number
   ): Promise<WavedashResponse<Id<"lobbies">>> {
+    this.ensureInit();
     return this.apiCall(
       this.lobbyManager,
       "createLobby",
@@ -685,6 +683,7 @@ class WavedashSDK extends EventTarget {
    * @emits LobbyJoined event on success with full lobby context
    */
   async joinLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<boolean>> {
+    this.ensureInit();
     return this.apiCall(this.lobbyManager, "joinLobby", lobbyId);
   }
 
@@ -727,6 +726,7 @@ class WavedashSDK extends EventTarget {
   async leaveLobby(
     lobbyId: Id<"lobbies">
   ): Promise<WavedashResponse<Id<"lobbies">>> {
+    this.ensureInit();
     return this.apiCall(this.lobbyManager, "leaveLobby", lobbyId);
   }
 
@@ -805,10 +805,11 @@ class WavedashSDK extends EventTarget {
     return data;
   }
 
-  // Helper to ensure SDK is ready, throws if not
-  private ensureReady(): void {
+  // Throws if init() hasn't been called. Only used by methods that
+  // require config or produce events (lobby join/create, P2P).
+  private ensureInit(): void {
     if (!this._initialized) {
-      this.logger.warn("SDK not initialized. Call init() first.");
+      this.logger.error("SDK not initialized. Call WavedashJS.init first.");
       throw new Error("SDK not initialized");
     }
   }
@@ -818,7 +819,6 @@ class WavedashSDK extends EventTarget {
     method: K,
     ...args: Parameters<Extract<T[K], AnyFn>>
   ): Promise<WavedashResponse<Awaited<ReturnType<Extract<T[K], AnyFn>>>>> {
-    this.ensureReady();
     this.logger.debug(method, ...args);
     try {
       const data = await (manager[method] as AnyFn)(...args);
@@ -835,7 +835,6 @@ class WavedashSDK extends EventTarget {
     method: K,
     ...args: Parameters<Extract<T[K], AnyFn>>
   ): ReturnType<Extract<T[K], AnyFn>> {
-    this.ensureReady();
     this.logger.debug(method, ...args);
     return this.formatResponse((target[method] as AnyFn)(...args));
   }
