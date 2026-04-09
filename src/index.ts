@@ -183,11 +183,12 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Signal that the game is ready to receive events (LobbyJoined, LobbyMessage, etc).
-   * Called automatically by init() unless deferEvents is set in the config.
+   * Called automatically by init() unless deferEvents: true is passed in the config.
    * If deferEvents is true, call this manually after your pre-game setup is complete.
    */
   readyForEvents(): void {
     if (this._eventsReady) return;
+    this.ensureInit();
     this._eventsReady = true;
     this.gameEventManager.flushEventQueue();
 
@@ -682,7 +683,6 @@ class WavedashSDK extends EventTarget {
     visibility: LobbyVisibility,
     maxPlayers?: number
   ): Promise<WavedashResponse<Id<"lobbies">>> {
-    this.ensureInit();
     return this.apiCall(
       this.lobbyManager,
       "createLobby",
@@ -699,7 +699,6 @@ class WavedashSDK extends EventTarget {
    * @emits LobbyJoined event on success with full lobby context
    */
   async joinLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<boolean>> {
-    this.ensureInit();
     return this.apiCall(this.lobbyManager, "joinLobby", lobbyId);
   }
 
@@ -742,7 +741,6 @@ class WavedashSDK extends EventTarget {
   async leaveLobby(
     lobbyId: Id<"lobbies">
   ): Promise<WavedashResponse<Id<"lobbies">>> {
-    this.ensureInit();
     return this.apiCall(this.lobbyManager, "leaveLobby", lobbyId);
   }
 
