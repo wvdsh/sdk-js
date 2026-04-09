@@ -207,6 +207,7 @@ export class StatsManager {
   // Session End
   // ================
 
+  /** @destructive - Returns the pending stats and achievements and resets the dirty collections */
   getPendingData(): { stats: StatEntry[]; achievements: string[] } | null {
     if (this.dirtyStats.size === 0 && this.dirtyAchievements.size === 0) {
       return null;
