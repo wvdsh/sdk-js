@@ -65,6 +65,7 @@ export interface WavedashConfig {
   debug?: boolean;
   remoteStorageOrigin?: string;
   p2p?: Partial<P2PConfig>;
+  deferEvents?: boolean;
 }
 
 export interface RemoteFileMetadata {

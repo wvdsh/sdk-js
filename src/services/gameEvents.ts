@@ -21,7 +21,7 @@ export class GameEventManager {
     event: WavedashEvent,
     payload: string | number | boolean | object
   ): void {
-    if (!this.sdk.initialized) {
+    if (!this.sdk.eventsReady) {
       this.eventQueue.push({ event, payload });
       this.sdk.logger.debug(`Queued event: ${event}`);
       return;

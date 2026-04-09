@@ -66,6 +66,10 @@ class WavedashSDK extends EventTarget {
   get initialized(): boolean {
     return this._initialized;
   }
+  private _eventsReady: boolean = false;
+  get eventsReady(): boolean {
+    return this._eventsReady;
+  }
   private lobbyIdToJoinOnStartup?: Id<"lobbies">;
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
@@ -170,19 +174,31 @@ class WavedashSDK extends EventTarget {
     this.logger.debug("Initialized with config:", this.config);
     this.lobbyManager.init();
 
-    // Flush any events that were queued before init
+    if (!this.config.deferEvents) {
+      this.readyForEvents();
+    }
+
+    return true;
+  }
+
+  /**
+   * Signal that the game is ready to receive events (LobbyJoined, LobbyMessage, etc).
+   * Called automatically by init() unless deferEvents is set in the config.
+   * If deferEvents is true, call this manually after your pre-game setup is complete.
+   */
+  readyForEvents(): void {
+    if (this._eventsReady) return;
+    this._eventsReady = true;
     this.gameEventManager.flushEventQueue();
 
-    // Join a lobby on startup if provided (from invite link or external source)
     if (this.lobbyIdToJoinOnStartup) {
       this.lobbyManager
         .joinLobby(this.lobbyIdToJoinOnStartup)
         .catch((error) => {
           this.logger.error("Could not join lobby on startup:", error);
         });
+      this.lobbyIdToJoinOnStartup = undefined;
     }
-
-    return true;
   }
 
   // ==================
