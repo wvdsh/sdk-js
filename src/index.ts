@@ -838,15 +838,17 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Set or update the engine instance (Unity or Godot).
-   * Used internally by the Godot and Unity SDKs.
    * This method is additive - it merges properties into any existing instance.
    * Can be called multiple times in any order (e.g., JSLib sets FS first, runner sets the unityInstance later).
-   * This handles the race condition where a Unity game can actually start running BEFORE window.createUnityInstance resolves
    * @param engineInstance - The engine instance or partial attributes to merge.
    * @internal
    */
-  private setEngineInstance(engineInstance: EngineInstance): void {
-    this.engineInstance = engineInstance;
+  private setEngineInstance(engineInstance: Partial<EngineInstance>): void {
+    if (this.engineInstance) {
+      Object.assign(this.engineInstance, engineInstance);
+    } else {
+      this.engineInstance = engineInstance as EngineInstance;
+    }
   }
 
   private async getAuthToken(): Promise<string> {
@@ -885,10 +887,11 @@ class WavedashSDK extends EventTarget {
       if (this.sessionEndSent) return;
       this.sessionEndSent = true;
 
+      const pendingData = this.statsManager.getPendingData();
       this.lobbyManager.destroy();
       this.heartbeatManager.destroy();
       this.statsManager.destroy();
-      const pendingData = this.statsManager.getPendingData();
+      
       const sessionEndData: Record<string, unknown> = {};
       if (pendingData?.stats?.length) {
         sessionEndData.stats = pendingData.stats;

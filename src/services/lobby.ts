@@ -154,6 +154,7 @@ export class LobbyManager {
         } else {
           this.lobbyMetadata[key] = value;
         }
+        // Sending null values to the backend will delete the key from the lobby metadata
         this.pendingMetadataUpdates[key] = value;
         if (!this.lobbyDataUpdateTimeout) {
           this.lobbyDataUpdateTimeout = setTimeout(() => {
