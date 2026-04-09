@@ -6,7 +6,6 @@
 
 import type {
   Id,
-  WavedashResponse,
   P2PPeer,
   P2PConnection,
   P2PMessage,
@@ -58,9 +57,7 @@ export class P2PManager {
   private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
 
   // Initialization lock to prevent duplicate concurrent initialization for the same lobby
-  private initializationInProgress: Promise<
-    WavedashResponse<P2PConnection>
-  > | null = null;
+  private initializationInProgress: Promise<P2PConnection> | null = null;
   private initializationLobbyId: Id<"lobbies"> | null = null;
 
   // Signaling subscription readiness tracking
@@ -122,11 +119,12 @@ export class P2PManager {
 
   private ensureInitialized(): void {
     if (!this.initialized) {
-      throw new Error("P2PManager.init() must be called before use");
+      this.init();
     }
   }
 
   init(config?: Partial<P2PConfig>): void {
+    if (this.initialized && !config) return;
     this.config = { ...DEFAULT_P2P_CONFIG, ...config };
 
     const minMessageSize =
@@ -178,54 +176,38 @@ export class P2PManager {
   async initializeP2PForCurrentLobby(
     lobbyId: Id<"lobbies">,
     members: SDKUser[]
-  ): Promise<WavedashResponse<P2PConnection>> {
+  ): Promise<P2PConnection> {
     this.ensureInitialized();
-    try {
-      // If we already have a connection for this lobby, update it
-      if (
-        this.currentConnection &&
-        this.currentConnection.lobbyId === lobbyId
-      ) {
+
+    // If we already have a connection for this lobby, update it
+    if (this.currentConnection && this.currentConnection.lobbyId === lobbyId) {
+      return this.updateP2PConnection(members);
+    }
+
+    // If initialization is already in progress for this lobby, wait for it
+    if (
+      this.initializationInProgress &&
+      this.initializationLobbyId === lobbyId
+    ) {
+      this.sdk.logger.debug(
+        "P2P initialization already in progress, waiting..."
+      );
+      await this.initializationInProgress;
+      // After waiting, update with potentially new members
+      if (this.currentConnection) {
         return this.updateP2PConnection(members);
       }
+    }
 
-      // If initialization is already in progress for this lobby, wait for it
-      if (
-        this.initializationInProgress &&
-        this.initializationLobbyId === lobbyId
-      ) {
-        this.sdk.logger.debug(
-          "P2P initialization already in progress, waiting..."
-        );
-        const result = await this.initializationInProgress;
-        // After waiting, update with potentially new members
-        if (result.success && this.currentConnection) {
-          return this.updateP2PConnection(members);
-        }
-        return result;
-      }
+    // Start new initialization with lock
+    this.initializationLobbyId = lobbyId;
+    this.initializationInProgress = this.doInitializeP2P(lobbyId, members);
 
-      // Start new initialization with lock
-      this.initializationLobbyId = lobbyId;
-      this.initializationInProgress = this.doInitializeP2P(lobbyId, members);
-
-      try {
-        return await this.initializationInProgress;
-      } finally {
-        this.initializationInProgress = null;
-        this.initializationLobbyId = null;
-      }
-    } catch (error) {
-      this.sdk.logger.error(
-        `Error initializing P2P for lobby ${lobbyId}:`,
-        error
-      );
-      return {
-        success: false,
-        data: null,
-        args: { lobbyId, members },
-        message: error instanceof Error ? error.message : String(error)
-      };
+    try {
+      return await this.initializationInProgress;
+    } finally {
+      this.initializationInProgress = null;
+      this.initializationLobbyId = null;
     }
   }
 
@@ -236,15 +218,13 @@ export class P2PManager {
   private async doInitializeP2P(
     lobbyId: Id<"lobbies">,
     members: SDKUser[]
-  ): Promise<WavedashResponse<P2PConnection>> {
-    // Create P2P connection state
+  ): Promise<P2PConnection> {
     const connection: P2PConnection = {
       lobbyId,
       peers: {},
       state: "connecting"
     };
 
-    // Populate peers object (excluding local peer)
     members.forEach((member) => {
       if (member.id !== this.sdk.getUserId()) {
         connection.peers[member.id] = {
@@ -255,15 +235,8 @@ export class P2PManager {
     });
 
     this.currentConnection = connection;
-
-    // Start WebRTC connection establishment
     await this.establishWebRTCConnections(connection);
-
-    return {
-      success: true,
-      data: connection,
-      args: { lobbyId, members }
-    };
+    return connection;
   }
 
   /**
@@ -305,118 +278,104 @@ export class P2PManager {
 
   private async updateP2PConnection(
     members: SDKUser[]
-  ): Promise<WavedashResponse<P2PConnection>> {
-    try {
-      if (!this.currentConnection) {
-        throw new Error("No existing P2P connection to update");
-      }
+  ): Promise<P2PConnection> {
+    if (!this.currentConnection) {
+      throw new Error("No existing P2P connection to update");
+    }
 
-      this.sdk.logger.debug("Updating P2P connection with new member list");
+    this.sdk.logger.debug("Updating P2P connection with new member list");
 
-      const currentPeerUserIds = new Set(
-        Object.keys(this.currentConnection.peers)
-      );
-      currentPeerUserIds.add(this.sdk.getUserId());
-      const newPeerUserIds = new Set(members.map((member) => member.id));
+    const currentPeerUserIds = new Set(
+      Object.keys(this.currentConnection.peers)
+    );
+    currentPeerUserIds.add(this.sdk.getUserId());
+    const newPeerUserIds = new Set(members.map((member) => member.id));
 
-      // Find new users who joined
-      const connectionsToCreate: Id<"users">[] = [];
-      for (const member of members) {
-        if (member.id === this.sdk.getUserId()) continue;
+    // Find new users who joined
+    const connectionsToCreate: Id<"users">[] = [];
+    for (const member of members) {
+      if (member.id === this.sdk.getUserId()) continue;
 
-        const existingPeer = this.currentConnection.peers[member.id];
-        if (existingPeer) {
-          // Update username if it was empty (from on-demand peer creation)
-          if (!existingPeer.username && member.username) {
-            existingPeer.username = member.username;
-          }
-        } else {
-          this.sdk.logger.debug(
-            `Adding new peer: ${member.username} (${member.id})`
-          );
-
-          // Add new peer to connection
-          this.currentConnection.peers[member.id] = {
-            userId: member.id,
-            username: member.username
-          };
-          connectionsToCreate.push(member.id);
+      const existingPeer = this.currentConnection.peers[member.id];
+      if (existingPeer) {
+        // Update username if it was empty (from on-demand peer creation)
+        if (!existingPeer.username && member.username) {
+          existingPeer.username = member.username;
         }
-      }
-
-      // Create connections to new peers only
-      if (connectionsToCreate.length > 0) {
-        const currentUserId = this.sdk.getUserId();
-        const connectionPromises = connectionsToCreate.map((userId) => {
-          const shouldCreateChannels = currentUserId < userId;
-          this.sdk.logger.debug(
-            `Creating connection to new peer ${userId}, shouldCreateChannels: ${shouldCreateChannels}`
-          );
-          return this.createPeerConnection(
-            userId,
-            this.currentConnection!,
-            shouldCreateChannels
-          );
-        });
-        await Promise.all(connectionPromises);
-
-        // Initiate offers to new peers where we have lower userId
-        const peersToInitiate = connectionsToCreate.filter(
-          (userId) => currentUserId < userId
+      } else {
+        this.sdk.logger.debug(
+          `Adding new peer: ${member.username} (${member.id})`
         );
 
-        if (peersToInitiate.length > 0) {
-          const offerPromises = peersToInitiate.map((userId) => {
-            this.sdk.logger.debug(
-              `Initiating offer to new peer ${userId} (lower userId rule)`
-            );
-            return this.createOfferToPeer(userId);
-          });
-
-          await Promise.all(offerPromises);
-          this.sdk.logger.debug(
-            `Initiated ${offerPromises.length} offers to new peers`
-          );
-        }
+        // Add new peer to connection
+        this.currentConnection.peers[member.id] = {
+          userId: member.id,
+          username: member.username
+        };
+        connectionsToCreate.push(member.id);
       }
-
-      // Clean up connections to users who left
-      for (const userId of Object.keys(
-        this.currentConnection.peers
-      ) as Id<"users">[]) {
-        if (!newPeerUserIds.has(userId)) {
-          const peer = this.currentConnection.peers[userId];
-          this.sdk.logger.debug(`Peer left: ${peer.username} (${userId})`);
-
-          // Clean up WebRTC resources
-          const pc = this.peerConnections.get(userId);
-          if (pc) {
-            pc.close();
-            this.peerConnections.delete(userId);
-          }
-          this.reliableChannels.delete(userId);
-          this.unreliableChannels.delete(userId);
-          this.pendingIceCandidates.delete(userId);
-
-          // Remove from peer list
-          delete this.currentConnection.peers[userId];
-        }
-      }
-
-      return {
-        success: true,
-        data: this.currentConnection,
-        args: { members }
-      };
-    } catch (error) {
-      this.sdk.logger.error("Error updating P2P connection:", error);
-      return {
-        success: false,
-        data: null,
-        args: { members },
-        message: error instanceof Error ? error.message : String(error)
-      };
     }
+
+    // Create connections to new peers only
+    if (connectionsToCreate.length > 0) {
+      const currentUserId = this.sdk.getUserId();
+      const connectionPromises = connectionsToCreate.map((userId) => {
+        const shouldCreateChannels = currentUserId < userId;
+        this.sdk.logger.debug(
+          `Creating connection to new peer ${userId}, shouldCreateChannels: ${shouldCreateChannels}`
+        );
+        return this.createPeerConnection(
+          userId,
+          this.currentConnection!,
+          shouldCreateChannels
+        );
+      });
+      await Promise.all(connectionPromises);
+
+      // Initiate offers to new peers where we have lower userId
+      const peersToInitiate = connectionsToCreate.filter(
+        (userId) => currentUserId < userId
+      );
+
+      if (peersToInitiate.length > 0) {
+        const offerPromises = peersToInitiate.map((userId) => {
+          this.sdk.logger.debug(
+            `Initiating offer to new peer ${userId} (lower userId rule)`
+          );
+          return this.createOfferToPeer(userId);
+        });
+
+        await Promise.all(offerPromises);
+        this.sdk.logger.debug(
+          `Initiated ${offerPromises.length} offers to new peers`
+        );
+      }
+    }
+
+    // Clean up connections to users who left
+    for (const userId of Object.keys(
+      this.currentConnection.peers
+    ) as Id<"users">[]) {
+      if (!newPeerUserIds.has(userId)) {
+        const peer = this.currentConnection.peers[userId];
+        this.sdk.logger.debug(`Peer left: ${peer.username} (${userId})`);
+
+        // Clean up WebRTC resources
+        const pc = this.peerConnections.get(userId);
+        if (pc) {
+          pc.close();
+          this.peerConnections.delete(userId);
+        }
+        this.reliableChannels.delete(userId);
+        this.unreliableChannels.delete(userId);
+        this.pendingIceCandidates.delete(userId);
+
+        // Remove from peer list
+        delete this.currentConnection.peers[userId];
+      }
+    }
+
+    return this.currentConnection;
   }
 
   private async establishWebRTCConnections(
@@ -818,11 +777,14 @@ export class P2PManager {
       this.sdk.logger.error(
         `No ICE servers available for peer ${remoteUserId}`
       );
-      this.sdk._notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
-        userId: remoteUserId,
-        username: connection.peers[remoteUserId]?.username || "",
-        error: "No ICE servers available"
-      } satisfies P2PConnectionFailedPayload);
+      this.sdk.gameEventManager.notifyGame(
+        WavedashEvents.P2P_CONNECTION_FAILED,
+        {
+          userId: remoteUserId,
+          username: connection.peers[remoteUserId]?.username || "",
+          error: "No ICE servers available"
+        } satisfies P2PConnectionFailedPayload
+      );
       return false;
     }
     const pc = new RTCPeerConnection({
@@ -1012,11 +974,14 @@ export class P2PManager {
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
-        this.sdk._notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
-          userId: peer.userId,
-          username: peer.username,
-          error: "ICE restart failed after maximum attempts"
-        } satisfies P2PConnectionFailedPayload);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.P2P_CONNECTION_FAILED,
+          {
+            userId: peer.userId,
+            username: peer.username,
+            error: "ICE restart failed after maximum attempts"
+          } satisfies P2PConnectionFailedPayload
+        );
       }
       return;
     }
@@ -1068,10 +1033,13 @@ export class P2PManager {
       if (this.isPeerReady(remoteUserId)) {
         const peer = this.currentConnection?.peers[remoteUserId];
         if (peer) {
-          this.sdk._notifyGame(WavedashEvents.P2P_CONNECTION_ESTABLISHED, {
-            userId: peer.userId,
-            username: peer.username
-          } satisfies P2PConnectionEstablishedPayload);
+          this.sdk.gameEventManager.notifyGame(
+            WavedashEvents.P2P_CONNECTION_ESTABLISHED,
+            {
+              userId: peer.userId,
+              username: peer.username
+            } satisfies P2PConnectionEstablishedPayload
+          );
         }
       }
     };
@@ -1088,11 +1056,14 @@ export class P2PManager {
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
-        this.sdk._notifyGame(WavedashEvents.P2P_CONNECTION_FAILED, {
-          userId: peer.userId,
-          username: peer.username,
-          error: error.toString()
-        } satisfies P2PConnectionFailedPayload);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.P2P_CONNECTION_FAILED,
+          {
+            userId: peer.userId,
+            username: peer.username,
+            error: error.toString()
+          } satisfies P2PConnectionFailedPayload
+        );
       }
     };
 
@@ -1102,10 +1073,13 @@ export class P2PManager {
       );
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
-        this.sdk._notifyGame(WavedashEvents.P2P_PEER_DISCONNECTED, {
-          userId: peer.userId,
-          username: peer.username
-        } satisfies P2PPeerDisconnectedPayload);
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.P2P_PEER_DISCONNECTED,
+          {
+            userId: peer.userId,
+            username: peer.username
+          } satisfies P2PPeerDisconnectedPayload
+        );
       }
     };
   }
@@ -1225,71 +1199,44 @@ export class P2PManager {
   // Cleanup
   // ===============
 
-  disconnectP2P(): WavedashResponse<boolean> {
-    try {
-      if (!this.currentConnection) {
-        return {
-          success: true,
-          data: true,
-          args: {}
-        };
+  disconnectP2P(): void {
+    if (!this.currentConnection) {
+      return;
+    }
+
+    this.stopConnectionStatePolling();
+
+    this.currentConnection.state = "disconnected";
+    this.sdk.logger.debug("P2P connection state: disconnected");
+
+    this.stopSignalingMessageSubscription();
+
+    (
+      Object.entries(this.currentConnection.peers) as [Id<"users">, P2PPeer][]
+    ).forEach(([userId, _]) => {
+      const pc = this.peerConnections.get(userId);
+      if (pc) {
+        pc.close();
+        this.peerConnections.delete(userId);
       }
 
-      // Stop connection state polling
-      this.stopConnectionStatePolling();
+      this.reliableChannels.delete(userId);
+      this.unreliableChannels.delete(userId);
+    });
 
-      // Update state to disconnected
-      this.currentConnection.state = "disconnected";
-      this.sdk.logger.debug("P2P connection state: disconnected");
+    this.currentConnection = null;
 
-      // Stop signaling message polling
-      this.stopSignalingMessageSubscription();
+    this.processedSignalingMessages.clear();
+    this.pendingProcessedMessageIds.clear();
+    this.pendingIceCandidates.clear();
+    this.iceRestartAttempts.clear();
+    this.iceRestartInProgress.clear();
 
-      // Close all peer connections
-      (
-        Object.entries(this.currentConnection.peers) as [Id<"users">, P2PPeer][]
-      ).forEach(([userId, _]) => {
-        const pc = this.peerConnections.get(userId);
-        if (pc) {
-          pc.close();
-          this.peerConnections.delete(userId);
-        }
+    this.initializationInProgress = null;
+    this.initializationLobbyId = null;
 
-        this.reliableChannels.delete(userId);
-        this.unreliableChannels.delete(userId);
-      });
-
-      this.currentConnection = null;
-
-      // Clear processed message caches and state
-      this.processedSignalingMessages.clear();
-      this.pendingProcessedMessageIds.clear();
-      this.pendingIceCandidates.clear();
-      this.iceRestartAttempts.clear();
-      this.iceRestartInProgress.clear();
-
-      // Clear initialization lock state
-      this.initializationInProgress = null;
-      this.initializationLobbyId = null;
-
-      // Clear signaling subscription readiness state
-      this.signalingSubscriptionReady = null;
-      this.signalingSubscriptionReadyResolver = null;
-
-      return {
-        success: true,
-        data: true,
-        args: {}
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Error disconnecting P2P:`, error);
-      return {
-        success: false,
-        data: false,
-        args: {},
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+    this.signalingSubscriptionReady = null;
+    this.signalingSubscriptionReadyResolver = null;
   }
 
   // ===============
@@ -1299,8 +1246,6 @@ export class P2PManager {
   getCurrentP2PConnection(): P2PConnection | null {
     return this.currentConnection;
   }
-
-
 
   // Check if channels are ready for a specific peer
   isPeerReady(userId: Id<"users">): boolean {

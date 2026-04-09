@@ -10,6 +10,6 @@ export default defineConfig({
   sourcemap: false,
   clean: true,
   external: [],
-  noExternal: ["convex", "lodash.unionby"],
+  noExternal: ["convex", "lodash.debounce"],
   globalName: "WavedashSDK"
 });

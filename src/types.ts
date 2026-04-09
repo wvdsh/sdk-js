@@ -56,7 +56,8 @@ export type P2PSignalingMessage = Omit<
 };
 
 // Type helper to get event values as a union type
-export type WavedashEvent = (typeof WavedashEvents)[keyof typeof WavedashEvents];
+export type WavedashEvent =
+  (typeof WavedashEvents)[keyof typeof WavedashEvents];
 export { WavedashEvents };
 
 // Configuration and user types
@@ -64,9 +65,11 @@ export interface WavedashConfig {
   debug?: boolean;
   remoteStorageOrigin?: string;
   p2p?: Partial<P2PConfig>;
-  disableAchievementsAndStats?: boolean; // true for demo games so we don't fill up achievements and stats with live demo data
-  deferEvents?: boolean; // if true wait until game calls readyForEvents to start sending event messages to game
+  deferEvents?: boolean;
 }
+
+// URL query params that were present when the game was launched
+export type { GameLaunchParams } from "@wvdsh/types";
 
 export interface RemoteFileMetadata {
   exists: boolean; // Whether the entry exists
@@ -109,12 +112,7 @@ export interface EngineInstance {
 export interface WavedashResponse<T> {
   success: boolean;
   data: T | null;
-  // Return the original args that were passed to the JS SDK so caller can reference them
-  // TODO: Caller shouldn't rely on this, remove this field
-  args: Record<string, unknown>;
-  // Error message if success is false
   message?: string;
-  // TODO: errorCode?
 }
 
 // =============================================================================
@@ -124,16 +122,12 @@ export interface WavedashResponse<T> {
 
 // --- Lobby Events ---
 
-/** Payload for LOBBY_JOINED event - emitted on lobby join attempt (success or failure), as well successful lobby create */
+/** Payload for LobbyJoined event - emitted on successful lobby join or create */
 export interface LobbyJoinedPayload {
-  success: boolean;
   lobbyId: Id<"lobbies">;
-  // Present on success
-  hostId?: Id<"users">;
-  users?: LobbyUser[];
-  metadata?: Record<string, unknown>;
-  // Present on failure
-  message?: string;
+  hostId: Id<"users">;
+  users: LobbyUser[];
+  metadata: Record<string, unknown>;
 }
 
 /** Reasons why a user was kicked from a lobby */
@@ -144,7 +138,7 @@ export const LobbyKickedReason = {
 export type LobbyKickedReason =
   (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason];
 
-/** Payload for LOBBY_KICKED event - emitted when removed from a lobby */
+/** Payload for LobbyKicked event - emitted when removed from a lobby */
 export interface LobbyKickedPayload {
   lobbyId: Id<"lobbies">;
   reason: LobbyKickedReason;
@@ -158,36 +152,44 @@ export const LobbyUserChangeType = {
 export type LobbyUserChangeType =
   (typeof LobbyUserChangeType)[keyof typeof LobbyUserChangeType];
 
-/** Payload for LOBBY_USERS_UPDATED event - emitted when a user joins or leaves */
+/** Payload for LobbyUsersUpdated event - emitted when a user joins or leaves */
 export interface LobbyUsersUpdatedPayload extends LobbyUser {
   changeType: LobbyUserChangeType;
 }
 
-/** Payload for LOBBY_DATA_UPDATED event - the full lobby metadata */
+/** Payload for LobbyDataUpdated event - the full lobby metadata */
 export type LobbyDataUpdatedPayload = Record<string, unknown>;
 
-/** Payload for LOBBY_MESSAGE event - a message received in the lobby */
+/** Payload for LobbyMessage event - a message received in the lobby */
 export type LobbyMessagePayload = LobbyMessage;
 
-/** Payload for LOBBY_INVITE event - an invite to join a lobby */
+/** Payload for LobbyInvite event - an invite to join a lobby */
 export type LobbyInvitePayload = LobbyInvite;
+
+// --- Stats & Achievements Events ---
+
+/** Payload for StatsStored event - emitted when stats/achievements are persisted */
+export interface StatsStoredPayload {
+  success: boolean;
+  message?: string;
+}
 
 // --- P2P Events ---
 
-/** Payload for P2P_CONNECTION_ESTABLISHED event */
+/** Payload for P2PConnectionEstablished event */
 export interface P2PConnectionEstablishedPayload {
   userId: Id<"users">;
   username: string;
 }
 
-/** Payload for P2P_CONNECTION_FAILED event */
+/** Payload for P2PConnectionFailed event */
 export interface P2PConnectionFailedPayload {
   userId: Id<"users">;
   username: string;
   error: string;
 }
 
-/** Payload for P2P_PEER_DISCONNECTED event */
+/** Payload for P2PPeerDisconnected event */
 export interface P2PPeerDisconnectedPayload {
   userId: Id<"users">;
   username: string;
@@ -195,7 +197,7 @@ export interface P2PPeerDisconnectedPayload {
 
 // --- Backend Connection Events ---
 
-/** Payload for BACKEND_CONNECTED, BACKEND_DISCONNECTED, BACKEND_RECONNECTING events */
+/** Payload for BackendConnected, BackendDisconnected, BackendReconnecting events */
 export interface BackendConnectionPayload {
   isConnected: boolean;
   hasEverConnected: boolean;

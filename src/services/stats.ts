@@ -1,183 +1,224 @@
 import { api } from "@wvdsh/types";
-import { WavedashResponse, WavedashSDK } from "..";
-import unionBy from "lodash.unionby";
+import type { WavedashSDK } from "..";
+import type { StatsStoredPayload } from "../types";
+import { WavedashEvents } from "../events";
 import debounce from "lodash.debounce";
 
-type Stats = Array<{ identifier: string; value: number }>;
-type Achievements = Set<string>;
+type StatEntry = { identifier: string; value: number };
 
-const STORE_STATS_DEBOUNCE_MS = 5000;
+const STORE_DEBOUNCE_MS = 1000;
 
 export class StatsManager {
   private sdk: WavedashSDK;
-  private stats: Stats = [];
-  private achievementIdentifiers: Achievements = new Set();
 
-  private updatedStatIdentifiers: Set<string> = new Set();
-  private updatedAchievementIdentifiers: Set<string> = new Set();
+  // Current user values
+  private stats: Map<string, number> = new Map();
+  private unlockedAchievements: Set<string> = new Set();
 
-  private unsubscribeAchievements?: () => void;
-  private hasLoadedStats: boolean = false;
-  private hasLoadedAchievements: boolean = false;
+  // Dirty tracking — identifiers modified since last persist
+  private dirtyStats: Set<string> = new Set();
+  private dirtyAchievements: Set<string> = new Set();
+
+  // Valid identifiers from game definitions — empty until subscription fires,
+  // which naturally gates set/get calls (has() returns false on empty set)
+  private knownStatIds: Set<string> = new Set();
+  private knownAchievementIds: Set<string> = new Set();
+
+  // Must load user values before allowing set/get to prevent overwriting server state
+  private loaded = { stats: false, achievements: false };
+
+  // Subscription cleanup
+  private subscriptions: (() => void)[] = [];
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
+    this.subscribe();
+    this.requestStats().catch((error) => {
+      this.sdk.logger.error("Initial stats fetch failed:", error);
+    });
   }
 
-  ensureLoaded(): void {
-    if (!this.hasLoadedStats || !this.hasLoadedAchievements) {
-      throw new Error(
-        "Stats and achievements not loaded, make sure to call requestStats() first"
-      );
-    }
+  destroy(): void {
+    this.debouncedPersist.cancel();
+    for (const unsub of this.subscriptions) unsub();
+    this.subscriptions = [];
   }
 
-  async requestStats(): Promise<WavedashResponse<boolean>> {
-    try {
-      await Promise.all([
-        // One-time fetch for stats (local is source of truth)
-        (async () => {
-          const newStats = await this.sdk.convexClient.query(
-            api.sdk.gameAchievements.getMyStatsForGame,
-            {}
+  private isReady(): boolean {
+    return this.loaded.stats && this.loaded.achievements;
+  }
+
+  // ================
+  // Subscriptions
+  // ================
+
+  private subscribe(): void {
+    this.subscriptions.push(
+      this.sdk.convexClient.onUpdate(
+        api.sdk.gameAchievements.listStatIdentifiers,
+        {},
+        (ids) => {
+          this.knownStatIds = new Set(ids);
+        },
+        (error) => {
+          this.sdk.logger.error("Stat identifiers subscription error:", error);
+        }
+      ),
+      this.sdk.convexClient.onUpdate(
+        api.sdk.gameAchievements.listAchievementIdentifiers,
+        {},
+        (ids) => {
+          this.knownAchievementIds = new Set(ids);
+        },
+        (error) => {
+          this.sdk.logger.error(
+            "Achievement identifiers subscription error:",
+            error
           );
-          this.hasLoadedStats = true;
-          this.stats = unionBy(this.stats, newStats, "identifier");
-        })(),
-        // Subscription for achievements (server can unlock them)
-        new Promise((resolve, reject) => {
-          this.unsubscribeAchievements = this.sdk.convexClient.onUpdate(
-            api.sdk.gameAchievements.getMyAchievementsForGame,
-            {},
-            (achievements) => {
-              this.hasLoadedAchievements = true;
-              this.achievementIdentifiers = new Set([
-                ...this.achievementIdentifiers,
-                ...achievements.map(({ achievement }) => achievement.identifier)
-              ]);
-              resolve(undefined);
-            },
-            (error) => {
-              reject(error);
-            }
-          );
-        })
-      ]);
-      return {
-        success: true,
-        data: true,
-        args: {}
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Error requesting stats: ${error}`);
-      return {
-        success: false,
-        data: false,
-        args: {},
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+        }
+      ),
+      this.sdk.convexClient.onUpdate(
+        api.sdk.gameAchievements.getMyAchievementsForGame,
+        {},
+        (achievements) => {
+          this.loaded.achievements = true;
+          for (const { achievement } of achievements) {
+            this.unlockedAchievements.add(achievement.identifier);
+          }
+        },
+        (error) => {
+          this.sdk.logger.error("Achievement subscription error:", error);
+        }
+      )
+    );
   }
 
-  private debouncedStoreStats = debounce(
-    this.storeStatsInternal.bind(this),
-    STORE_STATS_DEBOUNCE_MS,
+  async requestStats(): Promise<boolean> {
+    const newStats: StatEntry[] = await this.sdk.convexClient.query(
+      api.sdk.gameAchievements.getMyStatsForGame,
+      {}
+    );
+    this.loaded.stats = true;
+    for (const stat of newStats) {
+      if (!this.stats.has(stat.identifier)) {
+        this.stats.set(stat.identifier, stat.value);
+      }
+    }
+    return true;
+  }
+
+  // ================
+  // Store / Persist
+  // ================
+
+  // Debounced persist — used by storeNow in setters to batch rapid calls.
+  // Leading+trailing: first call fires immediately, subsequent calls within
+  // the window are batched into one trailing call.
+  private debouncedPersist = debounce(
+    () => this.persist(),
+    STORE_DEBOUNCE_MS,
     { leading: true, trailing: true }
   );
 
   storeStats(): boolean {
-    this.debouncedStoreStats();
-
+    if (!this.isReady()) return false;
+    this.debouncedPersist.cancel();
+    this.persist();
     return true;
   }
 
-  private async storeStatsInternal(): Promise<boolean> {
+  private async persist(): Promise<void> {
+    const pending = this.getPendingData();
+    if (!pending) return;
+
     try {
-      this.ensureLoaded();
-
-      // Atomically capture and clear identifiers to avoid race conditions
-      const statIdentifiersToStore = new Set(this.updatedStatIdentifiers);
-      const achievementIdentifiersToStore = new Set(
-        this.updatedAchievementIdentifiers
-      );
-
-      this.updatedStatIdentifiers.clear();
-      this.updatedAchievementIdentifiers.clear();
-
-      const updatedStats = this.stats.filter((stat) =>
-        statIdentifiersToStore.has(stat.identifier)
-      );
-      const updatedAchievements = Array.from(
-        this.achievementIdentifiers
-      ).filter((achievement) => achievementIdentifiersToStore.has(achievement));
-
       await Promise.all([
-        updatedStats.length > 0
+        pending.stats.length > 0
           ? this.sdk.convexClient.mutation(
               api.sdk.gameAchievements.setUserGameStats,
-              { stats: updatedStats }
+              { stats: pending.stats }
             )
           : Promise.resolve(),
-        updatedAchievements.length > 0
+        pending.achievements.length > 0
           ? this.sdk.convexClient.mutation(
               api.sdk.gameAchievements.setUserGameAchievements,
-              { achievements: updatedAchievements }
+              { achievements: pending.achievements }
             )
           : Promise.resolve()
       ]);
-      return true;
+
+      this.sdk.gameEventManager.notifyGame(WavedashEvents.STATS_STORED, {
+        success: true
+      } satisfies StatsStoredPayload);
     } catch (error) {
-      this.sdk.logger.error(`Error storing stats: ${error}`);
-      return false;
+      const message =
+        error instanceof Error
+          ? error.message
+          : `Error storing stats: ${error}`;
+      this.sdk.logger.error(message);
+      this.sdk.gameEventManager.notifyGame(WavedashEvents.STATS_STORED, {
+        success: false,
+        message
+      } satisfies StatsStoredPayload);
     }
   }
 
-  setAchievement(identifier: string): void {
-    this.ensureLoaded();
-    if (!this.achievementIdentifiers.has(identifier)) {
-      this.achievementIdentifiers.add(identifier);
-      this.updatedAchievementIdentifiers.add(identifier);
-    }
-  }
-
-  getAchievement(identifier: string): boolean {
-    this.ensureLoaded();
-    return this.achievementIdentifiers.has(identifier);
-  }
-
-  setStat(identifier: string, value: number): void {
-    this.ensureLoaded();
-    const stat = this.stats.find((s) => s.identifier === identifier);
-    if (stat) {
-      if (stat.value !== value) {
-        stat.value = value;
-        this.updatedStatIdentifiers.add(identifier);
-      }
-    } else {
-      this.stats.push({ identifier, value });
-      this.updatedStatIdentifiers.add(identifier);
-    }
-  }
+  // ================
+  // Stats
+  // ================
 
   getStat(identifier: string): number {
-    this.ensureLoaded();
-    const stat = this.stats.find((s) => s.identifier === identifier);
-    const value = stat ? stat.value : 0;
-    return value;
+    if (!this.isReady() || !this.knownStatIds.has(identifier)) return 0;
+    return this.stats.get(identifier) ?? 0;
   }
 
-  getPendingData(): { stats: Stats; achievements: string[] } | null {
-    const pendingStats = this.stats.filter((stat) =>
-      this.updatedStatIdentifiers.has(stat.identifier)
-    );
-    const pendingAchievements = Array.from(this.achievementIdentifiers).filter(
-      (id) => this.updatedAchievementIdentifiers.has(id)
-    );
+  setStat(identifier: string, value: number, storeNow: boolean = false): boolean {
+    if (!this.isReady() || !this.knownStatIds.has(identifier)) return false;
+    if (this.stats.get(identifier) !== value) {
+      this.stats.set(identifier, value);
+      this.dirtyStats.add(identifier);
+    }
+    if (storeNow) this.debouncedPersist();
+    return true;
+  }
 
-    if (pendingStats.length === 0 && pendingAchievements.length === 0) {
+  // ================
+  // Achievements
+  // ================
+
+  getAchievement(identifier: string): boolean {
+    if (!this.isReady() || !this.knownAchievementIds.has(identifier))
+      return false;
+    return this.unlockedAchievements.has(identifier);
+  }
+
+  setAchievement(identifier: string, storeNow: boolean = false): boolean {
+    if (!this.isReady() || !this.knownAchievementIds.has(identifier))
+      return false;
+    if (!this.unlockedAchievements.has(identifier)) {
+      this.unlockedAchievements.add(identifier);
+      this.dirtyAchievements.add(identifier);
+    }
+    if (storeNow) this.debouncedPersist();
+    return true;
+  }
+
+  // ================
+  // Session End
+  // ================
+
+  /** @destructive - Returns the pending stats and achievements and resets the dirty collections */
+  getPendingData(): { stats: StatEntry[]; achievements: string[] } | null {
+    if (this.dirtyStats.size === 0 && this.dirtyAchievements.size === 0) {
       return null;
     }
-
-    return { stats: pendingStats, achievements: pendingAchievements };
+    const stats: StatEntry[] = [...this.dirtyStats].map((id) => ({
+      identifier: id,
+      value: this.stats.get(id)!
+    }));
+    const achievements = [...this.dirtyAchievements];
+    this.dirtyStats.clear();
+    this.dirtyAchievements.clear();
+    return { stats, achievements };
   }
 }

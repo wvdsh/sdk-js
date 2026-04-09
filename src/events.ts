@@ -10,7 +10,7 @@
 export const WavedashEvents = {
   // Lobby events
   LOBBY_MESSAGE: "LobbyMessage",
-  LOBBY_JOINED: "LobbyJoined",
+  LOBBY_JOINED: "LobbyJoined", // player successfully joined a lobby
   LOBBY_KICKED: "LobbyKicked", // player was removed from lobby (kicked by host or disconnected)
   LOBBY_USERS_UPDATED: "LobbyUsersUpdated",
   LOBBY_DATA_UPDATED: "LobbyDataUpdated",
@@ -20,6 +20,9 @@ export const WavedashEvents = {
   P2P_CONNECTION_ESTABLISHED: "P2PConnectionEstablished", // connection to peer is ready
   P2P_CONNECTION_FAILED: "P2PConnectionFailed", // connection to peer failed
   P2P_PEER_DISCONNECTED: "P2PPeerDisconnected", // peer disconnected
+
+  // Stats & Achievements events
+  STATS_STORED: "StatsStored", // stats/achievements persisted to server
 
   // Backend connection events
   BACKEND_CONNECTED: "BackendConnected", // connected to Convex backend

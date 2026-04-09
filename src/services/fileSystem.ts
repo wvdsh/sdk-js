@@ -6,7 +6,7 @@
  * TODO: Extend this to game-level assets as well.
  */
 
-import type { WavedashResponse, RemoteFileMetadata } from "../types";
+import type { RemoteFileMetadata } from "../types";
 import type { WavedashSDK } from "../index";
 import * as indexedDBUtils from "../utils/indexedDB";
 import { api } from "@wvdsh/types";
@@ -31,9 +31,13 @@ export class FileSystemManager {
    * Normalizes the Unity persistentDataPath and prepends the R2 prefix.
    */
   private toRemoteKey(localPath: string): string {
-    const unityPersistentDataPath = this.sdk.engineInstance?.unityPersistentDataPath;
+    const unityPersistentDataPath =
+      this.sdk.engineInstance?.unityPersistentDataPath;
     const normalized = unityPersistentDataPath
-      ? localPath.replace(unityPersistentDataPath, WAVEDASH_PERSISTENT_DATA_PATH)
+      ? localPath.replace(
+          unityPersistentDataPath,
+          WAVEDASH_PERSISTENT_DATA_PATH
+        )
       : localPath;
     const relative = normalized.startsWith("/")
       ? normalized.slice(1)
@@ -50,7 +54,8 @@ export class FileSystemManager {
     const stripped = r2Key.startsWith(prefix)
       ? "/" + r2Key.slice(prefix.length)
       : r2Key;
-    const unityPersistentDataPath = this.sdk.engineInstance?.unityPersistentDataPath;
+    const unityPersistentDataPath =
+      this.sdk.engineInstance?.unityPersistentDataPath;
     return unityPersistentDataPath
       ? stripped.replace(WAVEDASH_PERSISTENT_DATA_PATH, unityPersistentDataPath)
       : stripped;
@@ -65,29 +70,16 @@ export class FileSystemManager {
    * @param filePath - The path of the local file to upload
    * @returns The path of the remote file that the local file was uploaded to
    */
-  async uploadRemoteFile(filePath: string): Promise<WavedashResponse<string>> {
-    const args = { filePath };
-
-    try {
-      const uploadUrl = await this.sdk.convexClient.mutation(
-        api.sdk.remoteFileStorage.getUploadUrl,
-        { path: this.toRemoteKey(filePath) }
-      );
-      const success = await this.upload(uploadUrl, args.filePath);
-      return {
-        success: success,
-        data: args.filePath,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Failed to upload remote file: ${error}`);
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
+  async uploadRemoteFile(filePath: string): Promise<string> {
+    const uploadUrl = await this.sdk.convexClient.mutation(
+      api.sdk.remoteFileStorage.getUploadUrl,
+      { path: this.toRemoteKey(filePath) }
+    );
+    const success = await this.upload(uploadUrl, filePath);
+    if (!success) {
+      throw new Error(`Failed to upload file: ${filePath}`);
     }
+    return filePath;
   }
 
   /**
@@ -95,27 +87,11 @@ export class FileSystemManager {
    * @param filePath - The path of the remote file to delete
    * @returns The path of the remote file that was deleted
    */
-  async deleteRemoteFile(filePath: string): Promise<WavedashResponse<string>> {
-    const args = { filePath };
-
-    try {
-      await this.sdk.convexClient.action(api.sdk.remoteFileStorage.deleteFile, {
-        path: this.toRemoteKey(filePath)
-      });
-      return {
-        success: true,
-        data: args.filePath,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Failed to delete remote file: ${error}`);
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+  async deleteRemoteFile(filePath: string): Promise<string> {
+    await this.sdk.convexClient.action(api.sdk.remoteFileStorage.deleteFile, {
+      path: this.toRemoteKey(filePath)
+    });
+    return filePath;
   }
 
   /**
@@ -123,28 +99,13 @@ export class FileSystemManager {
    * @param filePath - The path of the remote file to download
    * @returns The path of the local file that the remote file was downloaded to
    */
-  async downloadRemoteFile(
-    filePath: string
-  ): Promise<WavedashResponse<string>> {
-    const args = { filePath };
-
-    try {
-      const url = this.getRemoteStorageUrl(filePath);
-      const success = await this.download(url, args.filePath);
-      return {
-        success: success,
-        data: args.filePath,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Failed to download remote file: ${error}`);
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
+  async downloadRemoteFile(filePath: string): Promise<string> {
+    const url = this.getRemoteStorageUrl(filePath);
+    const success = await this.download(url, filePath);
+    if (!success) {
+      throw new Error(`Failed to download file: ${filePath}`);
     }
+    return filePath;
   }
 
   /**
@@ -153,89 +114,43 @@ export class FileSystemManager {
    * @param path - The path of the remote directory to list
    * @returns A list of metadata for each file in the remote directory
    */
-  async listRemoteDirectory(
-    path: string
-  ): Promise<WavedashResponse<RemoteFileMetadata[]>> {
-    const args = { path };
-
-    try {
-      const url = this.getRemoteStorageUrl(path) + "?list=true";
-      const response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${this.sdk.gameplayJwt}`
-        }
-      });
-      if (!response.ok) {
-        throw new Error(`${response.status} (${response.statusText})`);
+  async listRemoteDirectory(path: string): Promise<RemoteFileMetadata[]> {
+    const url = this.getRemoteStorageUrl(path) + "?list=true";
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.sdk.gameplayJwt}`
       }
-      const responseJson = await response.json();
-      const files = responseJson.files
-        .filter((file: RemoteFileMetadata) => !file.key.endsWith("/"))
-        .map((file: RemoteFileMetadata) => ({
-          ...file,
-          key: this.toLocalPath(file.key)
-        }));
-      return {
-        success: true,
-        data: files,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Failed to list directory: ${error}`);
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
+    });
+    if (!response.ok) {
+      throw new Error(`${response.status} (${response.statusText})`);
     }
+    const responseJson = await response.json();
+    return responseJson.files
+      .filter((file: RemoteFileMetadata) => !file.key.endsWith("/"))
+      .map((file: RemoteFileMetadata) => ({
+        ...file,
+        key: this.toLocalPath(file.key)
+      }));
   }
 
-  async downloadRemoteDirectory(
-    path: string
-  ): Promise<WavedashResponse<string>> {
-    this.sdk.logger.debug(`Downloading remote directory: ${path}`);
+  async downloadRemoteDirectory(path: string): Promise<string> {
+    const files = await this.listRemoteDirectory(path);
 
-    const args = { path };
+    const downloadPromises = files.map(async (file) => {
+      const url = this.getRemoteStorageUrl(file.key);
+      const success = await this.download(url, file.key);
+      return { fileName: file.name, success };
+    });
 
-    try {
-      const response = await this.listRemoteDirectory(path);
-      if (!response.success) {
-        throw new Error(response.message);
-      }
-      const files = response.data as RemoteFileMetadata[];
-
-      const downloadPromises = files.map(async (file) => {
-        const url = this.getRemoteStorageUrl(file.key);
-        const success = await this.download(url, file.key);
-        return { fileName: file.name, success };
-      });
-
-      const downloadResults = await Promise.all(downloadPromises);
-
-      const failedDownloads = downloadResults.filter(
-        (result) => !result.success
+    const downloadResults = await Promise.all(downloadPromises);
+    const failedDownloads = downloadResults.filter((result) => !result.success);
+    if (failedDownloads.length > 0) {
+      throw new Error(
+        `Failed to download ${failedDownloads.length} files: ${failedDownloads.map((f) => f.fileName).join(", ")}`
       );
-      if (failedDownloads.length > 0) {
-        throw new Error(
-          `Failed to download ${failedDownloads.length} files: ${failedDownloads.map((f) => f.fileName).join(", ")}`
-        );
-      }
-      return {
-        success: true,
-        data: path,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Failed to download user directory: ${error}`);
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
     }
+    return path;
   }
 
   async writeLocalFile(filePath: string, data: Uint8Array): Promise<boolean> {

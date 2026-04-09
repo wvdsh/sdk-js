@@ -10,7 +10,6 @@ import type {
   LeaderboardDisplayType,
   Leaderboard,
   LeaderboardEntries,
-  WavedashResponse,
   UpsertedLeaderboardEntry
 } from "../types";
 import type { WavedashSDK } from "../index";
@@ -26,61 +25,26 @@ export class LeaderboardManager {
     this.sdk = sdk;
   }
 
-  async getLeaderboard(name: string): Promise<WavedashResponse<Leaderboard>> {
-    const args = { name };
-
-    try {
-      const leaderboard = await this.sdk.convexClient.query(
-        api.sdk.leaderboards.getLeaderboard,
-        args
-      );
-      this.leaderboardCache.set(leaderboard.id, leaderboard);
-      return {
-        success: true,
-        data: leaderboard,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(`Failed to get leaderboard ${name}`, error);
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+  async getLeaderboard(name: string): Promise<Leaderboard> {
+    const leaderboard = await this.sdk.convexClient.query(
+      api.sdk.leaderboards.getLeaderboard,
+      { name }
+    );
+    this.leaderboardCache.set(leaderboard.id, leaderboard);
+    return leaderboard;
   }
 
   async getOrCreateLeaderboard(
     name: string,
     sortOrder: LeaderboardSortOrder,
     displayType: LeaderboardDisplayType
-  ): Promise<WavedashResponse<Leaderboard>> {
-    const args = { name, sortOrder, displayType };
-
-    try {
-      const leaderboard = await this.sdk.convexClient.mutation(
-        api.sdk.leaderboards.getOrCreateLeaderboard,
-        args
-      );
-      this.leaderboardCache.set(leaderboard.id, leaderboard);
-      return {
-        success: true,
-        data: leaderboard,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(
-        `Failed to get or create leaderboard ${name}`,
-        error
-      );
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
-    }
+  ): Promise<Leaderboard> {
+    const leaderboard = await this.sdk.convexClient.mutation(
+      api.sdk.leaderboards.getOrCreateLeaderboard,
+      { name, sortOrder, displayType }
+    );
+    this.leaderboardCache.set(leaderboard.id, leaderboard);
+    return leaderboard;
   }
 
   getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
@@ -90,46 +54,25 @@ export class LeaderboardManager {
 
   async getMyLeaderboardEntries(
     leaderboardId: Id<"leaderboards">
-  ): Promise<WavedashResponse<LeaderboardEntries>> {
-    const args = { leaderboardId };
-
-    try {
-      const result = await this.sdk.convexClient.query(
-        api.sdk.leaderboards.getMyLeaderboardEntry,
-        args
-      );
-      if (result && result.totalEntries) {
-        this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
-      }
-      const entry = result.entry
-        ? {
-            ...result.entry,
-            userId: this.sdk.wavedashUser.id,
-            username: this.sdk.wavedashUser.username
-          }
-        : null;
-
-      // TODO: Kind of weird to return a list when it will only ever have 0 or 1 entries
-      // But this allows all get entries functions to share the same return type which the game SDK expects
-      const entries = entry ? [entry] : [];
-
-      return {
-        success: true,
-        data: entries,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(
-        `Failed to get my leaderboard entries for leaderboard ${leaderboardId}`,
-        error
-      );
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
+  ): Promise<LeaderboardEntries> {
+    const result = await this.sdk.convexClient.query(
+      api.sdk.leaderboards.getMyLeaderboardEntry,
+      { leaderboardId }
+    );
+    if (result && result.totalEntries) {
+      this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    const entry = result.entry
+      ? {
+          ...result.entry,
+          userId: this.sdk.wavedashUser.id,
+          username: this.sdk.wavedashUser.username
+        }
+      : null;
+
+    // TODO: Kind of weird to return a list when it will only ever have 0 or 1 entries
+    // But this allows all get entries functions to share the same return type which the game SDK expects
+    return entry ? [entry] : [];
   }
 
   async listLeaderboardEntriesAroundUser(
@@ -137,34 +80,15 @@ export class LeaderboardManager {
     countAhead: number,
     countBehind: number,
     friendsOnly: boolean = false
-  ): Promise<WavedashResponse<LeaderboardEntries>> {
-    const args = { leaderboardId, countAhead, countBehind, friendsOnly };
-
-    try {
-      const result = await this.sdk.convexClient.query(
-        api.sdk.leaderboards.listEntriesAroundUser,
-        args
-      );
-      if (result && result.totalEntries) {
-        this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
-      }
-      return {
-        success: true,
-        data: result.entries,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(
-        `Failed to list leaderboard entries around user for leaderboard ${leaderboardId}`,
-        error
-      );
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
+  ): Promise<LeaderboardEntries> {
+    const result = await this.sdk.convexClient.query(
+      api.sdk.leaderboards.listEntriesAroundUser,
+      { leaderboardId, countAhead, countBehind, friendsOnly }
+    );
+    if (result && result.totalEntries) {
+      this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    return result.entries;
   }
 
   async listLeaderboardEntries(
@@ -172,34 +96,15 @@ export class LeaderboardManager {
     offset: number,
     limit: number,
     friendsOnly: boolean = false
-  ): Promise<WavedashResponse<LeaderboardEntries>> {
-    const args = { leaderboardId, offset, limit, friendsOnly };
-
-    try {
-      const result = await this.sdk.convexClient.query(
-        api.sdk.leaderboards.listEntries,
-        args
-      );
-      if (result && result.totalEntries) {
-        this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
-      }
-      return {
-        success: true,
-        data: result.entries,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(
-        `Failed to list leaderboard entries for leaderboard ${leaderboardId}`,
-        error
-      );
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
+  ): Promise<LeaderboardEntries> {
+    const result = await this.sdk.convexClient.query(
+      api.sdk.leaderboards.listEntries,
+      { leaderboardId, offset, limit, friendsOnly }
+    );
+    if (result && result.totalEntries) {
+      this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    return result.entries;
   }
 
   async uploadLeaderboardScore(
@@ -207,40 +112,19 @@ export class LeaderboardManager {
     score: number,
     keepBest: boolean,
     ugcId?: Id<"userGeneratedContent">
-  ): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
-    const args = { leaderboardId, score, keepBest, ugcId };
-
-    try {
-      const result = await this.sdk.convexClient.mutation(
-        api.sdk.leaderboards.upsertLeaderboardEntry,
-        args
-      );
-      if (result && result.totalEntries) {
-        this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
-      }
-      const entry = {
-        ...result.entry,
-        userId: this.sdk.wavedashUser.id,
-        username: this.sdk.wavedashUser.username
-      };
-
-      return {
-        success: true,
-        data: entry,
-        args: args
-      };
-    } catch (error) {
-      this.sdk.logger.error(
-        `Failed to upload leaderboard score for leaderboard ${leaderboardId}`,
-        error
-      );
-      return {
-        success: false,
-        data: null,
-        args: args,
-        message: error instanceof Error ? error.message : String(error)
-      };
+  ): Promise<UpsertedLeaderboardEntry> {
+    const result = await this.sdk.convexClient.mutation(
+      api.sdk.leaderboards.upsertLeaderboardEntry,
+      { leaderboardId, score, keepBest, ugcId }
+    );
+    if (result && result.totalEntries) {
+      this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    return {
+      ...result.entry,
+      userId: this.sdk.wavedashUser.id,
+      username: this.sdk.wavedashUser.username
+    };
   }
 
   // ================
