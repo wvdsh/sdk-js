@@ -68,6 +68,12 @@ export interface WavedashConfig {
   deferEvents?: boolean;
 }
 
+// URL query params prefixed with wvdsh_ that were present when the game was launched
+export interface GameLaunchParams {
+  wvdsh_lobby?: Id<"lobbies">;
+  [key: string]: string | undefined;
+}
+
 export interface RemoteFileMetadata {
   exists: boolean; // Whether the entry exists
   key: string; // Absolute file path of the entry, this is the path downloadRemoteDirectory will download to (ex: /idbfs/<hash>/save.dat)

@@ -60,21 +60,6 @@ export class LobbyManager {
 
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
-  }
-
-  // ================
-  // Public Methods
-  // ================
-
-  /**
-   * Initialize the lobby manager.
-   * Called during SDK initialization.
-   */
-  init(): void {
-    if (this.unsubscribeLobbyInvites) {
-      return; // Already listening
-    }
-
     this.unsubscribeLobbyInvites = this.sdk.convexClient.onUpdate(
       api.sdk.gameLobby.getLobbyInvites,
       {},
@@ -83,8 +68,6 @@ export class LobbyManager {
         this.sdk.logger.error(`Lobby invites subscription error: ${error}`);
       }
     );
-
-    this.sdk.logger.debug("Started listening for lobby invites");
   }
 
   async createLobby(
@@ -159,6 +142,7 @@ export class LobbyManager {
     }
     if (this.lobbyMetadata[key] === value) return true;
 
+    // Sending null values to the backend will delete the key from the lobby metadata
     if (value === null) {
       delete this.lobbyMetadata[key];
     } else {

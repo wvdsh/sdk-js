@@ -119,11 +119,12 @@ export class P2PManager {
 
   private ensureInitialized(): void {
     if (!this.initialized) {
-      throw new Error("P2PManager.init() must be called before use");
+      this.init();
     }
   }
 
   init(config?: Partial<P2PConfig>): void {
+    if (this.initialized && !config) return;
     this.config = { ...DEFAULT_P2P_CONFIG, ...config };
 
     const minMessageSize =

@@ -48,7 +48,8 @@ import type {
   P2PMessage,
   LobbyUser,
   Lobby,
-  Friend
+  Friend,
+  GameLaunchParams
 } from "./types";
 import {
   GAME_ENGINE,
@@ -70,7 +71,7 @@ class WavedashSDK extends EventTarget {
   get eventsReady(): boolean {
     return this._eventsReady;
   }
-  private lobbyIdToJoinOnStartup?: Id<"lobbies">;
+  launchParams: GameLaunchParams;
   private sessionEndSent: boolean = false;
   private convexHttpUrl: string;
   private gameFinishedLoading: boolean = false;
@@ -135,11 +136,10 @@ class WavedashSDK extends EventTarget {
 
     this.setupSessionEndListeners();
 
-    // TODO: Consider just providing this, along with any other url param, as startupArgs
-    // and letting the game fire off its own joinLobby mutation?
-    // For now we assume a user can always join a lobby externally from the game (link / notification)
-    // So always join a lobby on startup if one is provided, trusting game to handle the LobbyJoined event
-    this.lobbyIdToJoinOnStartup = sdkConfig.lobbyIdToJoin;
+    // TODO: Remove cast once @wvdsh/types is updated with launchParams on SDKConfig
+    this.launchParams =
+      (sdkConfig as SDKConfig & { launchParams?: Record<string, string> })
+        .launchParams ?? {};
   }
 
   // =============
@@ -172,7 +172,6 @@ class WavedashSDK extends EventTarget {
     this.p2pManager.init(this.config.p2p);
 
     this.logger.debug("Initialized with config:", this.config);
-    this.lobbyManager.init();
 
     if (!this.config.deferEvents) {
       this.readyForEvents();
@@ -191,15 +190,6 @@ class WavedashSDK extends EventTarget {
     this.ensureInit();
     this._eventsReady = true;
     this.gameEventManager.flushEventQueue();
-
-    if (this.lobbyIdToJoinOnStartup) {
-      this.lobbyManager
-        .joinLobby(this.lobbyIdToJoinOnStartup)
-        .catch((error) => {
-          this.logger.error("Could not join lobby on startup:", error);
-        });
-      this.lobbyIdToJoinOnStartup = undefined;
-    }
   }
 
   // ==================
