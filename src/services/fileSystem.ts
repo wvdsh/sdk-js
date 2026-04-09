@@ -161,8 +161,10 @@ export class FileSystemManager {
     try {
       const url = this.getRemoteStorageUrl(path) + "?list=true";
       const response = await fetch(url, {
-        credentials: "include",
-        method: "GET"
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${this.sdk.gameplayJwt}`
+        }
       });
       if (!response.ok) {
         throw new Error(`${response.status} (${response.statusText})`);
@@ -303,8 +305,10 @@ export class FileSystemManager {
     }
 
     const response = await fetch(url, {
-      credentials: "include",
-      method: "GET"
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${this.sdk.gameplayJwt}`
+      }
     });
     if (!response.ok) {
       this.sdk.logger.error(
