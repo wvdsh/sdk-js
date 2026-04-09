@@ -251,7 +251,7 @@ class WavedashSDK extends EventTarget {
    * @returns Dictionary of the URL query params that were present when the game was launched
    */
   getLaunchParams(): GameLaunchParams {
-    return this.launchParams;
+    return this.formatResponse(this.launchParams);
   }
 
   // ============
