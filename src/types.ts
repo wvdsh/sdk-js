@@ -207,6 +207,37 @@ export interface P2PPeerReconnectedPayload {
   username: string;
 }
 
+/**
+ * Reason a P2P packet was dropped. Each reason implies a different
+ * game-side remedy.
+ */
+export type P2PPacketDropReason =
+  | "QUEUE_FULL"  // throttle your sends, bundle updates into fewer packets, or increase p2p maxIncomingMessages config
+  | "PAYLOAD_TOO_LARGE"  // reduce payload or increase p2p messageSize config
+  | "INVALID_PAYLOAD_SIZE"  // programming error
+  | "INVALID_CHANNEL"  // SDK version skew or malicious peer
+  | "MALFORMED"  // wire data too short to parse; channel will be -1
+  | "PEER_NOT_READY"  // peer was never ready or closed mid-send. Wait for P2P_CONNECTION_ESTABLISHED and watch P2P_PEER_DISCONNECTED/P2P_CONNECTION_FAILED/P2P_PEER_RECONNECTING for reachability.
+
+/**
+ * Payload for P2PPacketDropped event.
+ *
+ * Emitted whenever the SDK drops a P2P packet — either outgoing (rejected
+ * by local validation) or incoming (rejected by the receive-side ring
+ * buffer / framing layer).
+ *
+ * Events are aggregated per `(channel, direction, reason)` tuple with a
+ * short window so bursty drops don't flood the game, while sparse drops
+ * still fire promptly.
+ */
+export interface P2PPacketDroppedPayload {
+  channel: number; // app channel; -1 if not determinable (malformed wire data)
+  direction: "SEND" | "RECEIVE";
+  reason: P2PPacketDropReason;
+  droppedCount: number;  // Number of drops coalesced into this event
+  droppedTotal: number;  // Cumulative number of drops since the P2PManager was initialized
+}
+
 // --- Backend Connection Events ---
 
 /** Payload for BackendConnected, BackendDisconnected, BackendReconnecting events */
