@@ -229,14 +229,7 @@ export interface P2PPeer {
 export interface P2PConnection {
   lobbyId: Id<"lobbies">;
   peers: Record<Id<"users">, P2PPeer>; // userId -> peer info (we may add more fields to P2PPeer later)
-  state: P2PConnectionState;
 }
-
-export type P2PConnectionState =
-  | "connecting"
-  | "connected"
-  | "disconnected"
-  | "failed";
 
 export interface P2PMessage {
   fromUserId: Id<"users">; // Primary identifier for sender TODO: Make this a small int handle instead of a 32 byte string

@@ -40,8 +40,6 @@ export class P2PManager {
   private reliableChannels = new Map<Id<"users">, RTCDataChannel>();
   private unreliableChannels = new Map<Id<"users">, RTCDataChannel>();
   private pendingIceCandidates = new Map<Id<"users">, RTCIceCandidateInit[]>();
-  private connectionStateCheckInterval: ReturnType<typeof setInterval> | null =
-    null;
 
   // ICE restart tracking
   private iceRestartAttempts = new Map<Id<"users">, number>();
@@ -89,8 +87,6 @@ export class P2PManager {
       incomingDataView: Uint8Array;
     }
   >();
-
-  private readonly CHECK_CONNECTION_INTERVAL_MS = 1_000; // 1 second
 
   private readonly MESSAGE_SLOT_HEADER_SIZE = 4; // Size prefix at start of each message slot
   private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
@@ -250,8 +246,7 @@ export class P2PManager {
   ): Promise<P2PConnection> {
     const connection: P2PConnection = {
       lobbyId,
-      peers: {},
-      state: "connecting"
+      peers: {}
     };
 
     members.forEach((member) => {
@@ -426,62 +421,6 @@ export class P2PManager {
 
     // Establish WebRTC connections (creates offers)
     await this.establishPeerConnections(connection);
-
-    connection.state = "connecting";
-
-    // Start polling connection state
-    this.startConnectionStatePolling();
-  }
-
-  // Periodically check peer connection states and update connection.state
-  private startConnectionStatePolling(): void {
-    // Clear any existing interval
-    this.stopConnectionStatePolling();
-
-    this.connectionStateCheckInterval = setInterval(() => {
-      this.updateConnectionState();
-    }, this.CHECK_CONNECTION_INTERVAL_MS);
-
-    // Also do an immediate check
-    this.updateConnectionState();
-  }
-
-  private stopConnectionStatePolling(): void {
-    if (this.connectionStateCheckInterval !== null) {
-      clearInterval(this.connectionStateCheckInterval);
-      this.connectionStateCheckInterval = null;
-    }
-  }
-
-  private updateConnectionState(): void {
-    if (!this.currentConnection) return;
-
-    const peerIds = Object.keys(this.currentConnection.peers) as Id<"users">[];
-    const previousState = this.currentConnection.state;
-
-    // No peers means disconnected
-    if (peerIds.length === 0) {
-      this.currentConnection.state = "disconnected";
-    }
-    // All peers are connected
-    else if (this.allPeersConnected()) {
-      this.currentConnection.state = "connected";
-    }
-    // Have peers but not all connected
-    else {
-      this.currentConnection.state = "connecting";
-    }
-
-    // Log state changes
-    if (previousState !== this.currentConnection.state) {
-      const connectedCount = peerIds.filter((userId) =>
-        this.isPeerReady(userId)
-      ).length;
-      this.sdk.logger.debug(
-        `P2P connection state: ${previousState} → ${this.currentConnection.state} ` +
-          `(${connectedCount}/${peerIds.length} peers connected)`
-      );
-    }
   }
 
   private subscribeToSignalingMessages(connection: P2PConnection): void {
@@ -1283,11 +1222,6 @@ export class P2PManager {
       return;
     }
 
-    this.stopConnectionStatePolling();
-
-    this.currentConnection.state = "disconnected";
-    this.sdk.logger.debug("P2P connection state: disconnected");
-
     this.stopSignalingMessageSubscription();
 
     (
@@ -1324,10 +1258,6 @@ export class P2PManager {
   // Helper Methods
   // ===============
 
-  getCurrentP2PConnection(): P2PConnection | null {
-    return this.currentConnection;
-  }
-
   // Check if channels are ready for a specific peer
   isPeerReady(userId: Id<"users">): boolean {
     if (!this.currentConnection) return false;
@@ -1343,16 +1273,6 @@ export class P2PManager {
       unreliableChannel?.readyState === "open";
 
     return reliableReady && unreliableReady;
-  }
-
-  // Check if all peers are connected
-  private allPeersConnected(): boolean {
-    if (!this.currentConnection) return false;
-
-    const peerIds = Object.keys(this.currentConnection.peers) as Id<"users">[];
-    if (peerIds.length === 0) return true; // No peers means "connected"
-
-    return peerIds.every((userId) => this.isPeerReady(userId));
   }
 
   isBroadcastReady(): boolean {
