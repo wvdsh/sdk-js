@@ -237,6 +237,8 @@ export class P2PManager {
     lobbyId: Id<"lobbies">,
     members: SDKUser[]
   ): Promise<P2PConnection> {
+    this.validatePeerLimit(members);
+
     const connection: P2PConnection = {
       lobbyId,
       peers: {},
@@ -297,9 +299,12 @@ export class P2PManager {
   private async updateP2PConnection(
     members: SDKUser[]
   ): Promise<P2PConnection> {
+
     if (!this.currentConnection) {
       throw new Error("No existing P2P connection to update");
     }
+
+    this.validatePeerLimit(members);
 
     this.sdk.logger.debug("Updating P2P connection with new member list");
 
@@ -702,6 +707,18 @@ export class P2PManager {
         }
       }
       this.pendingIceCandidates.delete(remoteUserId);
+    }
+  }
+
+  private validatePeerLimit(members: SDKUser[]): void {
+    const remotePeerCount = members.filter(
+      (member) => member.id !== this.sdk.getUserId()
+    ).length;
+  
+    if (remotePeerCount > this.config.maxPeers) {
+      throw new Error(
+        `P2P peer limit exceeded: lobby has ${remotePeerCount} remote peers, but maxPeers is ${this.config.maxPeers}`
+      );
     }
   }
 
