@@ -195,6 +195,18 @@ export interface P2PPeerDisconnectedPayload {
   username: string;
 }
 
+/** Payload for P2PPeerReconnecting event */
+export interface P2PPeerReconnectingPayload {
+  userId: Id<"users">;
+  username: string;
+}
+
+/** Payload for P2PPeerReconnected event */
+export interface P2PPeerReconnectedPayload {
+  userId: Id<"users">;
+  username: string;
+}
+
 // --- Backend Connection Events ---
 
 /** Payload for BackendConnected, BackendDisconnected, BackendReconnecting events */

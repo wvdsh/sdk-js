@@ -14,7 +14,9 @@ import type {
   P2PSignalingMessage,
   P2PConnectionEstablishedPayload,
   P2PConnectionFailedPayload,
-  P2PPeerDisconnectedPayload
+  P2PPeerDisconnectedPayload,
+  P2PPeerReconnectingPayload,
+  P2PPeerReconnectedPayload
 } from "../types";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
@@ -45,6 +47,16 @@ export class P2PManager {
   private iceRestartAttempts = new Map<Id<"users">, number>();
   private iceRestartInProgress = new Set<Id<"users">>();
   private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
+
+  // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
+  // Tracked on both active and passive sides so reconnect events stay symmetric
+  // regardless of which peer drives the ICE restart.
+  private reconnectingPeers = new Set<Id<"users">>();
+
+  // Peers for which we've emitted P2P_CONNECTION_ESTABLISHED. Prevents duplicate
+  // emissions if both data channels happen to open concurrently, and is cleared
+  // on peer disconnect so a rejoining peer gets a fresh ESTABLISHED event.
+  private establishedPeers = new Set<Id<"users">>();
 
   // TURN server credentials
   private turnCredentials: P2PTurnCredentials | null = null;
@@ -386,6 +398,10 @@ export class P2PManager {
         this.reliableChannels.delete(userId);
         this.unreliableChannels.delete(userId);
         this.pendingIceCandidates.delete(userId);
+        this.iceRestartAttempts.delete(userId);
+        this.iceRestartInProgress.delete(userId);
+        this.reconnectingPeers.delete(userId);
+        this.establishedPeers.delete(userId);
 
         // Remove from peer list
         delete this.currentConnection.peers[userId];
@@ -925,12 +941,46 @@ export class P2PManager {
         // Reset restart state on successful connection
         this.iceRestartAttempts.delete(remoteUserId);
         this.iceRestartInProgress.delete(remoteUserId);
+
+        // If we previously flagged this peer as reconnecting, notify the game
+        // that it's back. Both sides (active and passive) see this transition.
+        if (this.reconnectingPeers.delete(remoteUserId)) {
+          const peer = this.currentConnection?.peers[remoteUserId];
+          if (peer) {
+            this.sdk.gameEventManager.notifyGame(
+              WavedashEvents.P2P_PEER_RECONNECTED,
+              {
+                userId: peer.userId,
+                username: peer.username
+              } satisfies P2PPeerReconnectedPayload
+            );
+          }
+        }
       } else if (pc.iceConnectionState === "failed") {
         // ICE connection failed - wait briefly before restarting to avoid
         // reacting to transient failures during network switches (Wi-Fi hiccups, etc.)
         this.sdk.logger.debug(
           `ICE connection to peer ${remoteUserId} failed, will retry in 500ms...`
         );
+
+        // Notify the game that this peer is in a reconnecting state. Fired on
+        // both sides of the connection so games get a symmetric signal even
+        // though only one peer drives the ICE restart. Guarded so we only
+        // emit once per disconnect/reconnect cycle.
+        if (!this.reconnectingPeers.has(remoteUserId)) {
+          this.reconnectingPeers.add(remoteUserId);
+          const peer = this.currentConnection?.peers[remoteUserId];
+          if (peer) {
+            this.sdk.gameEventManager.notifyGame(
+              WavedashEvents.P2P_PEER_RECONNECTING,
+              {
+                userId: peer.userId,
+                username: peer.username
+              } satisfies P2PPeerReconnectingPayload
+            );
+          }
+        }
+
         setTimeout(() => {
           if (pc.iceConnectionState === "failed") {
             this.sdk.logger.warn(
@@ -989,6 +1039,11 @@ export class P2PManager {
       this.sdk.logger.error(
         `Max ICE restart attempts (${this.MAX_ICE_RESTART_ATTEMPTS}) reached for peer ${remoteUserId}, giving up`
       );
+      // Clear reconnecting/established flags since we're reporting terminal
+      // failure instead. Any future recovery for this peer will count as a
+      // fresh ESTABLISHED.
+      this.reconnectingPeers.delete(remoteUserId);
+      this.establishedPeers.delete(remoteUserId);
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
         this.sdk.gameEventManager.notifyGame(
@@ -1046,8 +1101,14 @@ export class P2PManager {
         `${type} data channel opened with peer ${remoteUserId}`
       );
 
-      // Check if this peer is now fully ready (both channels open if both are enabled)
-      if (this.isPeerReady(remoteUserId)) {
+      // Check if this peer is now fully ready (both channels open if both are enabled).
+      // Guarded so we only emit once per peer connection lifetime — the flag is
+      // cleared on disconnect so a rejoining peer fires a fresh ESTABLISHED.
+      if (
+        this.isPeerReady(remoteUserId) &&
+        !this.establishedPeers.has(remoteUserId)
+      ) {
+        this.establishedPeers.add(remoteUserId);
         const peer = this.currentConnection?.peers[remoteUserId];
         if (peer) {
           this.sdk.gameEventManager.notifyGame(
@@ -1088,6 +1149,12 @@ export class P2PManager {
       this.sdk.logger.debug(
         `${type} data channel closed with peer ${remoteUserId}`
       );
+      // Clear per-peer flags so a rejoining peer starts clean: a fresh
+      // ESTABLISHED and no spurious RECONNECTED from a stale reconnecting
+      // flag left over from the failure that caused this close.
+      // Idempotent: safe to call for each channel close on the same peer.
+      this.establishedPeers.delete(remoteUserId);
+      this.reconnectingPeers.delete(remoteUserId);
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
         this.sdk.gameEventManager.notifyGame(
@@ -1243,6 +1310,8 @@ export class P2PManager {
     this.pendingIceCandidates.clear();
     this.iceRestartAttempts.clear();
     this.iceRestartInProgress.clear();
+    this.reconnectingPeers.clear();
+    this.establishedPeers.clear();
 
     this.initializationInProgress = null;
     this.initializationLobbyId = null;

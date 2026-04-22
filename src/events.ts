@@ -20,6 +20,9 @@ export const WavedashEvents = {
   P2P_CONNECTION_ESTABLISHED: "P2PConnectionEstablished", // connection to peer is ready
   P2P_CONNECTION_FAILED: "P2PConnectionFailed", // connection to peer failed
   P2P_PEER_DISCONNECTED: "P2PPeerDisconnected", // peer disconnected
+  P2P_PEER_RECONNECTING: "P2PPeerReconnecting", // peer is reconnecting
+  P2P_PEER_RECONNECTED: "P2PPeerReconnected", // peer reconnected
+  P2P_PACKET_DROPPED: "P2PPacketDropped", // packet dropped due to full queue
 
   // Stats & Achievements events
   STATS_STORED: "StatsStored", // stats/achievements persisted to server
