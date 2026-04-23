@@ -217,7 +217,7 @@ export type P2PPacketDropReason =
   | "INVALID_PAYLOAD_SIZE"  // programming error
   | "INVALID_CHANNEL"  // SDK version skew or malicious peer
   | "MALFORMED"  // wire data too short to parse; channel will be -1
-  | "PEER_NOT_READY"  // peer was never ready or closed mid-send. Wait for P2P_CONNECTION_ESTABLISHED and watch P2P_PEER_DISCONNECTED/P2P_CONNECTION_FAILED/P2P_PEER_RECONNECTING for reachability.
+  | "PEER_NOT_READY"  // P2P not yet initialized, or peer was never ready / closed mid-send. If P2P hasn't been initialized, initialize it first; otherwise wait for P2P_CONNECTION_ESTABLISHED and watch P2P_PEER_DISCONNECTED/P2P_CONNECTION_FAILED/P2P_PEER_RECONNECTING for reachability.
 
 /**
  * Payload for P2PPacketDropped event.
@@ -231,7 +231,7 @@ export type P2PPacketDropReason =
  * still fire promptly.
  */
 export interface P2PPacketDroppedPayload {
-  channel: number; // app channel; -1 if not determinable (malformed wire data)
+  channel: number; // app channel; -1 if not determinable (malformed wire data or invalid send-side channel)
   direction: "SEND" | "RECEIVE";
   reason: P2PPacketDropReason;
   droppedCount: number;  // Number of drops coalesced into this event

@@ -22,7 +22,7 @@ export const WavedashEvents = {
   P2P_PEER_DISCONNECTED: "P2PPeerDisconnected", // peer disconnected
   P2P_PEER_RECONNECTING: "P2PPeerReconnecting", // peer is reconnecting
   P2P_PEER_RECONNECTED: "P2PPeerReconnected", // peer reconnected
-  P2P_PACKET_DROPPED: "P2PPacketDropped", // packet dropped due to full queue
+  P2P_PACKET_DROPPED: "P2PPacketDropped", // packet dropped
 
   // Stats & Achievements events
   STATS_STORED: "StatsStored", // stats/achievements persisted to server

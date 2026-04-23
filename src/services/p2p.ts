@@ -1020,6 +1020,11 @@ export class P2PManager {
           } satisfies P2PConnectionFailedPayload
         );
       }
+      // Close the pc so the remote peer's channels close too — otherwise the
+      // passive peer (higher userId, which doesn't drive restarts) would be
+      // left with P2P_PEER_RECONNECTING and no terminal event. The resulting
+      // channel.onclose on both sides emits P2P_PEER_DISCONNECTED.
+      pc.close();
       return;
     }
 
@@ -1170,7 +1175,9 @@ export class P2PManager {
         this.sdk.logger.error(
           `P2P appChannel must be an integer in [0, ${this.MAX_CHANNELS}), received ${appChannel}, dropping message.`
         );
-        this.reportPacketDrop(appChannel, "SEND", "INVALID_CHANNEL");
+        // Emit -1 (the JSDoc's sentinel for "not determinable") rather than
+        // the raw invalid value, which could be NaN, Infinity, or out of range.
+        this.reportPacketDrop(-1, "SEND", "INVALID_CHANNEL");
         return false;
       }
 
@@ -1771,7 +1778,8 @@ export class P2PManager {
 
   // Wire format: [channel(1)][payload(...)] (no userId, no dataLength)
   private encodeWireMessage(channel: number, payload: Uint8Array): Uint8Array {
-    // This should never happen we protect against this on send
+    // Defensive guard — sendP2PMessage validates the channel before calling,
+    // so this should be unreachable unless a new caller is added.
     if (channel < 0 || channel >= this.MAX_CHANNELS) {
       throw new Error(
         `P2P channel ${channel} must be between 0 and ${this.MAX_CHANNELS - 1}`
@@ -1790,7 +1798,10 @@ export class P2PManager {
   }
 
   private decodeBinaryMessage(data: Uint8Array): P2PMessage {
-    // This should never happen we protect against this on receive
+    // Defensive guard — enqueueMessage writes every slot with a fixed
+    // PAYLOAD_OFFSET-byte header, so any slot retrieved from a channel queue
+    // is always at least PAYLOAD_OFFSET bytes. Unreachable unless a new
+    // caller bypasses the queue.
     if (data.byteLength < this.PAYLOAD_OFFSET) {
       throw new Error("Invalid binary message: too short");
     }
