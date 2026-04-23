@@ -14,7 +14,11 @@ import type {
   P2PSignalingMessage,
   P2PConnectionEstablishedPayload,
   P2PConnectionFailedPayload,
-  P2PPeerDisconnectedPayload
+  P2PPeerDisconnectedPayload,
+  P2PPeerReconnectingPayload,
+  P2PPeerReconnectedPayload,
+  P2PPacketDroppedPayload,
+  P2PPacketDropReason
 } from "../types";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
@@ -38,13 +42,45 @@ export class P2PManager {
   private reliableChannels = new Map<Id<"users">, RTCDataChannel>();
   private unreliableChannels = new Map<Id<"users">, RTCDataChannel>();
   private pendingIceCandidates = new Map<Id<"users">, RTCIceCandidateInit[]>();
-  private connectionStateCheckInterval: ReturnType<typeof setInterval> | null =
-    null;
 
   // ICE restart tracking
   private iceRestartAttempts = new Map<Id<"users">, number>();
   private iceRestartInProgress = new Set<Id<"users">>();
   private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
+
+  // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
+  // Tracked on both active and passive sides so reconnect events stay symmetric
+  // regardless of which peer drives the ICE restart.
+  private reconnectingPeers = new Set<Id<"users">>();
+
+  // Peers for which we've emitted P2P_CONNECTION_ESTABLISHED. Prevents duplicate
+  // emissions if both data channels happen to open concurrently, and is cleared
+  // on peer disconnect so a rejoining peer gets a fresh ESTABLISHED event.
+  private establishedPeers = new Set<Id<"users">>();
+
+  // One packet-drop tracker per distinct problem, keyed by
+  // `${direction}:${channel}:${reason}` so e.g. send-side oversize vs
+  // receive-side queue-full on the same channel don't coalesce into each
+  // other's events.
+  //
+  // Policy: the first drop on an idle tracker fires an event immediately so
+  // games learn about issues with no latency. Subsequent drops within
+  // PACKET_DROP_WINDOW_MS are coalesced into a single event fired at the end
+  // of the window. If drops stop, the timer clears and the tracker returns
+  // to idle. Bounds event rate at ~1/window/tracker even under sustained
+  // overload while staying responsive for sparse drops.
+  private packetDropTrackers = new Map<
+    string,
+    {
+      channel: number;
+      direction: "SEND" | "RECEIVE";
+      reason: P2PPacketDropReason;
+      pendingCount: number;
+      windowTimer: ReturnType<typeof setTimeout> | null;
+      droppedTotal: number;
+    }
+  >();
+  private readonly PACKET_DROP_WINDOW_MS = 500;
 
   // TURN server credentials
   private turnCredentials: P2PTurnCredentials | null = null;
@@ -77,8 +113,6 @@ export class P2PManager {
       incomingDataView: Uint8Array;
     }
   >();
-
-  private readonly CHECK_CONNECTION_INTERVAL_MS = 1_000; // 1 second
 
   private readonly MESSAGE_SLOT_HEADER_SIZE = 4; // Size prefix at start of each message slot
   private readonly MAX_CHANNELS = 8; // Maximum number of channels to support
@@ -238,8 +272,7 @@ export class P2PManager {
   ): Promise<P2PConnection> {
     const connection: P2PConnection = {
       lobbyId,
-      peers: {},
-      state: "connecting"
+      peers: {}
     };
 
     members.forEach((member) => {
@@ -386,6 +419,10 @@ export class P2PManager {
         this.reliableChannels.delete(userId);
         this.unreliableChannels.delete(userId);
         this.pendingIceCandidates.delete(userId);
+        this.iceRestartAttempts.delete(userId);
+        this.iceRestartInProgress.delete(userId);
+        this.reconnectingPeers.delete(userId);
+        this.establishedPeers.delete(userId);
 
         // Remove from peer list
         delete this.currentConnection.peers[userId];
@@ -410,62 +447,6 @@ export class P2PManager {
 
     // Establish WebRTC connections (creates offers)
     await this.establishPeerConnections(connection);
-
-    connection.state = "connecting";
-
-    // Start polling connection state
-    this.startConnectionStatePolling();
-  }
-
-  // Periodically check peer connection states and update connection.state
-  private startConnectionStatePolling(): void {
-    // Clear any existing interval
-    this.stopConnectionStatePolling();
-
-    this.connectionStateCheckInterval = setInterval(() => {
-      this.updateConnectionState();
-    }, this.CHECK_CONNECTION_INTERVAL_MS);
-
-    // Also do an immediate check
-    this.updateConnectionState();
-  }
-
-  private stopConnectionStatePolling(): void {
-    if (this.connectionStateCheckInterval !== null) {
-      clearInterval(this.connectionStateCheckInterval);
-      this.connectionStateCheckInterval = null;
-    }
-  }
-
-  private updateConnectionState(): void {
-    if (!this.currentConnection) return;
-
-    const peerIds = Object.keys(this.currentConnection.peers) as Id<"users">[];
-    const previousState = this.currentConnection.state;
-
-    // No peers means disconnected
-    if (peerIds.length === 0) {
-      this.currentConnection.state = "disconnected";
-    }
-    // All peers are connected
-    else if (this.allPeersConnected()) {
-      this.currentConnection.state = "connected";
-    }
-    // Have peers but not all connected
-    else {
-      this.currentConnection.state = "connecting";
-    }
-
-    // Log state changes
-    if (previousState !== this.currentConnection.state) {
-      const connectedCount = peerIds.filter((userId) =>
-        this.isPeerReady(userId)
-      ).length;
-      this.sdk.logger.debug(
-        `P2P connection state: ${previousState} → ${this.currentConnection.state} ` +
-          `(${connectedCount}/${peerIds.length} peers connected)`
-      );
-    }
   }
 
   private subscribeToSignalingMessages(connection: P2PConnection): void {
@@ -925,12 +906,46 @@ export class P2PManager {
         // Reset restart state on successful connection
         this.iceRestartAttempts.delete(remoteUserId);
         this.iceRestartInProgress.delete(remoteUserId);
+
+        // If we previously flagged this peer as reconnecting, notify the game
+        // that it's back. Both sides (active and passive) see this transition.
+        if (this.reconnectingPeers.delete(remoteUserId)) {
+          const peer = this.currentConnection?.peers[remoteUserId];
+          if (peer) {
+            this.sdk.gameEventManager.notifyGame(
+              WavedashEvents.P2P_PEER_RECONNECTED,
+              {
+                userId: peer.userId,
+                username: peer.username
+              } satisfies P2PPeerReconnectedPayload
+            );
+          }
+        }
       } else if (pc.iceConnectionState === "failed") {
         // ICE connection failed - wait briefly before restarting to avoid
         // reacting to transient failures during network switches (Wi-Fi hiccups, etc.)
         this.sdk.logger.debug(
           `ICE connection to peer ${remoteUserId} failed, will retry in 500ms...`
         );
+
+        // Notify the game that this peer is in a reconnecting state. Fired on
+        // both sides of the connection so games get a symmetric signal even
+        // though only one peer drives the ICE restart. Guarded so we only
+        // emit once per disconnect/reconnect cycle.
+        if (!this.reconnectingPeers.has(remoteUserId)) {
+          this.reconnectingPeers.add(remoteUserId);
+          const peer = this.currentConnection?.peers[remoteUserId];
+          if (peer) {
+            this.sdk.gameEventManager.notifyGame(
+              WavedashEvents.P2P_PEER_RECONNECTING,
+              {
+                userId: peer.userId,
+                username: peer.username
+              } satisfies P2PPeerReconnectingPayload
+            );
+          }
+        }
+
         setTimeout(() => {
           if (pc.iceConnectionState === "failed") {
             this.sdk.logger.warn(
@@ -989,6 +1004,11 @@ export class P2PManager {
       this.sdk.logger.error(
         `Max ICE restart attempts (${this.MAX_ICE_RESTART_ATTEMPTS}) reached for peer ${remoteUserId}, giving up`
       );
+      // Clear reconnecting/established flags since we're reporting terminal
+      // failure instead. Any future recovery for this peer will count as a
+      // fresh ESTABLISHED.
+      this.reconnectingPeers.delete(remoteUserId);
+      this.establishedPeers.delete(remoteUserId);
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
         this.sdk.gameEventManager.notifyGame(
@@ -1000,6 +1020,11 @@ export class P2PManager {
           } satisfies P2PConnectionFailedPayload
         );
       }
+      // Close the pc so the remote peer's channels close too — otherwise the
+      // passive peer (higher userId, which doesn't drive restarts) would be
+      // left with P2P_PEER_RECONNECTING and no terminal event. The resulting
+      // channel.onclose on both sides emits P2P_PEER_DISCONNECTED.
+      pc.close();
       return;
     }
 
@@ -1046,8 +1071,14 @@ export class P2PManager {
         `${type} data channel opened with peer ${remoteUserId}`
       );
 
-      // Check if this peer is now fully ready (both channels open if both are enabled)
-      if (this.isPeerReady(remoteUserId)) {
+      // Check if this peer is now fully ready (both channels open if both are enabled).
+      // Guarded so we only emit once per peer connection lifetime — the flag is
+      // cleared on disconnect so a rejoining peer fires a fresh ESTABLISHED.
+      if (
+        this.isPeerReady(remoteUserId) &&
+        !this.establishedPeers.has(remoteUserId)
+      ) {
+        this.establishedPeers.add(remoteUserId);
         const peer = this.currentConnection?.peers[remoteUserId];
         if (peer) {
           this.sdk.gameEventManager.notifyGame(
@@ -1088,6 +1119,12 @@ export class P2PManager {
       this.sdk.logger.debug(
         `${type} data channel closed with peer ${remoteUserId}`
       );
+      // Clear per-peer flags so a rejoining peer starts clean: a fresh
+      // ESTABLISHED and no spurious RECONNECTED from a stale reconnecting
+      // flag left over from the failure that caused this close.
+      // Idempotent: safe to call for each channel close on the same peer.
+      this.establishedPeers.delete(remoteUserId);
+      this.reconnectingPeers.delete(remoteUserId);
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
         this.sdk.gameEventManager.notifyGame(
@@ -1114,7 +1151,33 @@ export class P2PManager {
   ): boolean {
     this.ensureInitialized();
     try {
-      if (!this.currentConnection || !payload) {
+      if (!this.currentConnection) {
+        this.sdk.logger.error(
+          `P2P send called before P2P is initialized, dropping message.`
+        );
+        this.reportPacketDrop(appChannel, "SEND", "PEER_NOT_READY");
+        return false;
+      }
+
+      if (!payload) {
+        this.sdk.logger.error(
+          `P2P send called with missing payload, dropping message.`
+        );
+        this.reportPacketDrop(appChannel, "SEND", "INVALID_PAYLOAD_SIZE");
+        return false;
+      }
+
+      if (
+        !Number.isInteger(appChannel) ||
+        appChannel < 0 ||
+        appChannel >= this.MAX_CHANNELS
+      ) {
+        this.sdk.logger.error(
+          `P2P appChannel must be an integer in [0, ${this.MAX_CHANNELS}), received ${appChannel}, dropping message.`
+        );
+        // Emit -1 (the JSDoc's sentinel for "not determinable") rather than
+        // the raw invalid value, which could be NaN, Infinity, or out of range.
+        this.reportPacketDrop(-1, "SEND", "INVALID_CHANNEL");
         return false;
       }
 
@@ -1122,6 +1185,7 @@ export class P2PManager {
         this.sdk.logger.error(
           `P2P payloadSize must be greater than 0, received ${payloadSize}, dropping message.`
         );
+        this.reportPacketDrop(appChannel, "SEND", "INVALID_PAYLOAD_SIZE");
         return false;
       }
 
@@ -1129,6 +1193,7 @@ export class P2PManager {
         this.sdk.logger.error(
           `P2P payload too large: ${payloadSize} bytes exceeds max ${this.MAX_PAYLOAD_SIZE} bytes, dropping message.`
         );
+        this.reportPacketDrop(appChannel, "SEND", "PAYLOAD_TOO_LARGE");
         return false;
       }
 
@@ -1136,6 +1201,7 @@ export class P2PManager {
         this.sdk.logger.error(
           `payloadSize is greater than payload buffer length: ${payloadSize} > ${payload.length}, dropping message.`
         );
+        this.reportPacketDrop(appChannel, "SEND", "INVALID_PAYLOAD_SIZE");
         return false;
       }
 
@@ -1153,19 +1219,41 @@ export class P2PManager {
         : this.unreliableChannels;
 
       if (toUserId === undefined) {
-        // Broadcast to all peers
-        channelMap.forEach((channel) => {
-          if (channel.readyState === "open") {
+        // Broadcast is best-effort: silently skip peers whose channels aren't
+        // open
+        channelMap.forEach((channel, peerUserId) => {
+          if (channel.readyState !== "open") return;
+          try {
             channel.send(messageData as Uint8Array<ArrayBuffer>);
+          } catch (error) {
+            // Just log the error, don't report a packet drop.
+            // Game can listen for P2PPeerReconnecting/P2PConnectionFailed for reachability
+            this.sdk.logger.error(
+              `P2P broadcast to peer ${peerUserId} failed:`,
+              error
+            );
           }
         });
       } else {
         // Send to specific peer
         const channel = channelMap.get(toUserId);
         if (!channel || channel.readyState !== "open") {
-          throw new Error(`No open channel to peer ${toUserId}`);
+          this.sdk.logger.error(
+            `P2P no open channel to peer ${toUserId}, dropping message.`
+          );
+          this.reportPacketDrop(appChannel, "SEND", "PEER_NOT_READY");
+          return false;
         }
-        channel.send(messageData as Uint8Array<ArrayBuffer>);
+        try {
+          channel.send(messageData as Uint8Array<ArrayBuffer>);
+        } catch (error) {
+          this.sdk.logger.error(
+            `P2P send to peer ${toUserId} failed, dropping message:`,
+            error
+          );
+          this.reportPacketDrop(appChannel, "SEND", "PEER_NOT_READY");
+          return false;
+        }
       }
 
       return true;
@@ -1216,11 +1304,6 @@ export class P2PManager {
       return;
     }
 
-    this.stopConnectionStatePolling();
-
-    this.currentConnection.state = "disconnected";
-    this.sdk.logger.debug("P2P connection state: disconnected");
-
     this.stopSignalingMessageSubscription();
 
     (
@@ -1243,6 +1326,9 @@ export class P2PManager {
     this.pendingIceCandidates.clear();
     this.iceRestartAttempts.clear();
     this.iceRestartInProgress.clear();
+    this.reconnectingPeers.clear();
+    this.establishedPeers.clear();
+    this.clearPacketDropTrackers();
 
     this.initializationInProgress = null;
     this.initializationLobbyId = null;
@@ -1254,10 +1340,6 @@ export class P2PManager {
   // ===============
   // Helper Methods
   // ===============
-
-  getCurrentP2PConnection(): P2PConnection | null {
-    return this.currentConnection;
-  }
 
   // Check if channels are ready for a specific peer
   isPeerReady(userId: Id<"users">): boolean {
@@ -1274,16 +1356,6 @@ export class P2PManager {
       unreliableChannel?.readyState === "open";
 
     return reliableReady && unreliableReady;
-  }
-
-  // Check if all peers are connected
-  private allPeersConnected(): boolean {
-    if (!this.currentConnection) return false;
-
-    const peerIds = Object.keys(this.currentConnection.peers) as Id<"users">[];
-    if (peerIds.length === 0) return true; // No peers means "connected"
-
-    return peerIds.every((userId) => this.isPeerReady(userId));
   }
 
   isBroadcastReady(): boolean {
@@ -1346,10 +1418,100 @@ export class P2PManager {
     );
   }
 
+  /**
+   * Record a packet drop and emit P2P_PACKET_DROPPED with rate-limiting per
+   * (channel, direction, reason) tuple. First drop on an idle tuple fires
+   * immediately; subsequent drops within PACKET_DROP_WINDOW_MS are coalesced
+   * into a single event at the end of the window.
+   */
+  private reportPacketDrop(
+    channel: number,
+    direction: "SEND" | "RECEIVE",
+    reason: P2PPacketDropReason
+  ): void {
+    const key = `${direction}:${channel}:${reason}`;
+    let tracker = this.packetDropTrackers.get(key);
+    if (!tracker) {
+      tracker = {
+        channel,
+        direction,
+        reason,
+        pendingCount: 0,
+        windowTimer: null,
+        droppedTotal: 0
+      };
+      this.packetDropTrackers.set(key, tracker);
+    }
+
+    tracker.droppedTotal += 1;
+
+    // Idle → emit immediately and open a window. Keeps first-drop latency at
+    // zero for sparse drops.
+    if (tracker.windowTimer === null) {
+      this.emitPacketDropped(tracker, 1);
+      tracker.windowTimer = setTimeout(
+        () => this.flushPacketDropWindow(key),
+        this.PACKET_DROP_WINDOW_MS
+      );
+      return;
+    }
+
+    // Window active — coalesce silently until it expires.
+    tracker.pendingCount += 1;
+  }
+
+  private flushPacketDropWindow(key: string): void {
+    const tracker = this.packetDropTrackers.get(key);
+    if (!tracker) return;
+
+    if (tracker.pendingCount > 0) {
+      // Drops continued during the window — emit the aggregate and keep the
+      // window open so sustained overload stays rate-limited at ~1/window.
+      const count = tracker.pendingCount;
+      tracker.pendingCount = 0;
+      this.emitPacketDropped(tracker, count);
+      tracker.windowTimer = setTimeout(
+        () => this.flushPacketDropWindow(key),
+        this.PACKET_DROP_WINDOW_MS
+      );
+    } else {
+      // Quiet window — return to idle so the next drop can fire immediately.
+      tracker.windowTimer = null;
+    }
+  }
+
+  private emitPacketDropped(
+    tracker: {
+      channel: number;
+      direction: "SEND" | "RECEIVE";
+      reason: P2PPacketDropReason;
+      droppedTotal: number;
+    },
+    droppedCount: number
+  ): void {
+    this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_PACKET_DROPPED, {
+      channel: tracker.channel,
+      direction: tracker.direction,
+      reason: tracker.reason,
+      droppedCount,
+      droppedTotal: tracker.droppedTotal
+    } satisfies P2PPacketDroppedPayload);
+  }
+
+  private clearPacketDropTrackers(): void {
+    for (const tracker of this.packetDropTrackers.values()) {
+      if (tracker.windowTimer !== null) {
+        clearTimeout(tracker.windowTimer);
+      }
+    }
+    this.packetDropTrackers.clear();
+  }
+
   private enqueueMessage(wireData: ArrayBuffer, fromUserId: Id<"users">): void {
     try {
       if (wireData.byteLength < this.WIRE_PAYLOAD_OFFSET) {
         this.sdk.logger.warn("Binary message too short to extract channel");
+        this.reportPacketDrop(-1, "RECEIVE", "MALFORMED");
         return;
       }
 
@@ -1363,6 +1525,7 @@ export class P2PManager {
           this.sdk.logger.warn(
             `Channel ${channel} exceeds max channels (${this.MAX_CHANNELS}), dropping message`
           );
+          this.reportPacketDrop(channel, "RECEIVE", "INVALID_CHANNEL");
           return;
         }
         this.createChannelQueue(channel);
@@ -1375,6 +1538,7 @@ export class P2PManager {
         this.sdk.logger.warn(
           `P2P message queue full for channel ${channel}, dropping message`
         );
+        this.reportPacketDrop(channel, "RECEIVE", "QUEUE_FULL");
         return;
       }
 
@@ -1387,6 +1551,7 @@ export class P2PManager {
         this.sdk.logger.warn(
           `Message too large for queue: ${storedSize} > ${maxMessageSize}, dropping message.`
         );
+        this.reportPacketDrop(channel, "RECEIVE", "PAYLOAD_TOO_LARGE");
         return;
       }
 
@@ -1607,7 +1772,8 @@ export class P2PManager {
 
   // Wire format: [channel(1)][payload(...)] (no userId, no dataLength)
   private encodeWireMessage(channel: number, payload: Uint8Array): Uint8Array {
-    // Confirm channel is valid
+    // Defensive guard — sendP2PMessage validates the channel before calling,
+    // so this should be unreachable unless a new caller is added.
     if (channel < 0 || channel >= this.MAX_CHANNELS) {
       throw new Error(
         `P2P channel ${channel} must be between 0 and ${this.MAX_CHANNELS - 1}`
@@ -1626,6 +1792,10 @@ export class P2PManager {
   }
 
   private decodeBinaryMessage(data: Uint8Array): P2PMessage {
+    // Defensive guard — enqueueMessage writes every slot with a fixed
+    // PAYLOAD_OFFSET-byte header, so any slot retrieved from a channel queue
+    // is always at least PAYLOAD_OFFSET bytes. Unreachable unless a new
+    // caller bypasses the queue.
     if (data.byteLength < this.PAYLOAD_OFFSET) {
       throw new Error("Invalid binary message: too short");
     }

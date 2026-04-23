@@ -195,6 +195,49 @@ export interface P2PPeerDisconnectedPayload {
   username: string;
 }
 
+/** Payload for P2PPeerReconnecting event */
+export interface P2PPeerReconnectingPayload {
+  userId: Id<"users">;
+  username: string;
+}
+
+/** Payload for P2PPeerReconnected event */
+export interface P2PPeerReconnectedPayload {
+  userId: Id<"users">;
+  username: string;
+}
+
+/**
+ * Reason a P2P packet was dropped. Each reason implies a different
+ * game-side remedy.
+ */
+export type P2PPacketDropReason =
+  | "QUEUE_FULL"  // throttle your sends, bundle updates into fewer packets, or increase p2p maxIncomingMessages config
+  | "PAYLOAD_TOO_LARGE"  // reduce payload or increase p2p messageSize config
+  | "INVALID_PAYLOAD_SIZE"  // programming error
+  | "INVALID_CHANNEL"  // SDK version skew or malicious peer
+  | "MALFORMED"  // wire data too short to parse; channel will be -1
+  | "PEER_NOT_READY"  // P2P not yet initialized, or peer was never ready / closed mid-send. If P2P hasn't been initialized, initialize it first; otherwise wait for P2P_CONNECTION_ESTABLISHED and watch P2P_PEER_DISCONNECTED/P2P_CONNECTION_FAILED/P2P_PEER_RECONNECTING for reachability.
+
+/**
+ * Payload for P2PPacketDropped event.
+ *
+ * Emitted whenever the SDK drops a P2P packet — either outgoing (rejected
+ * by local validation) or incoming (rejected by the receive-side ring
+ * buffer / framing layer).
+ *
+ * Events are aggregated per `(channel, direction, reason)` tuple with a
+ * short window so bursty drops don't flood the game, while sparse drops
+ * still fire promptly.
+ */
+export interface P2PPacketDroppedPayload {
+  channel: number; // app channel; -1 if not determinable (malformed wire data or invalid send-side channel)
+  direction: "SEND" | "RECEIVE";
+  reason: P2PPacketDropReason;
+  droppedCount: number;  // Number of drops coalesced into this event
+  droppedTotal: number;  // Cumulative number of drops since the P2PManager was initialized
+}
+
 // --- Backend Connection Events ---
 
 /** Payload for BackendConnected, BackendDisconnected, BackendReconnecting events */
@@ -217,14 +260,7 @@ export interface P2PPeer {
 export interface P2PConnection {
   lobbyId: Id<"lobbies">;
   peers: Record<Id<"users">, P2PPeer>; // userId -> peer info (we may add more fields to P2PPeer later)
-  state: P2PConnectionState;
 }
-
-export type P2PConnectionState =
-  | "connecting"
-  | "connected"
-  | "disconnected"
-  | "failed";
 
 export interface P2PMessage {
   fromUserId: Id<"users">; // Primary identifier for sender TODO: Make this a small int handle instead of a 32 byte string
