@@ -15,6 +15,7 @@ import {
 } from "./services/friends";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
+import { PageEnhancementManager } from "./utils/pageEnhancementManager";
 import { takeFocus } from "./utils/focusManager";
 import { WavedashEvents } from "./types";
 
@@ -156,7 +157,9 @@ class WavedashSDK extends EventTarget {
     ]);
 
     this.setupSessionEndListeners();
-    
+
+    new PageEnhancementManager().register();
+
     this.launchParams = sdkConfig.launchParams ?? {};
   }
 
@@ -701,7 +704,11 @@ class WavedashSDK extends EventTarget {
       storeNow
     );
   }
-  setStat(identifier: string, value: number, storeNow: boolean = false): boolean {
+  setStat(
+    identifier: string,
+    value: number,
+    storeNow: boolean = false
+  ): boolean {
     return this.apiCallSync(
       this.statsManager,
       "setStat",
@@ -933,7 +940,11 @@ class WavedashSDK extends EventTarget {
     );
   }
 
-  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: string | number | null): boolean {
+  setLobbyData(
+    lobbyId: Id<"lobbies">,
+    key: string,
+    value: string | number | null
+  ): boolean {
     return this.apiCallSync(
       this.lobbyManager,
       "setLobbyData",
@@ -1201,7 +1212,7 @@ class WavedashSDK extends EventTarget {
       this.lobbyManager.destroy();
       this.heartbeatManager.destroy();
       this.statsManager.destroy();
-      
+
       const sessionEndData: Record<string, unknown> = {};
       if (pendingData?.stats?.length) {
         sessionEndData.stats = pendingData.stats;
@@ -1277,4 +1288,3 @@ export function setupWavedashSDK(): WavedashSDK {
 
   return sdk;
 }
-
