@@ -17,7 +17,6 @@ import {
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { PageEnhancementManager } from "./utils/pageEnhancementManager";
-import { installFullscreenCompat } from "./utils/fullscreenCompat";
 import { takeFocus } from "./utils/focusManager";
 import { WavedashEvents } from "./types";
 
@@ -67,9 +66,6 @@ import {
   UrlParams
 } from "@wvdsh/types";
 
-interface FullscreenChangedMessage {
-  isFullscreen?: boolean;
-}
 import { parentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
@@ -153,17 +149,7 @@ class WavedashSDK extends EventTarget {
     this.leaderboardManager = new LeaderboardManager(this);
     this.friendsManager = new FriendsManager(this);
     this.gameEventManager = new GameEventManager(this);
-    this.fullscreenManager = new FullscreenManager(this.iframeMessenger);
-    this.iframeMessenger.onPush(
-      IFRAME_MESSAGE_TYPE.FULLSCREEN_CHANGED,
-      (data) => {
-        const message = data as FullscreenChangedMessage;
-        this.fullscreenManager.onFullscreenChanged(
-          Boolean(message.isFullscreen)
-        );
-      }
-    );
-    installFullscreenCompat(this.fullscreenManager);
+    this.fullscreenManager = new FullscreenManager(this);
 
     // Cache current user for avatar lookups
     this.friendsManager.cacheUsers([
