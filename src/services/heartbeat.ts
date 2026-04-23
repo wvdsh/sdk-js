@@ -11,7 +11,7 @@ import {
   DeviceFingerprint,
   HEARTBEAT,
   IFRAME_MESSAGE_TYPE
-} from "@wvdsh/types";
+} from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type { ConnectionState } from "convex/browser";

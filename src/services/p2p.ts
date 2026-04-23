@@ -22,7 +22,7 @@ import type {
 } from "../types";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
-import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/types";
+import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
 
 // Default P2P configuration
 const DEFAULT_P2P_CONFIG: Required<P2PConfig> = {

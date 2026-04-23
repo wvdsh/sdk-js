@@ -1,4 +1,4 @@
-name: Publish Package to github packages
+name: Publish Package to npm
 
 on:
   release:
@@ -8,10 +8,8 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     permissions:
-      id-token: write # Required for OIDC trusted publishing
+      id-token: write # Required for OIDC trusted publishing + provenance
       contents: read
-    env:
-      NODE_AUTH_TOKEN: ${{ secrets.GH_PAT }}
     steps:
       - uses: actions/checkout@v4
 
@@ -19,6 +17,7 @@ jobs:
         with:
           node-version: 24
           cache: "npm"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         run: npm ci
@@ -30,6 +29,6 @@ jobs:
         if: github.event_name == 'workflow_dispatch'
         run: npm version ${{ github.event.inputs.version }} --no-git-tag-version
 
-      # No NODE_AUTH_TOKEN needed - uses OIDC
+      # No NODE_AUTH_TOKEN needed - uses OIDC trusted publisher configured on npmjs.com
       - name: Publish package
-        run: npm publish --access public
+        run: npm publish --access public --provenance

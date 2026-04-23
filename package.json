@@ -1,6 +1,6 @@
 {
   "name": "@wvdsh/sdk-js",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "description": "Wavedash JavaScript SDK",
   "main": "./dist/index.js",
@@ -12,6 +12,10 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/wvdsh/sdk-js.git"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
   },
   "scripts": {
     "build": "tsup",
@@ -36,7 +40,7 @@
     "typescript-eslint": "^8.52.0"
   },
   "dependencies": {
-    "@wvdsh/types": "^1.0.462",
+    "@wvdsh/api": "^0.1.0",
     "convex": "^1.28.0",
     "lodash.debounce": "^4.0.8"
   }

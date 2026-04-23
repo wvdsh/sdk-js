@@ -1,4 +1,4 @@
-import { api } from "@wvdsh/types";
+import { api } from "@wvdsh/api";
 import type { WavedashSDK } from "..";
 import type { StatsStoredPayload } from "../types";
 import { WavedashEvents } from "../events";

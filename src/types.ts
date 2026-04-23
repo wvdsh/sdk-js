@@ -2,7 +2,7 @@ import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 
 import { WavedashEvents } from "./events";
-import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/types";
+import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/api";
 
 // Extract types from the API
 export type LobbyVisibility =
@@ -69,7 +69,7 @@ export interface WavedashConfig {
 }
 
 // URL query params that were present when the game was launched
-export type { GameLaunchParams } from "@wvdsh/types";
+export type { GameLaunchParams } from "@wvdsh/api";
 
 export interface RemoteFileMetadata {
   exists: boolean; // Whether the entry exists

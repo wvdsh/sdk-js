@@ -1,4 +1,4 @@
-import { IFRAME_MESSAGE_TYPE } from "@wvdsh/types";
+import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { WavedashEvents, type WavedashSDK } from "../index";
 
 /**

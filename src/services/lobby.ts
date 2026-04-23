@@ -28,7 +28,7 @@ import {
   IFRAME_MESSAGE_TYPE,
   LOBBY_MESSAGE_MAX_LENGTH,
   SDKUser
-} from "@wvdsh/types";
+} from "@wvdsh/api";
 
 export class LobbyManager {
   private sdk: WavedashSDK;
