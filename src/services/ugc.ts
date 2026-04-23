@@ -83,6 +83,16 @@ export class UGCManager extends WavedashManager {
     return ugcId;
   }
 
+  async deleteUGCItem(
+    ugcId: Id<"userGeneratedContent">
+  ): Promise<Id<"userGeneratedContent">> {
+    await this.sdk.convexClient.mutation(
+      api.sdk.userGeneratedContent.deleteUGCItem,
+      { ugcId }
+    );
+    return ugcId;
+  }
+
   async downloadUGCItem(
     ugcId: Id<"userGeneratedContent">,
     filePath: string
