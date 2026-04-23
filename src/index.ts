@@ -1295,6 +1295,9 @@ export function setupWavedashSDK(): WavedashSDK {
     .WavedashJS;
   if (existing) return existing;
 
+  iframeMessenger.addEventListener(IFRAME_MESSAGE_TYPE.TAKE_FOCUS, () =>
+    takeFocus()
+  );
   iframeMessenger.registerEventHandlers();
 
   const raw = new URLSearchParams(window.location.search).get(

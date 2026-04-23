@@ -1,5 +1,5 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/types";
-import type { WavedashSDK } from "../index";
+import { WavedashEvents, type WavedashSDK } from "../index";
 
 /**
  * FullscreenManager
@@ -20,65 +20,78 @@ import type { WavedashSDK } from "../index";
  * calls route through us. The iframe isn't granted the fullscreen feature
  * policy anymore, so without these shims those calls would silently reject.
  */
-interface FullscreenChangedMessage {
-  isFullscreen?: boolean;
-}
-
 export class FullscreenManager {
-  #isFullscreen = false;
-  #listeners = new Set<(isFullscreen: boolean) => void>();
-  #sdk: WavedashSDK;
+  private _isFullscreen = false;
+  private listeners = new Set<(isFullscreen: boolean) => void>();
+  private sdk: WavedashSDK;
 
   constructor(sdk: WavedashSDK) {
-    this.#sdk = sdk;
-    this.#sdk.iframeMessenger.onPush(
+    this.sdk = sdk;
+    this.sdk.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.FULLSCREEN_CHANGED,
       (data) => {
-        const message = data as FullscreenChangedMessage;
-        this.#setState(Boolean(message.isFullscreen));
+        console.log(
+          "[wvdsh-sdk] FULLSCREEN_CHANGED received:",
+          data.isFullscreen
+        );
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.FULLSCREEN_CHANGED,
+          data.isFullscreen
+        );
+        this.setState(data.isFullscreen);
       }
     );
-    this.#installCompatShims();
+    this.installCompatShims();
   }
 
   isFullscreen(): boolean {
-    return this.#isFullscreen;
+    return this._isFullscreen;
   }
 
-  /** Ask the host to enter (true) or exit (false) fullscreen. */
-  requestFullscreen(fullscreen: boolean): void {
-    this.#sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.SET_FULLSCREEN, {
-      fullscreen
-    });
-  }
-
-  toggleFullscreen(): void {
-    this.#sdk.iframeMessenger.postToParent(
-      IFRAME_MESSAGE_TYPE.TOGGLE_FULLSCREEN,
-      {}
+  /**
+   * Ask the host to enter (true) or exit (false) fullscreen. Resolves to
+   * `true` if the host reports the operation succeeded, `false` otherwise
+   * (e.g. browser rejected for lack of user activation).
+   */
+  async requestFullscreen(fullscreen: boolean): Promise<boolean> {
+    console.log("[wvdsh-sdk] requestFullscreen ->", fullscreen);
+    const response = await this.sdk.iframeMessenger.requestFromParent(
+      IFRAME_MESSAGE_TYPE.SET_FULLSCREEN,
+      { fullscreen }
     );
+    console.log("[wvdsh-sdk] requestFullscreen result:", response.success);
+    return response.success;
+  }
+
+  async toggleFullscreen(): Promise<boolean> {
+    console.log("[wvdsh-sdk] toggleFullscreen");
+    const response = await this.sdk.iframeMessenger.requestFromParent(
+      IFRAME_MESSAGE_TYPE.TOGGLE_FULLSCREEN
+    );
+    console.log("[wvdsh-sdk] toggleFullscreen result:", response.success);
+    return response.success;
   }
 
   /** Subscribe to state flips. Returns an unsubscribe fn. */
   subscribe(listener: (isFullscreen: boolean) => void): () => void {
-    this.#listeners.add(listener);
-    return () => this.#listeners.delete(listener);
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
   }
 
-  #setState(isFullscreen: boolean): void {
-    if (this.#isFullscreen === isFullscreen) return;
-    this.#isFullscreen = isFullscreen;
-    for (const listener of this.#listeners) listener(isFullscreen);
+  private setState(isFullscreen: boolean): void {
+    if (this._isFullscreen === isFullscreen) return;
+    this._isFullscreen = isFullscreen;
+    for (const listener of this.listeners) listener(isFullscreen);
   }
 
-  #installCompatShims(): void {
+  private installCompatShims(): void {
     if (typeof document === "undefined") return;
 
     // Drive reads: many games read `document.fullscreenElement` to figure out
     // whether they're fullscreen. We expose `document.body` when the parent
     // has us fullscreen, so truthy checks keep working.
     const fullscreenElementGetter = () =>
-      this.#isFullscreen ? document.body : null;
+      this._isFullscreen ? document.body : null;
 
     Object.defineProperty(document, "fullscreenElement", {
       configurable: true,
@@ -90,51 +103,48 @@ export class FullscreenManager {
     });
 
     // Drive writes: requestFullscreen enters, exitFullscreen exits. Both
-    // return a Promise to match the native signature; games that `await` them
-    // still get sensible behavior (we resolve on the next parent-reported
-    // state flip).
-    const enter = (): Promise<void> => {
-      if (this.#isFullscreen) return Promise.resolve();
-      this.requestFullscreen(true);
-      return this.#waitForState(true);
+    // return a Promise to match the native signature — we reject when the
+    // host reports the operation failed, matching how the native API
+    // rejects on e.g. missing user activation.
+    const enter = async (): Promise<void> => {
+      if (this._isFullscreen) return;
+      const ok = await this.requestFullscreen(true);
+      if (!ok) throw new Error("Fullscreen request was denied");
     };
-    const exit = (): Promise<void> => {
-      if (!this.#isFullscreen) return Promise.resolve();
-      this.requestFullscreen(false);
-      return this.#waitForState(false);
+    const exit = async (): Promise<void> => {
+      if (!this._isFullscreen) return;
+      const ok = await this.requestFullscreen(false);
+      if (!ok) throw new Error("Exit fullscreen request was denied");
     };
 
     Element.prototype.requestFullscreen = function () {
+      console.log("[wvdsh-sdk] shim: Element.requestFullscreen called");
       return enter();
     };
     // @ts-expect-error webkit-prefixed is not in lib.dom.d.ts
     Element.prototype.webkitRequestFullscreen = function () {
+      console.log("[wvdsh-sdk] shim: Element.webkitRequestFullscreen called");
       return enter();
     };
 
     Document.prototype.exitFullscreen = function () {
+      console.log("[wvdsh-sdk] shim: Document.exitFullscreen called");
       return exit();
     };
     // @ts-expect-error webkit-prefixed is not in lib.dom.d.ts
     Document.prototype.webkitExitFullscreen = function () {
+      console.log("[wvdsh-sdk] shim: Document.webkitExitFullscreen called");
       return exit();
     };
 
     // Fan state changes out as a bubbling synthetic event so listeners on
     // `document` or `window` fire exactly once per flip, matching native.
-    this.subscribe(() => {
+    this.subscribe((isFullscreen) => {
+      console.log(
+        "[wvdsh-sdk] dispatching synthetic fullscreenchange, isFullscreen=",
+        isFullscreen
+      );
       document.dispatchEvent(new Event("fullscreenchange", { bubbles: true }));
-    });
-  }
-
-  #waitForState(target: boolean): Promise<void> {
-    return new Promise((resolve) => {
-      const unsubscribe = this.subscribe((isFullscreen) => {
-        if (isFullscreen === target) {
-          unsubscribe();
-          resolve();
-        }
-      });
     });
   }
 }
