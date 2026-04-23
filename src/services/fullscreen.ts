@@ -120,11 +120,10 @@ export class FullscreenManager {
       return exit();
     };
 
-    // Fan state changes out as synthetic events so listeners on `document`
-    // ("fullscreenchange", "webkitfullscreenchange") fire exactly once per flip.
+    // Fan state changes out as a bubbling synthetic event so listeners on
+    // `document` or `window` fire exactly once per flip, matching native.
     this.subscribe(() => {
-      document.dispatchEvent(new Event("fullscreenchange"));
-      document.dispatchEvent(new Event("webkitfullscreenchange"));
+      document.dispatchEvent(new Event("fullscreenchange", { bubbles: true }));
     });
   }
 

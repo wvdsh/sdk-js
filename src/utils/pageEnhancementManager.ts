@@ -99,13 +99,12 @@ function canScroll(
   direction: Direction,
   isRoot: boolean
 ): boolean {
-  // The root scrolling element scrolls regardless of `overflow: visible`;
-  // inner elements only scroll when explicitly auto/scroll.
-  if (!isRoot) {
-    const style = getComputedStyle(el);
-    const overflow = axis === "y" ? style.overflowY : style.overflowX;
-    if (overflow !== "auto" && overflow !== "scroll") return false;
-  }
+  // Root scrolls on `visible`/`auto`/`scroll`; inner elements need `auto`/`scroll`.
+  // Both are blocked by `hidden`/`clip`.
+  const style = getComputedStyle(el);
+  const overflow = axis === "y" ? style.overflowY : style.overflowX;
+  if (overflow === "hidden" || overflow === "clip") return false;
+  if (!isRoot && overflow !== "auto" && overflow !== "scroll") return false;
   if (axis === "y") {
     return direction < 0
       ? el.scrollTop > 0
