@@ -20,18 +20,31 @@ type PendingRequest = {
   timeout: ReturnType<typeof setTimeout>;
 };
 
+type PushHandler = (data: Record<string, unknown>) => void;
+
 export class IFrameMessenger {
   private pendingRequests: Map<string, PendingRequest>;
   private requestIdCounter: number;
+  private pushHandlers: Map<string, PushHandler>;
 
   constructor() {
     this.pendingRequests = new Map();
     this.requestIdCounter = 0;
+    this.pushHandlers = new Map();
 
     // Initialize the persistent message listener
     if (typeof window !== "undefined") {
       window.addEventListener("message", this.handleMessage);
     }
+  }
+
+  /**
+   * Register a handler for a one-way (no requestId) push message from the
+   * parent. Used for events like FULLSCREEN_CHANGED where the parent is the
+   * source of truth and the SDK just mirrors state.
+   */
+  onPush(messageType: string, handler: PushHandler): void {
+    this.pushHandlers.set(messageType, handler);
   }
 
   // Arrow function automatically captures 'this' from the class instance
@@ -52,9 +65,19 @@ export class IFrameMessenger {
         this.pendingRequests.delete(event.data.requestId);
         pending.resolve(event.data.data);
       }
-    } else if (event.data?.type === IFRAME_MESSAGE_TYPE.TAKE_FOCUS) {
-      takeFocus();
+      return;
     }
+
+    const messageType: string | undefined = event.data?.type;
+    if (!messageType) return;
+
+    if (messageType === IFRAME_MESSAGE_TYPE.TAKE_FOCUS) {
+      takeFocus();
+      return;
+    }
+
+    const handler = this.pushHandlers.get(messageType);
+    if (handler) handler(event.data);
   };
 
   postToParent(

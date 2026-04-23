@@ -1346,10 +1346,7 @@ export class P2PManager {
     );
   }
 
-  private enqueueMessage(
-    wireData: ArrayBuffer,
-    fromUserId: Id<"users">
-  ): void {
+  private enqueueMessage(wireData: ArrayBuffer, fromUserId: Id<"users">): void {
     try {
       if (wireData.byteLength < this.WIRE_PAYLOAD_OFFSET) {
         this.sdk.logger.warn("Binary message too short to extract channel");

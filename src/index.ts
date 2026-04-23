@@ -7,6 +7,7 @@ import { P2PManager } from "./services/p2p";
 import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
 import { GameEventManager } from "./services/gameEvents";
+import { FullscreenManager } from "./services/fullscreen";
 import {
   FriendsManager,
   AVATAR_SIZE_SMALL,
@@ -16,6 +17,7 @@ import {
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { PageEnhancementManager } from "./utils/pageEnhancementManager";
+import { installFullscreenCompat } from "./utils/fullscreenCompat";
 import { takeFocus } from "./utils/focusManager";
 import { WavedashEvents } from "./types";
 
@@ -64,6 +66,10 @@ import {
   UGC_VISIBILITY,
   UrlParams
 } from "@wvdsh/types";
+
+interface FullscreenChangedMessage {
+  isFullscreen?: boolean;
+}
 import { parentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
@@ -117,6 +123,7 @@ class WavedashSDK extends EventTarget {
   logger: WavedashLogger;
   iframeMessenger: IFrameMessenger;
   p2pManager: P2PManager;
+  fullscreenManager: FullscreenManager;
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
   ugcHost: string;
@@ -146,6 +153,17 @@ class WavedashSDK extends EventTarget {
     this.leaderboardManager = new LeaderboardManager(this);
     this.friendsManager = new FriendsManager(this);
     this.gameEventManager = new GameEventManager(this);
+    this.fullscreenManager = new FullscreenManager(this.iframeMessenger);
+    this.iframeMessenger.onPush(
+      IFRAME_MESSAGE_TYPE.FULLSCREEN_CHANGED,
+      (data) => {
+        const message = data as FullscreenChangedMessage;
+        this.fullscreenManager.onFullscreenChanged(
+          Boolean(message.isFullscreen)
+        );
+      }
+    );
+    installFullscreenCompat(this.fullscreenManager);
 
     // Cache current user for avatar lookups
     this.friendsManager.cacheUsers([
@@ -256,6 +274,37 @@ class WavedashSDK extends EventTarget {
 
   toggleOverlay(): void {
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY, {});
+  }
+
+  // ==========
+  // Fullscreen
+  // ==========
+
+  /**
+   * Whether the game is currently presented in fullscreen. Mirrored from the
+   * Wavedash host page, which owns the real fullscreen target so our overlay
+   * UI stays on top of the game.
+   */
+  isFullscreen(): boolean {
+    return this.fullscreenManager.isFullscreen();
+  }
+
+  /**
+   * Ask the host page to enter (true) or exit (false) fullscreen. Entering
+   * must happen inside a user gesture handler (click / keydown / pointerdown)
+   * for the browser to permit it.
+   */
+  requestFullscreen(fullscreen: boolean): void {
+    validateArgs("requestFullscreen", [["fullscreen", vBoolean]], [fullscreen]);
+    this.fullscreenManager.requestFullscreen(fullscreen);
+  }
+
+  /**
+   * Toggle fullscreen. Like `requestFullscreen(true)`, this must run inside
+   * a user gesture handler when entering fullscreen.
+   */
+  toggleFullscreen(): void {
+    this.fullscreenManager.toggleFullscreen();
   }
 
   // ============
