@@ -6,7 +6,7 @@
 
 import type { Id, UGCType, UGCVisibility } from "../types";
 import type { WavedashSDK } from "../index";
-import { api } from "@wvdsh/types";
+import { api } from "@wvdsh/api";
 
 export class UGCManager {
   private sdk: WavedashSDK;

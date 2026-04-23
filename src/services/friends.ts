@@ -6,7 +6,7 @@
 
 import type { Friend, Id } from "../types";
 import type { WavedashSDK } from "../index";
-import { api } from "@wvdsh/types";
+import { api } from "@wvdsh/api";
 import { getCdnImageUrl } from "../utils/cdn";
 
 // Avatar size constants

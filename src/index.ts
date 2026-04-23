@@ -63,7 +63,7 @@ import {
   UGC_TYPE,
   UGC_VISIBILITY,
   UrlParams
-} from "@wvdsh/types";
+} from "@wvdsh/api";
 import { parentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
