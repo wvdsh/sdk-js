@@ -444,6 +444,16 @@ class WavedashSDK extends EventTarget {
     );
   }
 
+  /**
+   * Delete a UGC item: removes the row, the R2 object, and frees up the
+   * user's storage quota by the size of the deleted upload.
+   */
+  async deleteUGCItem(
+    ugcId: Id<"userGeneratedContent">
+  ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
+    return this.apiCall(this.ugcManager, "deleteUGCItem", ugcId);
+  }
+
   async downloadUGCItem(
     ugcId: Id<"userGeneratedContent">,
     filePath: string
