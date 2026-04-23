@@ -9,7 +9,7 @@
 import type { RemoteFileMetadata } from "../types";
 import type { WavedashSDK } from "../index";
 import * as indexedDBUtils from "../utils/indexedDB";
-import { api } from "@wvdsh/types";
+import { api } from "@wvdsh/api";
 
 // Name of the remote R2 folder that stores user files
 // TODO: Should storage folder be configurable?
