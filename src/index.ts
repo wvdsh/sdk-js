@@ -548,7 +548,12 @@ class WavedashSDK extends EventTarget {
   async deleteUGCItem(
     ugcId: Id<"userGeneratedContent">
   ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
-    return this.apiCall(this.ugcManager, "deleteUGCItem", ugcId);
+    return this.apiCall(
+      this.ugcManager,
+      "deleteUGCItem",
+      [["ugcId", vId("userGeneratedContent")]],
+      ugcId
+    );
   }
 
   async downloadUGCItem(
