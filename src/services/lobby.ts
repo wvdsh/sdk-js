@@ -28,7 +28,7 @@ import {
   IFRAME_MESSAGE_TYPE,
   LOBBY_MESSAGE_MAX_LENGTH,
   SDKUser
-} from "@wvdsh/types";
+} from "@wvdsh/api";
 
 export class LobbyManager {
   private sdk: WavedashSDK;
@@ -117,14 +117,14 @@ export class LobbyManager {
     return this.lobbyHostId;
   }
 
-  getLobbyData(lobbyId: Id<"lobbies">, key: string): string | number | boolean | null {
+  getLobbyData(lobbyId: Id<"lobbies">, key: string): string | number | null {
     if (this.lobbyId === lobbyId) {
-      return (this.lobbyMetadata[key] as string | number | boolean) ?? null;
+      return (this.lobbyMetadata[key] as string | number) ?? null;
     }
     if (!this.cachedLobbies[lobbyId]) {
       return null;
     }
-    return (this.cachedLobbies[lobbyId].metadata[key] as string | number | boolean) ?? null;
+    return (this.cachedLobbies[lobbyId].metadata[key] as string | number) ?? null;
   }
 
   deleteLobbyData(lobbyId: Id<"lobbies">, key: string): boolean {

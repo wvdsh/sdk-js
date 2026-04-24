@@ -13,7 +13,7 @@ import type {
   UpsertedLeaderboardEntry
 } from "../types";
 import type { WavedashSDK } from "../index";
-import { api } from "@wvdsh/types";
+import { api } from "@wvdsh/api";
 
 export class LeaderboardManager {
   private sdk: WavedashSDK;

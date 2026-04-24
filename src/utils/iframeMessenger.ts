@@ -5,14 +5,14 @@
  * TODO: Look into Vercel's BIDC for this https://github.com/vercel/bidc
  */
 
-import { IFRAME_MESSAGE_TYPE, IFrameResponseMap } from "@wvdsh/types";
+import { IFRAME_MESSAGE_TYPE, IFrameEventPayloadMap } from "@wvdsh/api";
 import { takeFocus } from "./focusManager";
 import { parentOrigin } from "./parentOrigin";
 
 const RESPONSE_TIMEOUT_MS = 15_000;
 
 // Track pending requests - response can be any value from IFrameResponseMap
-type IFrameResponseValue = IFrameResponseMap[keyof IFrameResponseMap];
+type IFrameResponseValue = IFrameEventPayloadMap[keyof IFrameEventPayloadMap];
 
 type PendingRequest = {
   resolve: (data: IFrameResponseValue) => void;
@@ -97,10 +97,10 @@ export class IFrameMessenger {
     window.addEventListener("mousedown", handleInteraction);
   }
 
-  async requestFromParent<T extends keyof IFrameResponseMap>(
+  async requestFromParent<T extends keyof IFrameEventPayloadMap>(
     requestType: T,
     data?: Record<string, unknown>
-  ): Promise<IFrameResponseMap[T]> {
+  ): Promise<IFrameEventPayloadMap[T]> {
     return new Promise((resolve, reject) => {
       if (typeof window === "undefined" || !parentOrigin) {
         reject(new Error("Parent origin not found"));

@@ -9,7 +9,7 @@
 import type { RemoteFileMetadata } from "../types";
 import type { WavedashSDK } from "../index";
 import * as indexedDBUtils from "../utils/indexedDB";
-import { api } from "@wvdsh/types";
+import { api } from "@wvdsh/api";
 
 // Name of the remote R2 folder that stores user files
 // TODO: Should storage folder be configurable?
@@ -116,10 +116,11 @@ export class FileSystemManager {
    */
   async listRemoteDirectory(path: string): Promise<RemoteFileMetadata[]> {
     const url = this.getRemoteStorageUrl(path) + "?list=true";
+    const jwt = await this.sdk.ensureGameplayJwt();
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${this.sdk.gameplayJwt}`
+        Authorization: `Bearer ${jwt}`
       }
     });
     if (!response.ok) {
@@ -219,10 +220,11 @@ export class FileSystemManager {
       return false;
     }
 
+    const jwt = await this.sdk.ensureGameplayJwt();
     const response = await fetch(url, {
       method: "GET",
       headers: {
-        Authorization: `Bearer ${this.sdk.gameplayJwt}`
+        Authorization: `Bearer ${jwt}`
       }
     });
     if (!response.ok) {

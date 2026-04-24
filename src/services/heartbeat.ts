@@ -6,7 +6,12 @@
  * Lets the game update userPresence in the backend
  */
 
-import { api, DeviceFingerprint, HEARTBEAT } from "@wvdsh/types";
+import {
+  api,
+  DeviceFingerprint,
+  HEARTBEAT,
+  IFRAME_MESSAGE_TYPE
+} from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type { ConnectionState } from "convex/browser";
@@ -15,6 +20,12 @@ import type { BackendConnectionPayload } from "../types";
 export class HeartbeatManager {
   private sdk: WavedashSDK;
   private deviceFingerprint: DeviceFingerprint | undefined = undefined;
+  // Resolves once the parent has answered the device fingerprint request
+  // (or we've given up on it). Always resolves — never rejects. Best-effort:
+  // the backend stamps whatever fingerprint is present on the first heartbeat
+  // into the gameplaySession metadata, so we delay the first tick until this
+  // settles, but an empty fingerprint is acceptable.
+  private deviceFingerprintReady: Promise<void>;
   private testConnectionInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private isConnected: boolean = false;
@@ -26,14 +37,21 @@ export class HeartbeatManager {
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
   private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
 
-  constructor(sdk: WavedashSDK, deviceFingerprint?: DeviceFingerprint) {
+  constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
-    this.deviceFingerprint = deviceFingerprint;
 
     this.isConnected =
       this.sdk.convexClient.client.connectionState().isWebSocketConnected;
 
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
+
+    this.deviceFingerprintReady = this.sdk.iframeMessenger
+      .requestFromParent(IFRAME_MESSAGE_TYPE.GET_DEVICE_FINGERPRINT)
+      .then((fingerprint) => {
+        this.deviceFingerprint = fingerprint;
+      })
+      // Required catch handler so this.deviceFingerprintReady always resolves
+      .catch(() => {});
   }
 
   /** Start heartbeat and connection-check intervals */
@@ -45,7 +63,20 @@ export class HeartbeatManager {
     // Stop any existing intervals before starting fresh
     this.stop();
 
-    this.tickHeartbeat();
+    if (this.isFirstTick) {
+      // Defer the very first heartbeat until the device fingerprint has
+      // arrived from the parent
+      void this.deviceFingerprintReady.then(() => {
+        // isFirstTick is flipped to false by tickHeartbeat the first time it
+        // runs, so repeat start() calls during the pending window all queue
+        // a callback but only the first to execute does any work.
+        if (!this.sdk.gameLoaded || !this.isFirstTick) return;
+        this.tickHeartbeat();
+      });
+    } else {
+      this.tickHeartbeat();
+    }
+
     this.heartbeatInterval = setInterval(() => {
       this.tickHeartbeat();
     }, HEARTBEAT.CLIENT_INTERVAL_MS);
