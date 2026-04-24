@@ -97,10 +97,9 @@ export class FileSystemManager extends WavedashManager {
       }
     });
     if (!response.ok) {
-      this.sdk.logger.error(
-        `Failed to delete remote file: ${response.status} (${response.statusText})`
-      );
-      throw new Error(`Failed to delete remote file: ${filePath}`);
+      const msg = `Failed to delete remote file ${filePath}: ${response.status} (${response.statusText})`;
+      this.sdk.logger.error(msg);
+      throw new Error(msg);
     }
     return filePath;
   }
