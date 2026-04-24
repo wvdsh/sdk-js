@@ -14,6 +14,8 @@
  *   media, etc.) and (b) no ancestor — including the root scrolling element —
  *   can actually scroll in the requested direction. Modifier-key combos are
  *   left alone since they're often browser shortcuts (Cmd+ArrowLeft = back).
+ * - F3 (find-next): suppressed so the browser's find bar doesn't steal the
+ *   key from the game.
  */
 
 const SCROLL_KEYS = new Set([
@@ -142,6 +144,10 @@ export class PageEnhancementManager {
 
   private handleKeyDown = (event: KeyboardEvent) => {
     if (event.defaultPrevented) return;
+    if (event.key === "F3") {
+      event.preventDefault();
+      return;
+    }
     if (event.ctrlKey || event.metaKey || event.altKey) return;
     if (!SCROLL_KEYS.has(event.key)) return;
     if (consumesKey(event.target, event.key)) return;

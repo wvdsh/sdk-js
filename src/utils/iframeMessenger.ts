@@ -6,7 +6,6 @@
  */
 
 import { IFRAME_MESSAGE_TYPE, IFrameEventPayloadMap } from "@wvdsh/api";
-import { takeFocus } from "./focusManager";
 import { parentOrigin } from "./parentOrigin";
 
 const RESPONSE_TIMEOUT_MS = 15_000;
@@ -20,8 +19,10 @@ type PendingRequest = {
   timeout: ReturnType<typeof setTimeout>;
 };
 
-type PushType = keyof IFramePushMap;
-type PushListener<T extends PushType> = (data: IFramePushMap[T]) => void;
+type PushType = keyof IFrameEventPayloadMap;
+type PushListener<T extends PushType> = (
+  data: IFrameEventPayloadMap[T]
+) => void;
 
 export class IFrameMessenger {
   private pendingRequests: Map<string, PendingRequest>;
@@ -106,37 +107,6 @@ export class IFrameMessenger {
     console.log("[wvdsh-sdk] iframe post to parent:", requestType, data);
     window.parent.postMessage({ type: requestType, ...data }, parentOrigin);
     return true;
-  }
-
-  /**
-   * Register global keyboard/mouse handlers for iframe communication.
-   * Handles F3 prevention, initial interaction signaling, and Tab+Shift overlay toggle.
-   * Called once during SDK setup.
-   */
-  registerEventHandlers() {
-    let sentInitialInteraction = false;
-
-    const handleInteraction = () => {
-      if (!sentInitialInteraction) {
-        sentInitialInteraction = true;
-        this.postToParent(IFRAME_MESSAGE_TYPE.INITIAL_INTERACTION, {});
-      }
-    };
-
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "F3") {
-        event.preventDefault();
-      }
-
-      handleInteraction();
-
-      if (event.key === "Tab" && event.shiftKey) {
-        event.preventDefault();
-        this.postToParent(IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY, {});
-      }
-    });
-
-    window.addEventListener("mousedown", handleInteraction);
   }
 
   async requestFromParent<T extends keyof IFrameEventPayloadMap>(

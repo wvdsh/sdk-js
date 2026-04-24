@@ -8,6 +8,7 @@ import { StatsManager } from "./services/stats";
 import { HeartbeatManager } from "./services/heartbeat";
 import { GameEventManager } from "./services/gameEvents";
 import { FullscreenManager } from "./services/fullscreen";
+import { OverlayManager } from "./services/overlay";
 import {
   FriendsManager,
   AVATAR_SIZE_SMALL,
@@ -17,7 +18,6 @@ import {
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { PageEnhancementManager } from "./utils/pageEnhancementManager";
-import { takeFocus } from "./utils/focusManager";
 import { WavedashEvents } from "./types";
 
 type WavedashService =
@@ -119,6 +119,7 @@ class WavedashSDK extends EventTarget {
   iframeMessenger: IFrameMessenger;
   p2pManager: P2PManager;
   fullscreenManager: FullscreenManager;
+  overlayManager: OverlayManager;
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
   ugcHost: string;
@@ -149,6 +150,7 @@ class WavedashSDK extends EventTarget {
     this.friendsManager = new FriendsManager(this);
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
+    this.overlayManager = new OverlayManager(this);
 
     // Cache current user for avatar lookups
     this.friendsManager.cacheUsers([
@@ -250,7 +252,7 @@ class WavedashSDK extends EventTarget {
     this.heartbeatManager.start();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
     // Take focus when loading is complete
-    takeFocus();
+    this.overlayManager.takeFocus();
   }
 
   get gameLoaded(): boolean {
@@ -258,7 +260,7 @@ class WavedashSDK extends EventTarget {
   }
 
   toggleOverlay(): void {
-    iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY, {});
+    this.overlayManager.toggleOverlay();
   }
 
   // ==========
@@ -1293,11 +1295,6 @@ export function setupWavedashSDK(): WavedashSDK {
   const existing = (window as unknown as { WavedashJS?: WavedashSDK })
     .WavedashJS;
   if (existing) return existing;
-
-  iframeMessenger.addEventListener(IFRAME_MESSAGE_TYPE.TAKE_FOCUS, () =>
-    takeFocus()
-  );
-  iframeMessenger.registerEventHandlers();
 
   const raw = new URLSearchParams(window.location.search).get(
     UrlParams.SdkConfig
