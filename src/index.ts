@@ -28,7 +28,8 @@ type WavedashService =
   | P2PManager
   | HeartbeatManager
   | FriendsManager
-  | StatsManager;
+  | StatsManager
+  | FullscreenManager;
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
@@ -281,17 +282,23 @@ class WavedashSDK extends EventTarget {
    * must happen inside a user gesture handler (click / keydown / pointerdown)
    * for the browser to permit it.
    */
-  requestFullscreen(fullscreen: boolean): void {
-    validateArgs("requestFullscreen", [["fullscreen", vBoolean]], [fullscreen]);
-    this.fullscreenManager.requestFullscreen(fullscreen);
+  async requestFullscreen(
+    fullscreen: boolean
+  ): Promise<WavedashResponse<boolean>> {
+    return this.apiCall(
+      this.fullscreenManager,
+      "requestFullscreen",
+      [["fullscreen", vBoolean]],
+      fullscreen
+    );
   }
 
   /**
    * Toggle fullscreen. Like `requestFullscreen(true)`, this must run inside
    * a user gesture handler when entering fullscreen.
    */
-  toggleFullscreen(): void {
-    this.fullscreenManager.toggleFullscreen();
+  async toggleFullscreen(): Promise<WavedashResponse<boolean>> {
+    return this.apiCall(this.fullscreenManager, "toggleFullscreen", []);
   }
 
   // ============
