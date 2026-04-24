@@ -158,7 +158,7 @@ class WavedashSDK extends EventTarget {
 
     this.setupSessionEndListeners();
 
-    new PageEnhancementManager().register();
+    // new PageEnhancementManager().register();
 
     this.launchParams = sdkConfig.launchParams ?? {};
   }
