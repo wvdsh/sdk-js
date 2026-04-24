@@ -88,9 +88,20 @@ export class FileSystemManager {
    * @returns The path of the remote file that was deleted
    */
   async deleteRemoteFile(filePath: string): Promise<string> {
-    await this.sdk.convexClient.action(api.sdk.remoteFileStorage.deleteFile, {
-      path: this.toRemoteKey(filePath)
+    const url = this.getRemoteStorageUrl(filePath);
+    const jwt = await this.sdk.ensureGameplayJwt();
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${jwt}`
+      }
     });
+    if (!response.ok) {
+      this.sdk.logger.error(
+        `Failed to delete remote file: ${response.status} (${response.statusText})`
+      );
+      throw new Error(`Failed to delete remote file: ${filePath}`);
+    }
     return filePath;
   }
 
