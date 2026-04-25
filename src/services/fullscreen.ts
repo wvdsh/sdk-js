@@ -30,10 +30,6 @@ export class FullscreenManager {
     this.sdk.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.FULLSCREEN_CHANGED,
       (data) => {
-        console.log(
-          "[wvdsh-sdk] FULLSCREEN_CHANGED received:",
-          data.isFullscreen
-        );
         this.sdk.gameEventManager.notifyGame(
           WavedashEvents.FULLSCREEN_CHANGED,
           data.isFullscreen
@@ -54,21 +50,17 @@ export class FullscreenManager {
    * (e.g. browser rejected for lack of user activation).
    */
   async requestFullscreen(fullscreen: boolean): Promise<boolean> {
-    console.log("[wvdsh-sdk] requestFullscreen ->", fullscreen);
     const response = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.SET_FULLSCREEN,
       { fullscreen }
     );
-    console.log("[wvdsh-sdk] requestFullscreen result:", response.success);
     return response.success;
   }
 
   async toggleFullscreen(): Promise<boolean> {
-    console.log("[wvdsh-sdk] toggleFullscreen");
     const response = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.TOGGLE_FULLSCREEN
     );
-    console.log("[wvdsh-sdk] toggleFullscreen result:", response.success);
     return response.success;
   }
 
@@ -118,32 +110,24 @@ export class FullscreenManager {
     };
 
     Element.prototype.requestFullscreen = function () {
-      console.log("[wvdsh-sdk] shim: Element.requestFullscreen called");
       return enter();
     };
     // @ts-expect-error webkit-prefixed is not in lib.dom.d.ts
     Element.prototype.webkitRequestFullscreen = function () {
-      console.log("[wvdsh-sdk] shim: Element.webkitRequestFullscreen called");
       return enter();
     };
 
     Document.prototype.exitFullscreen = function () {
-      console.log("[wvdsh-sdk] shim: Document.exitFullscreen called");
       return exit();
     };
     // @ts-expect-error webkit-prefixed is not in lib.dom.d.ts
     Document.prototype.webkitExitFullscreen = function () {
-      console.log("[wvdsh-sdk] shim: Document.webkitExitFullscreen called");
       return exit();
     };
 
     // Fan state changes out as a bubbling synthetic event so listeners on
     // `document` or `window` fire exactly once per flip, matching native.
-    this.subscribe((isFullscreen) => {
-      console.log(
-        "[wvdsh-sdk] dispatching synthetic fullscreenchange, isFullscreen=",
-        isFullscreen
-      );
+    this.subscribe(() => {
       document.dispatchEvent(new Event("fullscreenchange", { bubbles: true }));
     });
   }

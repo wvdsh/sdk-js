@@ -88,12 +88,6 @@ export class IFrameMessenger {
     const messageType = event.data?.type as PushType | undefined;
     if (!messageType) return;
 
-    console.log(
-      "[wvdsh-sdk] iframe push from parent:",
-      messageType,
-      event.data
-    );
-
     const set = this.listeners.get(messageType);
     if (!set) return;
     for (const listener of set) listener(event.data);
@@ -104,7 +98,6 @@ export class IFrameMessenger {
     data: Record<string, string | number | boolean>
   ): boolean {
     if (typeof window === "undefined" || !parentOrigin) return false;
-    console.log("[wvdsh-sdk] iframe post to parent:", requestType, data);
     window.parent.postMessage({ type: requestType, ...data }, parentOrigin);
     return true;
   }
@@ -131,19 +124,11 @@ export class IFrameMessenger {
       }, RESPONSE_TIMEOUT_MS);
 
       this.pendingRequests.set(requestId, {
-        resolve: (responseData) => {
-          console.log(
-            "[wvdsh-sdk] iframe response from parent:",
-            requestType,
-            responseData
-          );
-          (resolve as (d: IFrameResponseValue) => void)(responseData);
-        },
+        resolve: resolve as (data: IFrameResponseValue) => void,
         reject,
         timeout
       });
 
-      console.log("[wvdsh-sdk] iframe request to parent:", requestType, data);
       window.parent.postMessage(
         { type: requestType, requestId, ...data },
         parentOrigin

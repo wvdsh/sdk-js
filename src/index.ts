@@ -279,23 +279,16 @@ class WavedashSDK extends EventTarget {
    * must happen inside a user gesture handler (click / keydown / pointerdown)
    * for the browser to permit it.
    */
-  async requestFullscreen(
-    fullscreen: boolean
-  ): Promise<WavedashResponse<boolean>> {
-    return this.apiCall(
-      this.fullscreenManager,
-      "requestFullscreen",
-      [["fullscreen", vBoolean]],
-      fullscreen
-    );
+  async requestFullscreen(fullscreen: boolean): Promise<boolean> {
+    return this.fullscreenManager.requestFullscreen(fullscreen);
   }
 
   /**
    * Toggle fullscreen. Like `requestFullscreen(true)`, this must run inside
    * a user gesture handler when entering fullscreen.
    */
-  async toggleFullscreen(): Promise<WavedashResponse<boolean>> {
-    return this.apiCall(this.fullscreenManager, "toggleFullscreen", []);
+  async toggleFullscreen(): Promise<boolean> {
+    return this.fullscreenManager.toggleFullscreen();
   }
 
   // ============
