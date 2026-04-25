@@ -1,5 +1,6 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { WavedashEvents, type WavedashSDK } from "../index";
+import type { FullscreenChangedPayload } from "../types";
 
 /**
  * FullscreenManager
@@ -32,7 +33,7 @@ export class FullscreenManager {
       (data) => {
         this.sdk.gameEventManager.notifyGame(
           WavedashEvents.FULLSCREEN_CHANGED,
-          data.isFullscreen
+          { isFullscreen: data.isFullscreen } satisfies FullscreenChangedPayload
         );
         this.setState(data.isFullscreen);
       }

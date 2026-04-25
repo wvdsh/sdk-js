@@ -3,7 +3,7 @@ import type { WavedashEvent } from "../types";
 
 interface QueuedEvent {
   event: WavedashEvent;
-  payload: string | number | boolean | object;
+  payload: string | number | object;
 }
 
 export class GameEventManager {
@@ -17,10 +17,7 @@ export class GameEventManager {
   // ==============================
   // JS -> Game Event Broadcasting
   // ==============================
-  notifyGame(
-    event: WavedashEvent,
-    payload: string | number | boolean | object
-  ): void {
+  notifyGame(event: WavedashEvent, payload: string | number | object): void {
     if (!this.sdk.eventsReady) {
       this.eventQueue.push({ event, payload });
       this.sdk.logger.debug(`Queued event: ${event}`);
@@ -36,7 +33,7 @@ export class GameEventManager {
 
   private sendGameEvent(
     event: WavedashEvent,
-    payload: string | number | boolean | object
+    payload: string | number | object
   ): void {
     const data =
       typeof payload === "object" ? JSON.stringify(payload) : payload;
