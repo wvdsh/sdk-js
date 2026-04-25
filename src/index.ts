@@ -17,7 +17,6 @@ import {
 } from "./services/friends";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
-import { PageEnhancementManager } from "./utils/pageEnhancementManager";
 import { WavedashEvents } from "./types";
 
 type WavedashService =
@@ -163,8 +162,6 @@ class WavedashSDK extends EventTarget {
     ]);
 
     this.setupSessionEndListeners();
-
-    // new PageEnhancementManager().register();
 
     this.launchParams = sdkConfig.launchParams ?? {};
   }
