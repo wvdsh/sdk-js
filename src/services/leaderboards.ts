@@ -115,7 +115,7 @@ export class LeaderboardManager {
   ): Promise<UpsertedLeaderboardEntry> {
     const result = await this.sdk.convexClient.mutation(
       api.sdk.leaderboards.upsertLeaderboardEntry,
-      { leaderboardId, score, keepBest, ugcId }
+      { leaderboardId, score, keepBest, ...(ugcId ? { ugcId } : {}) }
     );
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
