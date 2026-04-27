@@ -9,6 +9,7 @@ import { HeartbeatManager } from "./services/heartbeat";
 import { GameEventManager } from "./services/gameEvents";
 import {
   FriendsManager,
+  AVATAR_SIZE,
   AVATAR_SIZE_SMALL,
   AVATAR_SIZE_MEDIUM,
   AVATAR_SIZE_LARGE
@@ -17,7 +18,13 @@ import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { PageEnhancementManager } from "./utils/pageEnhancementManager";
 import { takeFocus } from "./utils/focusManager";
-import { WavedashEvents } from "./types";
+import {
+  LobbyKickedReason,
+  LobbyUserChangeType,
+  P2PPacketDropReason,
+  WavedashEventMap,
+  WavedashEvents
+} from "./types";
 
 type WavedashService =
   | LobbyManager
@@ -98,6 +105,19 @@ class WavedashSDK extends EventTarget {
   private gameFinishedLoading: boolean = false;
 
   Events = WavedashEvents;
+
+  // Constants surfaced on the instance so games can reference them as
+  // `Wavedash.LEADERBOARD_DISPLAY_TYPE.NUMERIC` etc., alongside named imports.
+  LOBBY_VISIBILITY = LOBBY_VISIBILITY;
+  LEADERBOARD_SORT_ORDER = LEADERBOARD_SORT_ORDER;
+  LEADERBOARD_DISPLAY_TYPE = LEADERBOARD_DISPLAY_TYPE;
+  UGC_TYPE = UGC_TYPE;
+  UGC_VISIBILITY = UGC_VISIBILITY;
+  GAME_ENGINE = GAME_ENGINE;
+  AVATAR_SIZE = AVATAR_SIZE;
+  LobbyKickedReason = LobbyKickedReason;
+  LobbyUserChangeType = LobbyUserChangeType;
+  P2PPacketDropReason = P2PPacketDropReason;
 
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
@@ -212,6 +232,101 @@ class WavedashSDK extends EventTarget {
     this.ensureInit();
     this._eventsReady = true;
     this.gameEventManager.flushEventQueue();
+  }
+
+  // ==============
+  // Event listening
+  // ==============
+
+  // Wrappers stored so `off(event, listener)` can find the wrapped EventListener
+  // we registered on the EventTarget for a given user-supplied payload listener.
+  private listenerWrappers = new Map<string, Map<AnyFn, EventListener>>();
+
+  /**
+   * Subscribe to a Wavedash event with a payload-typed listener (no need to
+   * unwrap `event.detail`). Returns an unsubscribe function.
+   *
+   *   const off = Wavedash.on(Wavedash.Events.LOBBY_JOINED, (payload) => {
+   *     // payload: LobbyJoinedPayload
+   *   });
+   *   off(); // later
+   */
+  on<K extends keyof WavedashEventMap>(
+    event: K,
+    listener: (payload: WavedashEventMap[K]) => void
+  ): () => void {
+    const wrapped: EventListener = (e) => {
+      listener((e as CustomEvent<WavedashEventMap[K]>).detail);
+    };
+    let perEvent = this.listenerWrappers.get(event);
+    if (!perEvent) {
+      perEvent = new Map();
+      this.listenerWrappers.set(event, perEvent);
+    }
+    // Match addEventListener semantics: same (event, listener) pair is a no-op
+    // on second call. Detach the previous wrapper before re-registering.
+    const prev = perEvent.get(listener);
+    if (prev) this.removeEventListener(event, prev);
+    perEvent.set(listener, wrapped);
+    this.addEventListener(event, wrapped);
+    return () => this.off(event, listener);
+  }
+
+  /**
+   * Remove a listener previously registered with {@link on}. Pass the original
+   * payload listener (not the wrapped one).
+   */
+  off<K extends keyof WavedashEventMap>(
+    event: K,
+    listener: (payload: WavedashEventMap[K]) => void
+  ): void {
+    const perEvent = this.listenerWrappers.get(event);
+    const wrapped = perEvent?.get(listener);
+    if (!perEvent || !wrapped) return;
+    this.removeEventListener(event, wrapped);
+    perEvent.delete(listener);
+    if (perEvent.size === 0) this.listenerWrappers.delete(event);
+  }
+
+  // Typed overloads for addEventListener / removeEventListener so callers using
+  // a Wavedash event name get a CustomEvent<Payload>; arbitrary strings still
+  // fall back to the loose EventTarget signature.
+  addEventListener<K extends keyof WavedashEventMap>(
+    type: K,
+    listener: (ev: CustomEvent<WavedashEventMap[K]>) => void,
+    options?: boolean | AddEventListenerOptions
+  ): void;
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | AddEventListenerOptions
+  ): void;
+  addEventListener(
+    type: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    listener: any,
+    options?: boolean | AddEventListenerOptions
+  ): void {
+    super.addEventListener(type, listener, options);
+  }
+
+  removeEventListener<K extends keyof WavedashEventMap>(
+    type: K,
+    listener: (ev: CustomEvent<WavedashEventMap[K]>) => void,
+    options?: boolean | EventListenerOptions
+  ): void;
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | EventListenerOptions
+  ): void;
+  removeEventListener(
+    type: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    listener: any,
+    options?: boolean | EventListenerOptions
+  ): void {
+    super.removeEventListener(type, listener, options);
   }
 
   // ==================
@@ -1244,7 +1359,12 @@ class WavedashSDK extends EventTarget {
 export { WavedashSDK };
 
 // Re-export avatar size constants
-export { AVATAR_SIZE_SMALL, AVATAR_SIZE_MEDIUM, AVATAR_SIZE_LARGE };
+export {
+  AVATAR_SIZE,
+  AVATAR_SIZE_SMALL,
+  AVATAR_SIZE_MEDIUM,
+  AVATAR_SIZE_LARGE
+};
 
 // Re-export all types and constants
 export * from "./types";
@@ -1288,3 +1408,11 @@ export function setupWavedashSDK(): WavedashSDK {
 
   return sdk;
 }
+
+
+// Note: importing this module in a non-iframe context (SSR, unit tests
+// without a mocked SdkConfig query param) throws at import time.
+// This is fine because devs should always test with the `wavedash dev` command.
+// Type-only consumers can use `import type { Lobby, Friend, ... } from "@wvdsh/sdk-js"` to avoid module evaluation.
+export const Wavedash: WavedashSDK = setupWavedashSDK();
+export default Wavedash;

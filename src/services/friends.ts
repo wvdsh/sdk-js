@@ -14,6 +14,12 @@ export const AVATAR_SIZE_SMALL = 0; // 64px - Lists, chat bubbles
 export const AVATAR_SIZE_MEDIUM = 1; // 128px - Profile cards
 export const AVATAR_SIZE_LARGE = 2; // 256px - Large displays
 
+export const AVATAR_SIZE = {
+  SMALL: AVATAR_SIZE_SMALL,
+  MEDIUM: AVATAR_SIZE_MEDIUM,
+  LARGE: AVATAR_SIZE_LARGE
+} as const;
+
 const AVATAR_DIMENSIONS = [64, 128, 256]; // Indexed by size constant
 
 interface CachedUser {

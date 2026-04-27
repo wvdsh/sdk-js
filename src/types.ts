@@ -4,6 +4,17 @@ import { type FunctionReturnType } from "convex/server";
 import { WavedashEvents } from "./events";
 import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/api";
 
+// Re-export runtime constants from the API package as values so games can
+// reference them via named imports or `Wavedash.LOBBY_VISIBILITY.PUBLIC`.
+export {
+  GAME_ENGINE,
+  LOBBY_VISIBILITY,
+  LEADERBOARD_SORT_ORDER,
+  LEADERBOARD_DISPLAY_TYPE,
+  UGC_TYPE,
+  UGC_VISIBILITY
+} from "@wvdsh/api";
+
 // Extract types from the API
 export type LobbyVisibility =
   PublicApiType["sdk"]["gameLobby"]["createAndJoinLobby"]["_args"]["visibility"];
@@ -209,15 +220,24 @@ export interface P2PPeerReconnectedPayload {
 
 /**
  * Reason a P2P packet was dropped. Each reason implies a different
- * game-side remedy.
+ * game-side remedy:
+ * - QUEUE_FULL: throttle your sends, bundle updates into fewer packets, or increase p2p maxIncomingMessages config
+ * - PAYLOAD_TOO_LARGE: reduce payload or increase p2p messageSize config
+ * - INVALID_PAYLOAD_SIZE: programming error
+ * - INVALID_CHANNEL: SDK version skew or malicious peer
+ * - MALFORMED: wire data too short to parse; channel will be -1
+ * - PEER_NOT_READY: P2P not yet initialized, or peer was never ready / closed mid-send. If P2P hasn't been initialized, initialize it first; otherwise wait for P2P_CONNECTION_ESTABLISHED and watch P2P_PEER_DISCONNECTED/P2P_CONNECTION_FAILED/P2P_PEER_RECONNECTING for reachability.
  */
+export const P2PPacketDropReason = {
+  QUEUE_FULL: "QUEUE_FULL",
+  PAYLOAD_TOO_LARGE: "PAYLOAD_TOO_LARGE",
+  INVALID_PAYLOAD_SIZE: "INVALID_PAYLOAD_SIZE",
+  INVALID_CHANNEL: "INVALID_CHANNEL",
+  MALFORMED: "MALFORMED",
+  PEER_NOT_READY: "PEER_NOT_READY"
+} as const;
 export type P2PPacketDropReason =
-  | "QUEUE_FULL"  // throttle your sends, bundle updates into fewer packets, or increase p2p maxIncomingMessages config
-  | "PAYLOAD_TOO_LARGE"  // reduce payload or increase p2p messageSize config
-  | "INVALID_PAYLOAD_SIZE"  // programming error
-  | "INVALID_CHANNEL"  // SDK version skew or malicious peer
-  | "MALFORMED"  // wire data too short to parse; channel will be -1
-  | "PEER_NOT_READY"  // P2P not yet initialized, or peer was never ready / closed mid-send. If P2P hasn't been initialized, initialize it first; otherwise wait for P2P_CONNECTION_ESTABLISHED and watch P2P_PEER_DISCONNECTED/P2P_CONNECTION_FAILED/P2P_PEER_RECONNECTING for reachability.
+  (typeof P2PPacketDropReason)[keyof typeof P2PPacketDropReason];
 
 /**
  * Payload for P2PPacketDropped event.
@@ -247,6 +267,29 @@ export interface BackendConnectionPayload {
   connectionCount: number;
   connectionRetries: number;
 }
+
+// =============================================================================
+// Event map: links each event name to its payload type so addEventListener,
+// removeEventListener, on, and off can infer the right CustomEvent / payload.
+// =============================================================================
+export type WavedashEventMap = {
+  [WavedashEvents.LOBBY_MESSAGE]: LobbyMessagePayload;
+  [WavedashEvents.LOBBY_JOINED]: LobbyJoinedPayload;
+  [WavedashEvents.LOBBY_KICKED]: LobbyKickedPayload;
+  [WavedashEvents.LOBBY_USERS_UPDATED]: LobbyUsersUpdatedPayload;
+  [WavedashEvents.LOBBY_DATA_UPDATED]: LobbyDataUpdatedPayload;
+  [WavedashEvents.LOBBY_INVITE]: LobbyInvitePayload;
+  [WavedashEvents.P2P_CONNECTION_ESTABLISHED]: P2PConnectionEstablishedPayload;
+  [WavedashEvents.P2P_CONNECTION_FAILED]: P2PConnectionFailedPayload;
+  [WavedashEvents.P2P_PEER_DISCONNECTED]: P2PPeerDisconnectedPayload;
+  [WavedashEvents.P2P_PEER_RECONNECTING]: P2PPeerReconnectingPayload;
+  [WavedashEvents.P2P_PEER_RECONNECTED]: P2PPeerReconnectedPayload;
+  [WavedashEvents.P2P_PACKET_DROPPED]: P2PPacketDroppedPayload;
+  [WavedashEvents.STATS_STORED]: StatsStoredPayload;
+  [WavedashEvents.BACKEND_CONNECTED]: BackendConnectionPayload;
+  [WavedashEvents.BACKEND_DISCONNECTED]: BackendConnectionPayload;
+  [WavedashEvents.BACKEND_RECONNECTING]: BackendConnectionPayload;
+};
 
 // =============================================================================
 // P2P Connection types
