@@ -296,6 +296,7 @@ export type WavedashEventMap = {
   [WavedashEvents.BACKEND_CONNECTED]: BackendConnectionPayload;
   [WavedashEvents.BACKEND_DISCONNECTED]: BackendConnectionPayload;
   [WavedashEvents.BACKEND_RECONNECTING]: BackendConnectionPayload;
+  [WavedashEvents.FULLSCREEN_CHANGED]: FullscreenChangedPayload;
 };
 
 // =============================================================================

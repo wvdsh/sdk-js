@@ -18,8 +18,6 @@ import {
 } from "./services/friends";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
-import { PageEnhancementManager } from "./utils/pageEnhancementManager";
-import { takeFocus } from "./utils/focusManager";
 import {
   LobbyKickedReason,
   LobbyUserChangeType,
