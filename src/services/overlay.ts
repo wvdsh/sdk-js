@@ -53,7 +53,6 @@ export class OverlayManager {
   }
 
   private handleKeyDown = (event: KeyboardEvent) => {
-    if (event.defaultPrevented) return;
     if (event.key === "Tab" && event.shiftKey) {
       event.preventDefault();
       this.toggleOverlay();
