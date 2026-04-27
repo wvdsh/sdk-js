@@ -102,24 +102,6 @@ export class IFrameMessenger {
     return true;
   }
 
-  /**
-   * Register global keyboard/mouse handlers for iframe communication.
-   * Handles F3 prevention, initial interaction signaling, and Tab+Shift overlay toggle.
-   * Called once during SDK setup.
-   */
-  registerEventHandlers() {
-    window.addEventListener("keydown", (event) => {
-      if (event.key === "F3") {
-        event.preventDefault();
-      }
-
-      if (event.key === "Tab" && event.shiftKey) {
-        event.preventDefault();
-        this.postToParent(IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY, {});
-      }
-    });
-  }
-
   async requestFromParent<T extends keyof IFrameEventPayloadMap>(
     requestType: T,
     data?: Record<string, unknown>
