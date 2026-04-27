@@ -99,7 +99,7 @@ export interface EngineInstance {
   SendMessage(
     objectName: string,
     methodName: WavedashEvent,
-    value?: string | number | boolean
+    value?: string | number
   ): void;
   // Standard Emscripten filesystem API: https://emscripten.org/docs/api_reference/Filesystem-API.html
   FS: {
@@ -254,8 +254,8 @@ export interface P2PPacketDroppedPayload {
   channel: number; // app channel; -1 if not determinable (malformed wire data or invalid send-side channel)
   direction: "SEND" | "RECEIVE";
   reason: P2PPacketDropReason;
-  droppedCount: number;  // Number of drops coalesced into this event
-  droppedTotal: number;  // Cumulative number of drops since the P2PManager was initialized
+  droppedCount: number; // Number of drops coalesced into this event
+  droppedTotal: number; // Cumulative number of drops since the P2PManager was initialized
 }
 
 // --- Backend Connection Events ---
@@ -266,6 +266,13 @@ export interface BackendConnectionPayload {
   hasEverConnected: boolean;
   connectionCount: number;
   connectionRetries: number;
+}
+
+// --- Fullscreen Events ---
+
+/** Payload for FullscreenChanged event - emitted when fullscreen state flips */
+export interface FullscreenChangedPayload {
+  isFullscreen: boolean;
 }
 
 // =============================================================================

@@ -21,9 +21,7 @@ const CONVEX_ID_REGEX = /^[0-9a-z]{31,37}$/;
 
 export const vString: Validator<string> = (value, path) => {
   if (typeof value !== "string") {
-    throw new Error(
-      `${path}: expected string, got ${describeValue(value)}`
-    );
+    throw new Error(`${path}: expected string, got ${describeValue(value)}`);
   }
   return value;
 };
@@ -39,9 +37,7 @@ export const vNumber: Validator<number> = (value, path) => {
 
 export const vBoolean: Validator<boolean> = (value, path) => {
   if (typeof value !== "boolean") {
-    throw new Error(
-      `${path}: expected boolean, got ${describeValue(value)}`
-    );
+    throw new Error(`${path}: expected boolean, got ${describeValue(value)}`);
   }
   return value;
 };
@@ -128,9 +124,7 @@ export function vUnion<T>(...variants: Validator<T>[]): Validator<T> {
         // try next variant
       }
     }
-    throw new Error(
-      `${path}: no variant matched, got ${describeValue(value)}`
-    );
+    throw new Error(`${path}: no variant matched, got ${describeValue(value)}`);
   };
 }
 

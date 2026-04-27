@@ -30,7 +30,10 @@ export const WavedashEvents = {
   // Backend connection events
   BACKEND_CONNECTED: "BackendConnected", // connected to Convex backend
   BACKEND_DISCONNECTED: "BackendDisconnected", // disconnected from Convex backend
-  BACKEND_RECONNECTING: "BackendReconnecting" // attempting to reconnect to backend
+  BACKEND_RECONNECTING: "BackendReconnecting", // attempting to reconnect to backend
+
+  // Fullscreen events
+  FULLSCREEN_CHANGED: "FullscreenChanged" // fullscreen state changed
 
   // TODO: Future events to implement
   // P2P_CONNECTION_REQUESTED: 'P2PConnectionRequested', // for now we always connect all lobby members

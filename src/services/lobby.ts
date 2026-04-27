@@ -124,7 +124,9 @@ export class LobbyManager {
     if (!this.cachedLobbies[lobbyId]) {
       return null;
     }
-    return (this.cachedLobbies[lobbyId].metadata[key] as string | number) ?? null;
+    return (
+      (this.cachedLobbies[lobbyId].metadata[key] as string | number) ?? null
+    );
   }
 
   deleteLobbyData(lobbyId: Id<"lobbies">, key: string): boolean {
@@ -136,7 +138,11 @@ export class LobbyManager {
     50
   );
 
-  setLobbyData(lobbyId: Id<"lobbies">, key: string, value: string | number | null): boolean {
+  setLobbyData(
+    lobbyId: Id<"lobbies">,
+    key: string,
+    value: string | number | null
+  ): boolean {
     if (this.lobbyId !== lobbyId || this.lobbyHostId !== this.sdk.getUserId()) {
       return false;
     }

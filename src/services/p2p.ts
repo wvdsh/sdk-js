@@ -1489,16 +1489,13 @@ export class P2PManager {
     },
     droppedCount: number
   ): void {
-    this.sdk.gameEventManager.notifyGame(
-      WavedashEvents.P2P_PACKET_DROPPED,
-      {
-        channel: tracker.channel,
-        direction: tracker.direction,
-        reason: tracker.reason,
-        droppedCount,
-        droppedTotal: tracker.droppedTotal
-      } satisfies P2PPacketDroppedPayload
-    );
+    this.sdk.gameEventManager.notifyGame(WavedashEvents.P2P_PACKET_DROPPED, {
+      channel: tracker.channel,
+      direction: tracker.direction,
+      reason: tracker.reason,
+      droppedCount,
+      droppedTotal: tracker.droppedTotal
+    } satisfies P2PPacketDroppedPayload);
   }
 
   private clearPacketDropTrackers(): void {
@@ -1510,10 +1507,7 @@ export class P2PManager {
     this.packetDropTrackers.clear();
   }
 
-  private enqueueMessage(
-    wireData: ArrayBuffer,
-    fromUserId: Id<"users">
-  ): void {
+  private enqueueMessage(wireData: ArrayBuffer, fromUserId: Id<"users">): void {
     try {
       if (wireData.byteLength < this.WIRE_PAYLOAD_OFFSET) {
         this.sdk.logger.warn("Binary message too short to extract channel");

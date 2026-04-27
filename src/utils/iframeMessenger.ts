@@ -6,7 +6,6 @@
  */
 
 import { IFRAME_MESSAGE_TYPE, IFrameEventPayloadMap } from "@wvdsh/api";
-import { takeFocus } from "./focusManager";
 import { parentOrigin } from "./parentOrigin";
 
 const RESPONSE_TIMEOUT_MS = 15_000;
@@ -20,18 +19,49 @@ type PendingRequest = {
   timeout: ReturnType<typeof setTimeout>;
 };
 
+type PushType = keyof IFrameEventPayloadMap;
+type PushListener<T extends PushType> = (
+  data: IFrameEventPayloadMap[T]
+) => void;
+
 export class IFrameMessenger {
   private pendingRequests: Map<string, PendingRequest>;
   private requestIdCounter: number;
+  private listeners: Map<PushType, Set<PushListener<PushType>>>;
 
   constructor() {
     this.pendingRequests = new Map();
     this.requestIdCounter = 0;
+    this.listeners = new Map();
 
     // Initialize the persistent message listener
     if (typeof window !== "undefined") {
       window.addEventListener("message", this.handleMessage);
     }
+  }
+
+  /**
+   * Register a handler for a one-way (no requestId) push from the parent —
+   * e.g. FULLSCREEN_CHANGED or TAKE_FOCUS. Multiple handlers per type are
+   * supported; `data` is typed from IFramePushMap.
+   */
+  addEventListener<T extends PushType>(
+    type: T,
+    listener: PushListener<T>
+  ): void {
+    let set = this.listeners.get(type);
+    if (!set) {
+      set = new Set();
+      this.listeners.set(type, set);
+    }
+    set.add(listener as PushListener<PushType>);
+  }
+
+  removeEventListener<T extends PushType>(
+    type: T,
+    listener: PushListener<T>
+  ): void {
+    this.listeners.get(type)?.delete(listener as PushListener<PushType>);
   }
 
   // Arrow function automatically captures 'this' from the class instance
@@ -52,9 +82,15 @@ export class IFrameMessenger {
         this.pendingRequests.delete(event.data.requestId);
         pending.resolve(event.data.data);
       }
-    } else if (event.data?.type === IFRAME_MESSAGE_TYPE.TAKE_FOCUS) {
-      takeFocus();
+      return;
     }
+
+    const messageType = event.data?.type as PushType | undefined;
+    if (!messageType) return;
+
+    const set = this.listeners.get(messageType);
+    if (!set) return;
+    for (const listener of set) listener(event.data);
   };
 
   postToParent(

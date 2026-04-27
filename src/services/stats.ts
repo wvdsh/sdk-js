@@ -114,11 +114,10 @@ export class StatsManager {
   // Debounced persist — used by storeNow in setters to batch rapid calls.
   // Leading+trailing: first call fires immediately, subsequent calls within
   // the window are batched into one trailing call.
-  private debouncedPersist = debounce(
-    () => this.persist(),
-    STORE_DEBOUNCE_MS,
-    { leading: true, trailing: true }
-  );
+  private debouncedPersist = debounce(() => this.persist(), STORE_DEBOUNCE_MS, {
+    leading: true,
+    trailing: true
+  });
 
   storeStats(): boolean {
     if (!this.isReady()) return false;
@@ -172,7 +171,11 @@ export class StatsManager {
     return this.stats.get(identifier) ?? 0;
   }
 
-  setStat(identifier: string, value: number, storeNow: boolean = false): boolean {
+  setStat(
+    identifier: string,
+    value: number,
+    storeNow: boolean = false
+  ): boolean {
     if (!this.isReady() || !this.knownStatIds.has(identifier)) return false;
     if (this.stats.get(identifier) !== value) {
       this.stats.set(identifier, value);
