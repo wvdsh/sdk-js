@@ -114,7 +114,6 @@ class WavedashSDK extends EventTarget {
   LEADERBOARD_DISPLAY_TYPE = LEADERBOARD_DISPLAY_TYPE;
   UGC_TYPE = UGC_TYPE;
   UGC_VISIBILITY = UGC_VISIBILITY;
-  GAME_ENGINE = GAME_ENGINE;
   AVATAR_SIZE = AVATAR_SIZE;
   LobbyKickedReason = LobbyKickedReason;
   LobbyUserChangeType = LobbyUserChangeType;

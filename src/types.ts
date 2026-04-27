@@ -7,7 +7,6 @@ import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/api";
 // Re-export runtime constants from the API package as values so games can
 // reference them via named imports or `Wavedash.LOBBY_VISIBILITY.PUBLIC`.
 export {
-  GAME_ENGINE,
   LOBBY_VISIBILITY,
   LEADERBOARD_SORT_ORDER,
   LEADERBOARD_DISPLAY_TYPE,
@@ -92,7 +91,6 @@ export interface RemoteFileMetadata {
 }
 
 export interface EngineInstance {
-  // Add more as we support more engines
   type: (typeof GAME_ENGINE)[keyof typeof GAME_ENGINE];
   // Broadcasts a message to the engine instance
   // Exposed natively by Unity's engine instance, added manually by Wavedash Godot SDK
