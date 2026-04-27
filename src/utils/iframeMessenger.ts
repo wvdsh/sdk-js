@@ -72,29 +72,16 @@ export class IFrameMessenger {
    * Called once during SDK setup.
    */
   registerEventHandlers() {
-    let sentInitialInteraction = false;
-
-    const handleInteraction = () => {
-      if (!sentInitialInteraction) {
-        sentInitialInteraction = true;
-        this.postToParent(IFRAME_MESSAGE_TYPE.INITIAL_INTERACTION, {});
-      }
-    };
-
     window.addEventListener("keydown", (event) => {
       if (event.key === "F3") {
         event.preventDefault();
       }
-
-      handleInteraction();
 
       if (event.key === "Tab" && event.shiftKey) {
         event.preventDefault();
         this.postToParent(IFRAME_MESSAGE_TYPE.TOGGLE_OVERLAY, {});
       }
     });
-
-    window.addEventListener("mousedown", handleInteraction);
   }
 
   async requestFromParent<T extends keyof IFrameEventPayloadMap>(
