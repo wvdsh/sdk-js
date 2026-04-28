@@ -112,11 +112,9 @@ export interface EngineInstance {
 }
 
 // Response types
-export interface WavedashResponse<T> {
-  success: boolean;
-  data: T | null;
-  message?: string;
-}
+export type WavedashResponse<T> =
+  | { success: true; data: T; }
+  | { success: false; data: null; message: string };
 
 // =============================================================================
 // Event Payloads
