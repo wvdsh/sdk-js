@@ -3,7 +3,6 @@ import type { WavedashSDK } from "./index";
 declare global {
   interface Window {
     Wavedash: WavedashSDK;
-    WavedashJS: WavedashSDK;
   }
 }
 

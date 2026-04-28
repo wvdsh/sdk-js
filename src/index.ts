@@ -244,13 +244,13 @@ class WavedashSDK extends EventTarget {
   private listenerWrappers = new Map<string, Map<AnyFn, EventListener>>();
 
   /**
-   * Subscribe to a Wavedash event with a payload-typed listener (no need to
-   * unwrap `event.detail`). Returns an unsubscribe function.
+   * Subscribe to a Wavedash event with a payload-typed listener.
+   * Returns an unsubscribe function.
    *
-   *   const off = Wavedash.on(Wavedash.Events.LOBBY_JOINED, (payload) => {
+   *   const unsubscribeLobbyJoined = Wavedash.on(Wavedash.Events.LOBBY_JOINED, (payload) => {
    *     // payload: LobbyJoinedPayload
    *   });
-   *   off(); // later
+   *   unsubscribeLobbyJoined(); // later
    */
   on<K extends keyof WavedashEventMap>(
     event: K,
@@ -274,8 +274,7 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Remove a listener previously registered with {@link on}. Pass the original
-   * payload listener (not the wrapped one).
+   * Remove a listener previously registered with {@link on}.
    */
   off<K extends keyof WavedashEventMap>(
     event: K,
