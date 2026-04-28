@@ -20,7 +20,7 @@ import type {
   LobbyInvitePayload,
   LobbyJoinResponse
 } from "../types";
-import { LobbyKickedReason, LobbyUserChangeType } from "../types";
+import { LobbyKickedReason, LobbyUserChangeType } from "../constants";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
 import {
@@ -349,7 +349,7 @@ export class LobbyManager {
    * Multiple subscriptions may error at once, so we guard against emitting multiple events
    */
   private handleLobbyKicked(
-    reason: LobbyKickedReason = LobbyKickedReason.KICKED
+    reason: (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason] = LobbyKickedReason.KICKED
   ): void {
     const lobbyId = this.lobbyId;
     if (!lobbyId) return;

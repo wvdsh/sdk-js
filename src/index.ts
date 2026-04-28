@@ -21,10 +21,10 @@ import { IFrameMessenger } from "./utils/iframeMessenger";
 import {
   LobbyKickedReason,
   LobbyUserChangeType,
-  P2PPacketDropReason,
-  WavedashEventMap,
-  WavedashEvents
-} from "./types";
+  P2PPacketDropReason
+} from "./constants";
+import { WavedashEvents } from "./events";
+import type { WavedashEventMap } from "./types";
 
 type WavedashService =
   | LobbyManager
@@ -107,14 +107,13 @@ class WavedashSDK extends EventTarget {
 
   Events = WavedashEvents;
 
-  // Constants surfaced on the instance so games can reference them as
-  // `Wavedash.LEADERBOARD_DISPLAY_TYPE.NUMERIC` etc., alongside named imports.
-  LOBBY_VISIBILITY = LOBBY_VISIBILITY;
-  LEADERBOARD_SORT_ORDER = LEADERBOARD_SORT_ORDER;
-  LEADERBOARD_DISPLAY_TYPE = LEADERBOARD_DISPLAY_TYPE;
-  UGC_TYPE = UGC_TYPE;
-  UGC_VISIBILITY = UGC_VISIBILITY;
-  AVATAR_SIZE = AVATAR_SIZE;
+  // e.g. `Wavedash.LeaderboardDisplayType.NUMERIC`
+  LobbyVisibility = LOBBY_VISIBILITY;
+  LeaderboardSortOrder = LEADERBOARD_SORT_ORDER;
+  LeaderboardDisplayType = LEADERBOARD_DISPLAY_TYPE;
+  UGCType = UGC_TYPE;
+  UGCVisibility = UGC_VISIBILITY;
+  AvatarSize = AVATAR_SIZE;
   LobbyKickedReason = LobbyKickedReason;
   LobbyUserChangeType = LobbyUserChangeType;
   P2PPacketDropReason = P2PPacketDropReason;
@@ -1390,6 +1389,20 @@ class WavedashSDK extends EventTarget {
 
 export { WavedashSDK };
 
+// Type alias matching the runtime singleton's name. Lets games write
+// `import type { Wavedash } from "@wvdsh/sdk-js"` for typed access to
+// `window.Wavedash` without bundling any SDK code.
+export type Wavedash = WavedashSDK;
+
+// Augment Window so `window.Wavedash` and `window.WavedashJS` are typed in any
+// file that pulls in this module's types (including via `import type`).
+declare global {
+  interface Window {
+    Wavedash: WavedashSDK;
+    WavedashJS: WavedashSDK;
+  }
+}
+
 // Re-export avatar size constants
 export {
   AVATAR_SIZE,
@@ -1398,8 +1411,23 @@ export {
   AVATAR_SIZE_LARGE
 };
 
-// Re-export all types and constants
+// Re-export types and runtime constants for the runtime entry. The runtime
+// values are explicit re-exports because `export *` won't merge a type
+// binding from "./types" with the same-named value binding from "./constants".
 export * from "./types";
+export {
+  LobbyKickedReason,
+  LobbyUserChangeType,
+  P2PPacketDropReason
+} from "./constants";
+export { WavedashEvents } from "./events";
+export {
+  LOBBY_VISIBILITY,
+  LEADERBOARD_SORT_ORDER,
+  LEADERBOARD_DISPLAY_TYPE,
+  UGC_TYPE,
+  UGC_VISIBILITY
+} from "@wvdsh/api";
 
 // Type-safe initialization helper (idempotent — safe to call more than once).
 //
@@ -1438,11 +1466,3 @@ export function setupWavedashSDK(): WavedashSDK {
 
   return sdk;
 }
-
-
-// Note: importing this module in a non-iframe context (SSR, unit tests
-// without a mocked SdkConfig query param) throws at import time.
-// This is fine because devs should always test with the `wavedash dev` command.
-// Type-only consumers can use `import type { Lobby, Friend, ... } from "@wvdsh/sdk-js"` to avoid module evaluation.
-export const Wavedash: WavedashSDK = setupWavedashSDK();
-export default Wavedash;

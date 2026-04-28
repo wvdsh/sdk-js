@@ -3,16 +3,11 @@ import { type FunctionReturnType } from "convex/server";
 
 import { WavedashEvents } from "./events";
 import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/api";
-
-// Re-export runtime constants from the API package as values so games can
-// reference them via named imports or `Wavedash.LOBBY_VISIBILITY.PUBLIC`.
-export {
-  LOBBY_VISIBILITY,
-  LEADERBOARD_SORT_ORDER,
-  LEADERBOARD_DISPLAY_TYPE,
-  UGC_TYPE,
-  UGC_VISIBILITY
-} from "@wvdsh/api";
+import {
+  LobbyKickedReason as LobbyKickedReasonConst,
+  LobbyUserChangeType as LobbyUserChangeTypeConst,
+  P2PPacketDropReason as P2PPacketDropReasonConst
+} from "./constants";
 
 // Extract types from the API
 export type LobbyVisibility =
@@ -68,7 +63,6 @@ export type P2PSignalingMessage = Omit<
 // Type helper to get event values as a union type
 export type WavedashEvent =
   (typeof WavedashEvents)[keyof typeof WavedashEvents];
-export { WavedashEvents };
 
 // Configuration and user types
 export interface WavedashConfig {
@@ -139,13 +133,8 @@ export interface LobbyJoinedPayload {
   metadata: Record<string, unknown>;
 }
 
-/** Reasons why a user was kicked from a lobby */
-export const LobbyKickedReason = {
-  KICKED: "KICKED",
-  ERROR: "ERROR"
-} as const;
 export type LobbyKickedReason =
-  (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason];
+  (typeof LobbyKickedReasonConst)[keyof typeof LobbyKickedReasonConst];
 
 /** Payload for LobbyKicked event - emitted when removed from a lobby */
 export interface LobbyKickedPayload {
@@ -153,13 +142,8 @@ export interface LobbyKickedPayload {
   reason: LobbyKickedReason;
 }
 
-/** Change types for lobby user updates */
-export const LobbyUserChangeType = {
-  JOINED: "JOINED",
-  LEFT: "LEFT"
-} as const;
 export type LobbyUserChangeType =
-  (typeof LobbyUserChangeType)[keyof typeof LobbyUserChangeType];
+  (typeof LobbyUserChangeTypeConst)[keyof typeof LobbyUserChangeTypeConst];
 
 /** Payload for LobbyUsersUpdated event - emitted when a user joins or leaves */
 export interface LobbyUsersUpdatedPayload extends LobbyUser {
@@ -216,26 +200,8 @@ export interface P2PPeerReconnectedPayload {
   username: string;
 }
 
-/**
- * Reason a P2P packet was dropped. Each reason implies a different
- * game-side remedy:
- * - QUEUE_FULL: throttle your sends, bundle updates into fewer packets, or increase p2p maxIncomingMessages config
- * - PAYLOAD_TOO_LARGE: reduce payload or increase p2p messageSize config
- * - INVALID_PAYLOAD_SIZE: programming error
- * - INVALID_CHANNEL: SDK version skew or malicious peer
- * - MALFORMED: wire data too short to parse; channel will be -1
- * - PEER_NOT_READY: P2P not yet initialized, or peer was never ready / closed mid-send. If P2P hasn't been initialized, initialize it first; otherwise wait for P2P_CONNECTION_ESTABLISHED and watch P2P_PEER_DISCONNECTED/P2P_CONNECTION_FAILED/P2P_PEER_RECONNECTING for reachability.
- */
-export const P2PPacketDropReason = {
-  QUEUE_FULL: "QUEUE_FULL",
-  PAYLOAD_TOO_LARGE: "PAYLOAD_TOO_LARGE",
-  INVALID_PAYLOAD_SIZE: "INVALID_PAYLOAD_SIZE",
-  INVALID_CHANNEL: "INVALID_CHANNEL",
-  MALFORMED: "MALFORMED",
-  PEER_NOT_READY: "PEER_NOT_READY"
-} as const;
 export type P2PPacketDropReason =
-  (typeof P2PPacketDropReason)[keyof typeof P2PPacketDropReason];
+  (typeof P2PPacketDropReasonConst)[keyof typeof P2PPacketDropReasonConst];
 
 /**
  * Payload for P2PPacketDropped event.
