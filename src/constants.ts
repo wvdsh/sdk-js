@@ -38,3 +38,16 @@ export const AvatarSize = {
   MEDIUM: 128, // Profile cards
   LARGE: 256 // Large displays
 } as const;
+
+// Re-exports of public runtime constants from @wvdsh/api so the SDK has a
+// single source of truth. Names stay in SCREAMING_SNAKE_CASE to avoid
+// colliding with the same-named PascalCase type aliases in `./types`.
+export {
+  LOBBY_VISIBILITY,
+  LEADERBOARD_SORT_ORDER,
+  LEADERBOARD_DISPLAY_TYPE,
+  UGC_TYPE,
+  UGC_VISIBILITY,
+  GAME_ENGINE,
+  LOBBY_MESSAGE_MAX_LENGTH
+} from "@wvdsh/api";

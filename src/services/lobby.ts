@@ -20,15 +20,14 @@ import type {
   LobbyInvitePayload,
   LobbyJoinResponse
 } from "../types";
-import { LobbyKickedReason, LobbyUserChangeType } from "../constants";
+import {
+  LobbyKickedReason,
+  LobbyUserChangeType,
+  LOBBY_MESSAGE_MAX_LENGTH
+} from "../constants";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
-import {
-  api,
-  IFRAME_MESSAGE_TYPE,
-  LOBBY_MESSAGE_MAX_LENGTH,
-  SDKUser
-} from "@wvdsh/api";
+import { api, IFRAME_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
 
 export class LobbyManager {
   private sdk: WavedashSDK;

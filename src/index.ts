@@ -16,7 +16,13 @@ import {
   LobbyKickedReason,
   LobbyUserChangeType,
   P2PPacketDropReason,
-  AvatarSize
+  AvatarSize,
+  LOBBY_VISIBILITY,
+  LEADERBOARD_SORT_ORDER,
+  LEADERBOARD_DISPLAY_TYPE,
+  UGC_TYPE,
+  UGC_VISIBILITY,
+  GAME_ENGINE
 } from "./constants";
 import { WavedashEvents } from "./events";
 import type { WavedashEventMap } from "./types";
@@ -56,15 +62,9 @@ import type {
   GameLaunchParams
 } from "./types";
 import {
-  GAME_ENGINE,
   IFRAME_MESSAGE_TYPE,
-  LEADERBOARD_DISPLAY_TYPE,
-  LEADERBOARD_SORT_ORDER,
-  LOBBY_VISIBILITY,
   SDKConfig,
   SDKUser,
-  UGC_TYPE,
-  UGC_VISIBILITY,
   UrlParams
 } from "@wvdsh/api";
 import { parentOrigin } from "./utils/parentOrigin";

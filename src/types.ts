@@ -6,16 +6,31 @@ import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 
 import { WavedashEvents } from "./events";
-import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/api";
+import { api } from "@wvdsh/api";
 import {
   LobbyKickedReason as LobbyKickedReasonConst,
   LobbyUserChangeType as LobbyUserChangeTypeConst,
-  P2PPacketDropReason as P2PPacketDropReasonConst
+  P2PPacketDropReason as P2PPacketDropReasonConst,
+  LOBBY_VISIBILITY,
+  LEADERBOARD_SORT_ORDER,
+  LEADERBOARD_DISPLAY_TYPE,
+  UGC_TYPE,
+  UGC_VISIBILITY,
+  GAME_ENGINE
 } from "./constants";
 
-// Extract types from the API
+// Type unions derived from the SDK's runtime constants.
 export type LobbyVisibility =
-  PublicApiType["sdk"]["gameLobby"]["createAndJoinLobby"]["_args"]["visibility"];
+  (typeof LOBBY_VISIBILITY)[keyof typeof LOBBY_VISIBILITY];
+export type LeaderboardSortOrder =
+  (typeof LEADERBOARD_SORT_ORDER)[keyof typeof LEADERBOARD_SORT_ORDER];
+export type LeaderboardDisplayType =
+  (typeof LEADERBOARD_DISPLAY_TYPE)[keyof typeof LEADERBOARD_DISPLAY_TYPE];
+export type UGCType = (typeof UGC_TYPE)[keyof typeof UGC_TYPE];
+export type UGCVisibility =
+  (typeof UGC_VISIBILITY)[keyof typeof UGC_VISIBILITY];
+
+// Function return type aliases derived from the API
 export type LobbyUser = FunctionReturnType<
   typeof api.sdk.gameLobby.lobbyUsers
 >[0];
@@ -32,14 +47,6 @@ export type LobbyInvite = FunctionReturnType<
   typeof api.sdk.gameLobby.getLobbyInvites
 >[0];
 export type Friend = FunctionReturnType<typeof api.sdk.friends.listFriends>[0];
-export type UGCType =
-  PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
-export type UGCVisibility =
-  PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
-export type LeaderboardSortOrder =
-  PublicApiType["sdk"]["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
-export type LeaderboardDisplayType =
-  PublicApiType["sdk"]["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
 export type Leaderboard = FunctionReturnType<
   typeof api.sdk.leaderboards.getLeaderboard
 >;
