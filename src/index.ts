@@ -61,12 +61,7 @@ import type {
   Friend,
   GameLaunchParams
 } from "./types";
-import {
-  IFRAME_MESSAGE_TYPE,
-  SDKConfig,
-  SDKUser,
-  UrlParams
-} from "@wvdsh/api";
+import { IFRAME_MESSAGE_TYPE, SDKConfig, SDKUser, UrlParams } from "@wvdsh/api";
 import { parentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
