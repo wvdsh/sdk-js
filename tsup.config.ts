@@ -1,7 +1,7 @@
 import { defineConfig } from "tsup";
 
 export default defineConfig({
-  entry: ["src/index.ts"],
+  entry: ["src/index.ts", "src/client.ts"],
   format: ["esm"],
   platform: "browser",
   outExtension: () => ({ js: ".js" }),
@@ -9,7 +9,5 @@ export default defineConfig({
   splitting: false,
   sourcemap: false,
   clean: true,
-  external: [],
-  noExternal: ["convex", "lodash.debounce"],
   globalName: "WavedashSDK"
 });

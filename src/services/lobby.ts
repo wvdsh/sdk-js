@@ -20,15 +20,14 @@ import type {
   LobbyInvitePayload,
   LobbyJoinResponse
 } from "../types";
-import { LobbyKickedReason, LobbyUserChangeType } from "../types";
+import {
+  LobbyKickedReason,
+  LobbyUserChangeType,
+  LOBBY_MESSAGE_MAX_LENGTH
+} from "../constants";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
-import {
-  api,
-  IFRAME_MESSAGE_TYPE,
-  LOBBY_MESSAGE_MAX_LENGTH,
-  SDKUser
-} from "@wvdsh/api";
+import { api, IFRAME_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
 
 export class LobbyManager {
   private sdk: WavedashSDK;
@@ -349,7 +348,7 @@ export class LobbyManager {
    * Multiple subscriptions may error at once, so we guard against emitting multiple events
    */
   private handleLobbyKicked(
-    reason: LobbyKickedReason = LobbyKickedReason.KICKED
+    reason: (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason] = LobbyKickedReason.KICKED
   ): void {
     const lobbyId = this.lobbyId;
     if (!lobbyId) return;

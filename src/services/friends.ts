@@ -8,13 +8,7 @@ import type { Friend, Id } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
 import { getCdnImageUrl } from "../utils/cdn";
-
-// Avatar size constants
-export const AVATAR_SIZE_SMALL = 0; // 64px - Lists, chat bubbles
-export const AVATAR_SIZE_MEDIUM = 1; // 128px - Profile cards
-export const AVATAR_SIZE_LARGE = 2; // 256px - Large displays
-
-const AVATAR_DIMENSIONS = [64, 128, 256]; // Indexed by size constant
+import { AvatarSize } from "../constants";
 
 interface CachedUser {
   username: string;
@@ -52,24 +46,23 @@ export class FriendsManager {
   }
 
   /**
-   * Returns CDN URL with size transformation for a cached user's avatar
+   * Returns CDN URL with size transformation for a cached user's avatar.
    * @param userId - The user ID to get the avatar URL for
-   * @param size - Avatar size constant (AVATAR_SIZE_SMALL, AVATAR_SIZE_MEDIUM, or AVATAR_SIZE_LARGE)
+   * @param size - Pixel size for width and height. Use a value from
+   *   `AvatarSize` (SMALL=64, MEDIUM=128, LARGE=256) or any custom pixel size.
    * @returns CDN URL with size transformation, or null if user not cached or has no avatar
    */
   getUserAvatarUrl(
     userId: Id<"users">,
-    size: number = AVATAR_SIZE_MEDIUM
+    size: number = AvatarSize.MEDIUM
   ): string | null {
     const user = this.userCache.get(userId);
     if (!user?.avatarR2Key) {
       return null;
     }
-    const dimension =
-      AVATAR_DIMENSIONS[size] ?? AVATAR_DIMENSIONS[AVATAR_SIZE_MEDIUM];
     return getCdnImageUrl(user.avatarR2Key, this.sdk.uploadsHost, {
-      width: dimension,
-      height: dimension,
+      width: size,
+      height: size,
       fit: "cover",
       quality: "high",
       sharpen: 1

@@ -4,14 +4,13 @@
  * Handles WebRTC peer-to-peer connections for lobbies
  */
 
+import type { FunctionReturnType } from "convex/server";
 import type {
   Id,
   P2PPeer,
   P2PConnection,
   P2PMessage,
   P2PConfig,
-  P2PTurnCredentials,
-  P2PSignalingMessage,
   P2PConnectionEstablishedPayload,
   P2PConnectionFailedPayload,
   P2PPeerDisconnectedPayload,
@@ -23,6 +22,18 @@ import type {
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
 import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
+
+// Internal P2P signaling/TURN types — not part of the public SDK surface.
+type P2PTurnCredentials = FunctionReturnType<
+  typeof api.sdk.turnCredentials.getOrCreate
+>;
+
+type P2PSignalingMessage = Omit<
+  FunctionReturnType<typeof api.sdk.p2pSignaling.getSignalingMessages>[0],
+  "data"
+> & {
+  data: RTCSessionDescriptionInit | RTCIceCandidateInit;
+};
 
 // Default P2P configuration
 const DEFAULT_P2P_CONFIG: Required<P2PConfig> = {

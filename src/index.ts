@@ -9,15 +9,23 @@ import { HeartbeatManager } from "./services/heartbeat";
 import { GameEventManager } from "./services/gameEvents";
 import { FullscreenManager } from "./services/fullscreen";
 import { OverlayManager } from "./services/overlay";
-import {
-  FriendsManager,
-  AVATAR_SIZE_SMALL,
-  AVATAR_SIZE_MEDIUM,
-  AVATAR_SIZE_LARGE
-} from "./services/friends";
+import { FriendsManager } from "./services/friends";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
-import { WavedashEvents } from "./types";
+import {
+  LobbyKickedReason,
+  LobbyUserChangeType,
+  P2PPacketDropReason,
+  AvatarSize,
+  LOBBY_VISIBILITY,
+  LEADERBOARD_SORT_ORDER,
+  LEADERBOARD_DISPLAY_TYPE,
+  UGC_TYPE,
+  UGC_VISIBILITY,
+  GAME_ENGINE
+} from "./constants";
+import { WavedashEvents } from "./events";
+import type { WavedashEventMap } from "./types";
 
 type WavedashService =
   | LobbyManager
@@ -53,18 +61,7 @@ import type {
   Friend,
   GameLaunchParams
 } from "./types";
-import {
-  GAME_ENGINE,
-  IFRAME_MESSAGE_TYPE,
-  LEADERBOARD_DISPLAY_TYPE,
-  LEADERBOARD_SORT_ORDER,
-  LOBBY_VISIBILITY,
-  SDKConfig,
-  SDKUser,
-  UGC_TYPE,
-  UGC_VISIBILITY,
-  UrlParams
-} from "@wvdsh/api";
+import { IFRAME_MESSAGE_TYPE, SDKConfig, SDKUser, UrlParams } from "@wvdsh/api";
 import { parentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
@@ -98,7 +95,17 @@ class WavedashSDK extends EventTarget {
   private convexHttpUrl: string;
   private gameFinishedLoading: boolean = false;
 
+  // Expose constants for easy access `Wavedash.LobbyVisibility.PUBLIC` etc.
   Events = WavedashEvents;
+  LobbyVisibility = LOBBY_VISIBILITY;
+  LeaderboardSortOrder = LEADERBOARD_SORT_ORDER;
+  LeaderboardDisplayType = LEADERBOARD_DISPLAY_TYPE;
+  UGCType = UGC_TYPE;
+  UGCVisibility = UGC_VISIBILITY;
+  AvatarSize = AvatarSize;
+  LobbyKickedReason = LobbyKickedReason;
+  LobbyUserChangeType = LobbyUserChangeType;
+  P2PPacketDropReason = P2PPacketDropReason;
 
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
@@ -215,6 +222,100 @@ class WavedashSDK extends EventTarget {
     this.ensureInit();
     this._eventsReady = true;
     this.gameEventManager.flushEventQueue();
+  }
+
+  // ==============
+  // Event listening
+  // ==============
+
+  // Wrappers stored so `off(event, listener)` can find the wrapped EventListener
+  // we registered on the EventTarget for a given user-supplied payload listener.
+  private listenerWrappers = new Map<string, Map<AnyFn, EventListener>>();
+
+  /**
+   * Subscribe to a Wavedash event with a payload-typed listener.
+   * Returns an unsubscribe function.
+   *
+   *   const unsubscribeLobbyJoined = Wavedash.on(Wavedash.Events.LOBBY_JOINED, (payload) => {
+   *     // payload: LobbyJoinedPayload
+   *   });
+   *   unsubscribeLobbyJoined(); // later
+   */
+  on<K extends keyof WavedashEventMap>(
+    event: K,
+    listener: (payload: WavedashEventMap[K]) => void
+  ): () => void {
+    const wrapped: EventListener = (e) => {
+      listener((e as CustomEvent<WavedashEventMap[K]>).detail);
+    };
+    let perEvent = this.listenerWrappers.get(event);
+    if (!perEvent) {
+      perEvent = new Map();
+      this.listenerWrappers.set(event, perEvent);
+    }
+    // Match addEventListener semantics: same (event, listener) pair is a no-op
+    // on second call. Detach the previous wrapper before re-registering.
+    const prev = perEvent.get(listener);
+    if (prev) this.removeEventListener(event, prev);
+    perEvent.set(listener, wrapped);
+    this.addEventListener(event, wrapped);
+    return () => this.off(event, listener);
+  }
+
+  /**
+   * Remove a listener previously registered with {@link on}.
+   */
+  off<K extends keyof WavedashEventMap>(
+    event: K,
+    listener: (payload: WavedashEventMap[K]) => void
+  ): void {
+    const perEvent = this.listenerWrappers.get(event);
+    const wrapped = perEvent?.get(listener);
+    if (!perEvent || !wrapped) return;
+    this.removeEventListener(event, wrapped);
+    perEvent.delete(listener);
+    if (perEvent.size === 0) this.listenerWrappers.delete(event);
+  }
+
+  // Typed overloads for addEventListener / removeEventListener so callers using
+  // a Wavedash event name get a CustomEvent<Payload>; arbitrary strings still
+  // fall back to the loose EventTarget signature.
+  addEventListener<K extends keyof WavedashEventMap>(
+    type: K,
+    listener: (ev: CustomEvent<WavedashEventMap[K]>) => void,
+    options?: boolean | AddEventListenerOptions
+  ): void;
+  addEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | AddEventListenerOptions
+  ): void;
+  addEventListener(
+    type: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    listener: any,
+    options?: boolean | AddEventListenerOptions
+  ): void {
+    super.addEventListener(type, listener, options);
+  }
+
+  removeEventListener<K extends keyof WavedashEventMap>(
+    type: K,
+    listener: (ev: CustomEvent<WavedashEventMap[K]>) => void,
+    options?: boolean | EventListenerOptions
+  ): void;
+  removeEventListener(
+    type: string,
+    listener: EventListenerOrEventListenerObject | null,
+    options?: boolean | EventListenerOptions
+  ): void;
+  removeEventListener(
+    type: string,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    listener: any,
+    options?: boolean | EventListenerOptions
+  ): void {
+    super.removeEventListener(type, listener, options);
   }
 
   // ==================
@@ -358,12 +459,12 @@ class WavedashSDK extends EventTarget {
    * Get avatar URL for a cached user with size transformation.
    * Users are cached when seen via listFriends() or lobby membership.
    * @param userId - The user ID to get the avatar URL for
-   * @param size - Avatar size constant (AVATAR_SIZE_SMALL=0, AVATAR_SIZE_MEDIUM=1, AVATAR_SIZE_LARGE=2)
+   * @param size - Avatar size constant (Wavedash.AvatarSize.SMALL=0, Wavedash.AvatarSize.MEDIUM=1, Wavedash.AvatarSize.LARGE=2)
    * @returns CDN URL with size transformation, or null if user not cached or has no avatar
    */
   getUserAvatarUrl(
     userId: Id<"users">,
-    size: number = AVATAR_SIZE_MEDIUM
+    size: number = this.AvatarSize.MEDIUM
   ): string | null {
     return this.apiCallSync(
       this.friendsManager,
@@ -1274,23 +1375,18 @@ class WavedashSDK extends EventTarget {
 // Exports
 // =======
 
-export { WavedashSDK };
+declare global {
+  interface Window {
+    Wavedash: WavedashSDK;
+  }
+}
 
-// Re-export avatar size constants
-export { AVATAR_SIZE_SMALL, AVATAR_SIZE_MEDIUM, AVATAR_SIZE_LARGE };
-
-// Re-export all types and constants
 export * from "./types";
+export type { WavedashSDK };
 
 // Type-safe initialization helper (idempotent — safe to call more than once).
-//
-// Synchronous: the parent frame passes the full SDKConfig via URL query param
-// (UrlParams.SdkConfig) so the SDK can be constructed without a postMessage
-// round-trip. Games do `await window.WavedashJS` today; awaiting a non-thenable
-// just returns the value, so existing callers keep working.
 export function setupWavedashSDK(): WavedashSDK {
-  const existing = (window as unknown as { WavedashJS?: WavedashSDK })
-    .WavedashJS;
+  const existing = window.Wavedash;
   if (existing) return existing;
 
   const raw = new URLSearchParams(window.location.search).get(
@@ -1313,9 +1409,10 @@ export function setupWavedashSDK(): WavedashSDK {
   }
 
   const sdk = new WavedashSDK(sdkConfig);
+  window.Wavedash = sdk;
 
+  // Kept for backwards compatibility
   (window as unknown as { WavedashJS: WavedashSDK }).WavedashJS = sdk;
-  (window as unknown as { Wavedash: WavedashSDK }).Wavedash = sdk;
 
   return sdk;
 }

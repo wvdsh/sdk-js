@@ -1,12 +1,36 @@
+/**
+ * Public types exported from @wvdsh/sdk-js
+ */
+
 import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 
 import { WavedashEvents } from "./events";
-import { api, GAME_ENGINE, PublicApiType } from "@wvdsh/api";
+import { api } from "@wvdsh/api";
+import {
+  LobbyKickedReason as LobbyKickedReasonConst,
+  LobbyUserChangeType as LobbyUserChangeTypeConst,
+  P2PPacketDropReason as P2PPacketDropReasonConst,
+  LOBBY_VISIBILITY,
+  LEADERBOARD_SORT_ORDER,
+  LEADERBOARD_DISPLAY_TYPE,
+  UGC_TYPE,
+  UGC_VISIBILITY,
+  GAME_ENGINE
+} from "./constants";
 
-// Extract types from the API
+// Type unions derived from the SDK's runtime constants.
 export type LobbyVisibility =
-  PublicApiType["sdk"]["gameLobby"]["createAndJoinLobby"]["_args"]["visibility"];
+  (typeof LOBBY_VISIBILITY)[keyof typeof LOBBY_VISIBILITY];
+export type LeaderboardSortOrder =
+  (typeof LEADERBOARD_SORT_ORDER)[keyof typeof LEADERBOARD_SORT_ORDER];
+export type LeaderboardDisplayType =
+  (typeof LEADERBOARD_DISPLAY_TYPE)[keyof typeof LEADERBOARD_DISPLAY_TYPE];
+export type UGCType = (typeof UGC_TYPE)[keyof typeof UGC_TYPE];
+export type UGCVisibility =
+  (typeof UGC_VISIBILITY)[keyof typeof UGC_VISIBILITY];
+
+// Function return type aliases derived from the API
 export type LobbyUser = FunctionReturnType<
   typeof api.sdk.gameLobby.lobbyUsers
 >[0];
@@ -23,14 +47,6 @@ export type LobbyInvite = FunctionReturnType<
   typeof api.sdk.gameLobby.getLobbyInvites
 >[0];
 export type Friend = FunctionReturnType<typeof api.sdk.friends.listFriends>[0];
-export type UGCType =
-  PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["ugcType"];
-export type UGCVisibility =
-  PublicApiType["sdk"]["userGeneratedContent"]["createUGCItem"]["_args"]["visibility"];
-export type LeaderboardSortOrder =
-  PublicApiType["sdk"]["leaderboards"]["getOrCreateLeaderboard"]["_args"]["sortOrder"];
-export type LeaderboardDisplayType =
-  PublicApiType["sdk"]["leaderboards"]["getOrCreateLeaderboard"]["_args"]["displayType"];
 export type Leaderboard = FunctionReturnType<
   typeof api.sdk.leaderboards.getLeaderboard
 >;
@@ -44,21 +60,9 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<
   username: string;
 };
 
-export type P2PTurnCredentials = FunctionReturnType<
-  typeof api.sdk.turnCredentials.getOrCreate
->;
-
-export type P2PSignalingMessage = Omit<
-  FunctionReturnType<typeof api.sdk.p2pSignaling.getSignalingMessages>[0],
-  "data"
-> & {
-  data: RTCSessionDescriptionInit | RTCIceCandidateInit;
-};
-
 // Type helper to get event values as a union type
 export type WavedashEvent =
   (typeof WavedashEvents)[keyof typeof WavedashEvents];
-export { WavedashEvents };
 
 // Configuration and user types
 export interface WavedashConfig {
@@ -81,7 +85,6 @@ export interface RemoteFileMetadata {
 }
 
 export interface EngineInstance {
-  // Add more as we support more engines
   type: (typeof GAME_ENGINE)[keyof typeof GAME_ENGINE];
   // Broadcasts a message to the engine instance
   // Exposed natively by Unity's engine instance, added manually by Wavedash Godot SDK
@@ -109,11 +112,9 @@ export interface EngineInstance {
 }
 
 // Response types
-export interface WavedashResponse<T> {
-  success: boolean;
-  data: T | null;
-  message?: string;
-}
+export type WavedashResponse<T> =
+  | { success: true; data: T }
+  | { success: false; data: null; message: string };
 
 // =============================================================================
 // Event Payloads
@@ -130,13 +131,8 @@ export interface LobbyJoinedPayload {
   metadata: Record<string, unknown>;
 }
 
-/** Reasons why a user was kicked from a lobby */
-export const LobbyKickedReason = {
-  KICKED: "KICKED",
-  ERROR: "ERROR"
-} as const;
 export type LobbyKickedReason =
-  (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason];
+  (typeof LobbyKickedReasonConst)[keyof typeof LobbyKickedReasonConst];
 
 /** Payload for LobbyKicked event - emitted when removed from a lobby */
 export interface LobbyKickedPayload {
@@ -144,13 +140,8 @@ export interface LobbyKickedPayload {
   reason: LobbyKickedReason;
 }
 
-/** Change types for lobby user updates */
-export const LobbyUserChangeType = {
-  JOINED: "JOINED",
-  LEFT: "LEFT"
-} as const;
 export type LobbyUserChangeType =
-  (typeof LobbyUserChangeType)[keyof typeof LobbyUserChangeType];
+  (typeof LobbyUserChangeTypeConst)[keyof typeof LobbyUserChangeTypeConst];
 
 /** Payload for LobbyUsersUpdated event - emitted when a user joins or leaves */
 export interface LobbyUsersUpdatedPayload extends LobbyUser {
@@ -207,17 +198,8 @@ export interface P2PPeerReconnectedPayload {
   username: string;
 }
 
-/**
- * Reason a P2P packet was dropped. Each reason implies a different
- * game-side remedy.
- */
 export type P2PPacketDropReason =
-  | "QUEUE_FULL" // throttle your sends, bundle updates into fewer packets, or increase p2p maxIncomingMessages config
-  | "PAYLOAD_TOO_LARGE" // reduce payload or increase p2p messageSize config
-  | "INVALID_PAYLOAD_SIZE" // programming error
-  | "INVALID_CHANNEL" // SDK version skew or malicious peer
-  | "MALFORMED" // wire data too short to parse; channel will be -1
-  | "PEER_NOT_READY"; // P2P not yet initialized, or peer was never ready / closed mid-send. If P2P hasn't been initialized, initialize it first; otherwise wait for P2P_CONNECTION_ESTABLISHED and watch P2P_PEER_DISCONNECTED/P2P_CONNECTION_FAILED/P2P_PEER_RECONNECTING for reachability.
+  (typeof P2PPacketDropReasonConst)[keyof typeof P2PPacketDropReasonConst];
 
 /**
  * Payload for P2PPacketDropped event.
@@ -254,6 +236,30 @@ export interface BackendConnectionPayload {
 export interface FullscreenChangedPayload {
   isFullscreen: boolean;
 }
+
+// =============================================================================
+// Event map: links each event name to its payload type so addEventListener,
+// removeEventListener, on, and off can infer the right CustomEvent / payload.
+// =============================================================================
+export type WavedashEventMap = {
+  [WavedashEvents.LOBBY_MESSAGE]: LobbyMessagePayload;
+  [WavedashEvents.LOBBY_JOINED]: LobbyJoinedPayload;
+  [WavedashEvents.LOBBY_KICKED]: LobbyKickedPayload;
+  [WavedashEvents.LOBBY_USERS_UPDATED]: LobbyUsersUpdatedPayload;
+  [WavedashEvents.LOBBY_DATA_UPDATED]: LobbyDataUpdatedPayload;
+  [WavedashEvents.LOBBY_INVITE]: LobbyInvitePayload;
+  [WavedashEvents.P2P_CONNECTION_ESTABLISHED]: P2PConnectionEstablishedPayload;
+  [WavedashEvents.P2P_CONNECTION_FAILED]: P2PConnectionFailedPayload;
+  [WavedashEvents.P2P_PEER_DISCONNECTED]: P2PPeerDisconnectedPayload;
+  [WavedashEvents.P2P_PEER_RECONNECTING]: P2PPeerReconnectingPayload;
+  [WavedashEvents.P2P_PEER_RECONNECTED]: P2PPeerReconnectedPayload;
+  [WavedashEvents.P2P_PACKET_DROPPED]: P2PPacketDroppedPayload;
+  [WavedashEvents.STATS_STORED]: StatsStoredPayload;
+  [WavedashEvents.BACKEND_CONNECTED]: BackendConnectionPayload;
+  [WavedashEvents.BACKEND_DISCONNECTED]: BackendConnectionPayload;
+  [WavedashEvents.BACKEND_RECONNECTING]: BackendConnectionPayload;
+  [WavedashEvents.FULLSCREEN_CHANGED]: FullscreenChangedPayload;
+};
 
 // =============================================================================
 // P2P Connection types
