@@ -28,3 +28,13 @@ export const P2PPacketDropReason = {
   MALFORMED: "MALFORMED",
   PEER_NOT_READY: "PEER_NOT_READY"
 } as const;
+
+/**
+ * Avatar size presets in pixels. Pass any of these (or a custom pixel size)
+ * to `Wavedash.getUserAvatarUrl(userId, size)`.
+ */
+export const AvatarSize = {
+  SMALL: 64, // Lists, chat bubbles
+  MEDIUM: 128, // Profile cards
+  LARGE: 256 // Large displays
+} as const;

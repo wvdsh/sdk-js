@@ -1,5 +1,6 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
-import { WavedashEvents, type WavedashSDK } from "../index";
+import type { WavedashSDK } from "../index";
+import { WavedashEvents } from "../events";
 import type { FullscreenChangedPayload } from "../types";
 
 /**

@@ -1,3 +1,7 @@
+/**
+ * Public types exported from @wvdsh/sdk-js
+ */
+
 import { type GenericId as Id } from "convex/values";
 import { type FunctionReturnType } from "convex/server";
 
@@ -47,17 +51,6 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<
 >["entry"] & {
   userId: Id<"users">;
   username: string;
-};
-
-export type P2PTurnCredentials = FunctionReturnType<
-  typeof api.sdk.turnCredentials.getOrCreate
->;
-
-export type P2PSignalingMessage = Omit<
-  FunctionReturnType<typeof api.sdk.p2pSignaling.getSignalingMessages>[0],
-  "data"
-> & {
-  data: RTCSessionDescriptionInit | RTCIceCandidateInit;
 };
 
 // Type helper to get event values as a union type

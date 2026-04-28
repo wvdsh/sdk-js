@@ -6,14 +6,14 @@ declare global {
   }
 }
 
-const sdk = window.Wavedash;
-if (!sdk) {
+const Wavedash = window.Wavedash;
+if (!Wavedash) {
   throw new Error(
     "Wavedash is not initialized. If you're running your game locally use the `wavedash dev` command to ensure the Wavedash SDK is loaded."
   );
 }
 
-export default sdk;
+export default Wavedash;
 
 export type * from "./types";
-export type { Wavedash } from "./index";
+export type { WavedashSDK };

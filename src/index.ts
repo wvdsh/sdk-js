@@ -9,19 +9,14 @@ import { HeartbeatManager } from "./services/heartbeat";
 import { GameEventManager } from "./services/gameEvents";
 import { FullscreenManager } from "./services/fullscreen";
 import { OverlayManager } from "./services/overlay";
-import {
-  FriendsManager,
-  AVATAR_SIZE,
-  AVATAR_SIZE_SMALL,
-  AVATAR_SIZE_MEDIUM,
-  AVATAR_SIZE_LARGE
-} from "./services/friends";
+import { FriendsManager } from "./services/friends";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import {
   LobbyKickedReason,
   LobbyUserChangeType,
-  P2PPacketDropReason
+  P2PPacketDropReason,
+  AvatarSize
 } from "./constants";
 import { WavedashEvents } from "./events";
 import type { WavedashEventMap } from "./types";
@@ -105,15 +100,14 @@ class WavedashSDK extends EventTarget {
   private convexHttpUrl: string;
   private gameFinishedLoading: boolean = false;
 
+  // Expose constants for easy access `Wavedash.LobbyVisibility.PUBLIC` etc.
   Events = WavedashEvents;
-
-  // e.g. `Wavedash.LeaderboardDisplayType.NUMERIC`
   LobbyVisibility = LOBBY_VISIBILITY;
   LeaderboardSortOrder = LEADERBOARD_SORT_ORDER;
   LeaderboardDisplayType = LEADERBOARD_DISPLAY_TYPE;
   UGCType = UGC_TYPE;
   UGCVisibility = UGC_VISIBILITY;
-  AvatarSize = AVATAR_SIZE;
+  AvatarSize = AvatarSize;
   LobbyKickedReason = LobbyKickedReason;
   LobbyUserChangeType = LobbyUserChangeType;
   P2PPacketDropReason = P2PPacketDropReason;
@@ -470,12 +464,12 @@ class WavedashSDK extends EventTarget {
    * Get avatar URL for a cached user with size transformation.
    * Users are cached when seen via listFriends() or lobby membership.
    * @param userId - The user ID to get the avatar URL for
-   * @param size - Avatar size constant (AVATAR_SIZE_SMALL=0, AVATAR_SIZE_MEDIUM=1, AVATAR_SIZE_LARGE=2)
+   * @param size - Avatar size constant (Wavedash.AvatarSize.SMALL=0, Wavedash.AvatarSize.MEDIUM=1, Wavedash.AvatarSize.LARGE=2)
    * @returns CDN URL with size transformation, or null if user not cached or has no avatar
    */
   getUserAvatarUrl(
     userId: Id<"users">,
-    size: number = AVATAR_SIZE_MEDIUM
+    size: number = this.AvatarSize.MEDIUM
   ): string | null {
     return this.apiCallSync(
       this.friendsManager,
@@ -1386,57 +1380,18 @@ class WavedashSDK extends EventTarget {
 // Exports
 // =======
 
-export { WavedashSDK };
-
-// Type alias matching the runtime singleton's name. Lets games write
-// `import type { Wavedash } from "@wvdsh/sdk-js"` for typed access to
-// `window.Wavedash` without bundling any SDK code.
-export type Wavedash = WavedashSDK;
-
-// Augment Window so `window.Wavedash` and `window.WavedashJS` are typed in any
-// file that pulls in this module's types (including via `import type`).
 declare global {
   interface Window {
     Wavedash: WavedashSDK;
-    WavedashJS: WavedashSDK;
   }
 }
 
-// Re-export avatar size constants
-export {
-  AVATAR_SIZE,
-  AVATAR_SIZE_SMALL,
-  AVATAR_SIZE_MEDIUM,
-  AVATAR_SIZE_LARGE
-};
-
-// Re-export types and runtime constants for the runtime entry. The runtime
-// values are explicit re-exports because `export *` won't merge a type
-// binding from "./types" with the same-named value binding from "./constants".
 export * from "./types";
-export {
-  LobbyKickedReason,
-  LobbyUserChangeType,
-  P2PPacketDropReason
-} from "./constants";
-export { WavedashEvents } from "./events";
-export {
-  LOBBY_VISIBILITY,
-  LEADERBOARD_SORT_ORDER,
-  LEADERBOARD_DISPLAY_TYPE,
-  UGC_TYPE,
-  UGC_VISIBILITY
-} from "@wvdsh/api";
+export type { WavedashSDK };
 
 // Type-safe initialization helper (idempotent — safe to call more than once).
-//
-// Synchronous: the parent frame passes the full SDKConfig via URL query param
-// (UrlParams.SdkConfig) so the SDK can be constructed without a postMessage
-// round-trip. Games do `await window.WavedashJS` today; awaiting a non-thenable
-// just returns the value, so existing callers keep working.
 export function setupWavedashSDK(): WavedashSDK {
-  const existing = (window as unknown as { WavedashJS?: WavedashSDK })
-    .WavedashJS;
+  const existing = window.Wavedash;
   if (existing) return existing;
 
   const raw = new URLSearchParams(window.location.search).get(
@@ -1459,9 +1414,10 @@ export function setupWavedashSDK(): WavedashSDK {
   }
 
   const sdk = new WavedashSDK(sdkConfig);
+  window.Wavedash = sdk;
 
+  // Kept for backwards compatibility
   (window as unknown as { WavedashJS: WavedashSDK }).WavedashJS = sdk;
-  (window as unknown as { Wavedash: WavedashSDK }).Wavedash = sdk;
 
   return sdk;
 }
