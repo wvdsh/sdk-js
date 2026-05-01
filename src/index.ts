@@ -129,6 +129,7 @@ class WavedashSDK extends EventTarget {
   overlayManager: OverlayManager;
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
+  private setupWarningTimeout: ReturnType<typeof setTimeout> | null = null;
   ugcHost: string;
   uploadsHost: string;
 
@@ -171,6 +172,20 @@ class WavedashSDK extends EventTarget {
     this.setupSessionEndListeners();
 
     this.launchParams = sdkConfig.launchParams ?? {};
+
+    this.setupWarningTimeout = setTimeout(() => {
+      this.setupWarningTimeout = null;
+      this.logger.warn(
+        "Wavedash.init(), Wavedash.loadComplete(), or Wavedash.updateLoadProgressZeroToOne() not called yet"
+      );
+    }, 10_000);
+  }
+
+  private clearSetupWarning(): void {
+    if (this.setupWarningTimeout !== null) {
+      clearTimeout(this.setupWarningTimeout);
+      this.setupWarningTimeout = null;
+    }
   }
 
   // =============
@@ -340,12 +355,14 @@ class WavedashSDK extends EventTarget {
       [["progress", vNumber]],
       [progress]
     );
+    this.clearSetupWarning();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE, {
       progress
     });
   }
 
   loadComplete() {
+    this.clearSetupWarning();
     if (this.gameFinishedLoading) return;
     this.gameFinishedLoading = true;
     this.heartbeatManager.start();
