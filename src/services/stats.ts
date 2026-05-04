@@ -2,12 +2,12 @@ import { api } from "@wvdsh/api";
 import type { WavedashSDK } from "..";
 import type { StatsStoredPayload } from "../types";
 import { WavedashEvents } from "../events";
-import debounce from "lodash.debounce";
 import { WavedashManager } from "./manager";
+import throttle from "lodash.throttle";
 
 type StatEntry = { identifier: string; value: number };
 
-const STORE_DEBOUNCE_MS = 1000;
+const STORE_THROTTLE_MS = 1000;
 
 // Background safety-net flush: persists any dirty stats/achievements that the
 // game forgot to flag with `storeNow`. Bounds worst-case data loss to this
@@ -50,7 +50,7 @@ export class StatsManager extends WavedashManager {
   }
 
   destroy(): void {
-    this.debouncedPersist.cancel();
+    this.throttledPersist.cancel();
     if (this.periodicPersistInterval !== null) {
       clearInterval(this.periodicPersistInterval);
       this.periodicPersistInterval = null;
@@ -126,17 +126,17 @@ export class StatsManager extends WavedashManager {
   // Store / Persist
   // ================
 
-  // Debounced persist — used by storeNow in setters to batch rapid calls.
-  // Leading+trailing: first call fires immediately, subsequent calls within
-  // the window are batched into one trailing call.
-  private debouncedPersist = debounce(() => this.persist(), STORE_DEBOUNCE_MS, {
-    leading: true,
-    trailing: true
-  });
+  // Leading+trailing: first storeNow fires immediately, subsequent calls in the
+  // window coalesce into one trailing call (guaranteed within STORE_THROTTLE_MS).
+  private throttledPersist = throttle(
+    () => this.persist(),
+    STORE_THROTTLE_MS,
+    { leading: true, trailing: true }
+  );
 
   storeStats(): boolean {
     if (!this.isReady()) return false;
-    this.debouncedPersist.cancel();
+    this.throttledPersist.cancel();
     this.persist();
     return true;
   }
@@ -196,7 +196,7 @@ export class StatsManager extends WavedashManager {
       this.stats.set(identifier, value);
       this.dirtyStats.add(identifier);
     }
-    if (storeNow) this.debouncedPersist();
+    if (storeNow) this.throttledPersist();
     return true;
   }
 
@@ -217,7 +217,7 @@ export class StatsManager extends WavedashManager {
       this.unlockedAchievements.add(identifier);
       this.dirtyAchievements.add(identifier);
     }
-    if (storeNow) this.debouncedPersist();
+    if (storeNow) this.throttledPersist();
     return true;
   }
 
