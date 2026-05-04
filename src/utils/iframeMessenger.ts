@@ -6,7 +6,7 @@
  */
 
 import { IFRAME_MESSAGE_TYPE, IFrameEventPayloadMap } from "@wvdsh/api";
-import { parentOrigin } from "./parentOrigin";
+import { getParentOrigin } from "./parentOrigin";
 
 const RESPONSE_TIMEOUT_MS = 15_000;
 
@@ -68,7 +68,7 @@ export class IFrameMessenger {
   private handleMessage = (event: MessageEvent): void => {
     // Validate origin to prevent JWT spoofing and other attacks.
     // Skip messages from our own window (e.g. js-dos sleep-sync postMessage traffic).
-    if (event.origin !== parentOrigin) {
+    if (event.origin !== getParentOrigin()) {
       if (event.source !== window) {
         console.warn(`Ignored message from untrusted origin: ${event.origin}`);
       }
@@ -97,6 +97,7 @@ export class IFrameMessenger {
     requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE],
     data: Record<string, string | number | boolean>
   ): boolean {
+    const parentOrigin = getParentOrigin();
     if (typeof window === "undefined" || !parentOrigin) return false;
     window.parent.postMessage({ type: requestType, ...data }, parentOrigin);
     return true;
@@ -107,6 +108,7 @@ export class IFrameMessenger {
     data?: Record<string, unknown>
   ): Promise<IFrameEventPayloadMap[T]> {
     return new Promise((resolve, reject) => {
+      const parentOrigin = getParentOrigin();
       if (typeof window === "undefined" || !parentOrigin) {
         reject(new Error("Parent origin not found"));
         return;

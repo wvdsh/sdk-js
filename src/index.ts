@@ -62,7 +62,7 @@ import type {
   GameLaunchParams
 } from "./types";
 import { IFRAME_MESSAGE_TYPE, SDKConfig, SDKUser, UrlParams } from "@wvdsh/api";
-import { parentOrigin } from "./utils/parentOrigin";
+import { setParentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
   validateArgs,
@@ -1291,8 +1291,12 @@ class WavedashSDK extends EventTarget {
    * fetcher wired into `ConvexClient.setAuth` and honors `forceRefresh` so the
    * server can invalidate a stale token.
    *
+   * Same-origin POST to /auth/refresh on the play domain — the
+   * gameplaySession cookie set by the play server during playKey exchange
+   * authenticates the request, so no cross-origin credentials handling needed.
+   *
    * Concurrent callers share a single in-flight fetch to avoid duplicate
-   * requests to the parent's gameplay-token endpoint.
+   * refresh round-trips.
    */
   private getAuthToken(forceRefresh = false): Promise<string> {
     if (!forceRefresh && this.gameplayJwt) {
@@ -1303,14 +1307,12 @@ class WavedashSDK extends EventTarget {
     }
 
     const promise = (async () => {
-      const response = await fetch(
-        `${parentOrigin}/auth/gameplay_token/${this.gameCloudId}`,
-        {
-          credentials: "include"
-        }
-      );
+      const response = await fetch("/auth/refresh", {
+        method: "POST",
+        credentials: "same-origin"
+      });
       if (!response.ok) {
-        throw new Error(`Failed to fetch gameplay token: ${response.status}`);
+        throw new Error(`Failed to refresh gameplay token: ${response.status}`);
       }
       this.gameplayJwt = await response.text();
       return this.gameplayJwt;
@@ -1424,6 +1426,11 @@ export function setupWavedashSDK(): WavedashSDK {
       `Wavedash SDK: failed to parse ?${UrlParams.SdkConfig}= as JSON: ${message}`
     );
   }
+
+  // iframeMessenger reads parent origin via getParentOrigin(); set before
+  // constructing the SDK so any postMessage handlers wired in the constructor
+  // see the right value.
+  setParentOrigin(sdkConfig.parentOrigin);
 
   const sdk = new WavedashSDK(sdkConfig);
   window.Wavedash = sdk;

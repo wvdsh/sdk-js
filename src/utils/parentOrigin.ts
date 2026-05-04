@@ -1,18 +1,16 @@
 /**
- * Derive parent origin from iframe URL pattern.
- * iframe: [gameSlug].(builds|sandbox|local).[parentDomain]
- * parent: [parentDomain]
+ * Parent (mainsite) origin used by iframeMessenger for postMessage targeting
+ * and incoming-message origin validation. Set once from SDKConfig.parentOrigin
+ * during setupWavedashSDK() bootstrap — must be passed explicitly because the
+ * play iframe can live on a different TLD than the mainsite, so it can't be
+ * derived from the iframe hostname.
  */
-function deriveParentOrigin(): string {
-  if (typeof window === "undefined") return "";
-  const iframeHost = window.location.host;
-  const match = iframeHost.match(/^[\w-]+\.(builds|local)\.(.+)$/);
-  if (match) {
-    const parentDomain = match[2];
-    return `${window.location.protocol}//${parentDomain}`;
-  }
-  console.error(`Invalid iframe hostname pattern: ${iframeHost}`);
-  return "";
+let _parentOrigin = "";
+
+export function setParentOrigin(origin: string): void {
+  _parentOrigin = origin;
 }
 
-export const parentOrigin = deriveParentOrigin();
+export function getParentOrigin(): string {
+  return _parentOrigin;
+}
