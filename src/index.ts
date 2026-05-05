@@ -1336,29 +1336,18 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Set up listeners for page unload events to end gameplay session.
-   * Uses both beforeunload and pagehide for maximum reliability.
+   * Set up listeners that flush the end-of-session request when the iframe
+   * is going away. We listen for three signals:
+   *   - `beforeunload` / `pagehide` on our own window: covers tab close, hard
+   *     reload, and top-level navigation of the parent.
+   *   - `END_SESSION` postMessage from the parent: covers parent SPA navigation
    */
   private setupSessionEndListeners(): void {
-    // warm up the preflight cache
     const endSessionEndpoint = `${this.convexHttpUrl}/gameplay/end-session`;
-    void this.ensureGameplayJwt()
-      .then((jwt) =>
-        fetch(endSessionEndpoint, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${jwt}`
-          },
-          body: JSON.stringify({ _type: "warmup" })
-        })
-      )
-      .catch(() => {});
 
-    const endGameplaySession = (
-      _event: PageTransitionEvent | BeforeUnloadEvent
-    ) => {
+    const endGameplaySession = () => {
       if (this.sessionEndSent) return;
+      if (!this.gameplayJwt) return;
       this.sessionEndSent = true;
 
       const pendingData = this.statsManager.getPendingData();
@@ -1366,27 +1355,39 @@ class WavedashSDK extends EventTarget {
       this.heartbeatManager.destroy();
       this.statsManager.destroy();
 
-      const sessionEndData: Record<string, unknown> = {};
+      const body: Record<string, unknown> = {
+        gameplayJwt: this.gameplayJwt
+      };
       if (pendingData?.stats?.length) {
-        sessionEndData.stats = pendingData.stats;
+        body.stats = pendingData.stats;
       }
       if (pendingData?.achievements?.length) {
-        sessionEndData.achievements = pendingData.achievements;
+        body.achievements = pendingData.achievements;
       }
 
-      fetch(endSessionEndpoint, {
-        method: "POST",
-        body: JSON.stringify(sessionEndData),
-        keepalive: true,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${this.gameplayJwt}`
-        }
-      });
+      // sendBeacon with a string body uses Content-Type: text/plain;charset=UTF-8,
+      // which is a "simple" CORS request — no preflight, no Authorization
+      // header. The endpoint parses the body as JSON regardless of header.
+      const payload = JSON.stringify(body);
+      const beaconSent = navigator?.sendBeacon?.(endSessionEndpoint, payload);
+
+      if (!beaconSent) {
+        // Fallback for environments without sendBeacon. keepalive lets the
+        // request outlive the document; same simple-request shape as above.
+        fetch(endSessionEndpoint, {
+          method: "POST",
+          body: payload,
+          keepalive: true
+        }).catch(() => {});
+      }
     };
 
     window.addEventListener("beforeunload", endGameplaySession);
     window.addEventListener("pagehide", endGameplaySession);
+    iframeMessenger.addEventListener(
+      IFRAME_MESSAGE_TYPE.END_SESSION,
+      endGameplaySession
+    );
   }
 }
 
@@ -1427,8 +1428,7 @@ export function setupWavedashSDK(): WavedashSDK {
     );
   }
 
-  // iframeMessenger reads parent origin via getParentOrigin(); set before
-  // constructing the SDK so any postMessage handlers wired in the constructor
+  // set before constructing the SDK so any postMessage handlers wired in the constructor
   // see the right value.
   setParentOrigin(sdkConfig.parentOrigin);
 
