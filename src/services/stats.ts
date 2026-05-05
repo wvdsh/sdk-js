@@ -8,6 +8,12 @@ type StatEntry = { identifier: string; value: number };
 
 const STORE_DEBOUNCE_MS = 1000;
 
+// Background safety-net flush: persists any dirty stats/achievements that the
+// game forgot to flag with `storeNow`. Bounds worst-case data loss to this
+// interval if the session ends abruptly (the SDK can't reliably fire one last
+// mutation during iframe teardown — see comment in destroy()).
+const PERIODIC_PERSIST_MS = 10_000;
+
 export class StatsManager {
   private sdk: WavedashSDK;
 
@@ -30,16 +36,31 @@ export class StatsManager {
   // Subscription cleanup
   private subscriptions: (() => void)[] = [];
 
+  // Background flush timer — see PERIODIC_PERSIST_MS
+  private periodicPersistInterval: ReturnType<typeof setInterval> | null = null;
+
   constructor(sdk: WavedashSDK) {
     this.sdk = sdk;
     this.subscribe();
     this.requestStats().catch((error) => {
       this.sdk.logger.error("Initial stats fetch failed:", error);
     });
+    this.periodicPersistInterval = setInterval(() => {
+      void this.persist();
+    }, PERIODIC_PERSIST_MS);
   }
 
   destroy(): void {
+    // We deliberately do NOT fire a final persist here. By the time destroy()
+    // runs (in response to the parent's END_SESSION) the iframe is about to
+    // be detached, and Convex mutations go over the WebSocket — which has no
+    // `keepalive` equivalent. The mutation would die mid-flight. The
+    // PERIODIC_PERSIST_MS flush bounds worst-case loss to that window.
     this.debouncedPersist.cancel();
+    if (this.periodicPersistInterval !== null) {
+      clearInterval(this.periodicPersistInterval);
+      this.periodicPersistInterval = null;
+    }
     for (const unsub of this.subscriptions) unsub();
     this.subscriptions = [];
   }

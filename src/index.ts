@@ -92,7 +92,6 @@ class WavedashSDK extends EventTarget {
   }
   private launchParams: GameLaunchParams;
   private sessionEndSent: boolean = false;
-  private convexHttpUrl: string;
   private gameFinishedLoading: boolean = false;
 
   // Expose constants for easy access `Wavedash.LobbyVisibility.PUBLIC` etc.
@@ -142,7 +141,6 @@ class WavedashSDK extends EventTarget {
     this.convexClient.setAuth(({ forceRefreshToken }) =>
       this.getAuthToken(forceRefreshToken)
     );
-    this.convexHttpUrl = sdkConfig.convexHttpUrl;
     this.wavedashUser = sdkConfig.wavedashUser;
     this.iframeMessenger = iframeMessenger;
     this.ugcHost = sdkConfig.ugcHost;
@@ -1315,6 +1313,12 @@ class WavedashSDK extends EventTarget {
         throw new Error(`Failed to refresh gameplay token: ${response.status}`);
       }
       this.gameplayJwt = await response.text();
+      // Push the JWT to the parent so it can fire /end-session on its own
+      // pagehide / beforeNavigate. Parent-driven so the request originates
+      // from a context that won't be destroyed when the iframe is detached.
+      iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
+        gameplayJwt: this.gameplayJwt
+      });
       return this.gameplayJwt;
     })().finally(() => {
       if (this.gameplayJwtPromise === promise) {
@@ -1336,59 +1340,26 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Set up listeners that flush the end-of-session request when the iframe
-   * is going away. We listen for two signals:
-   *   - `pagehide` on our own window: covers tab close, hard reload, and
-   *     top-level navigation of the parent.
-   *   - `END_SESSION` postMessage from the parent: covers parent SPA navigation
-   *     that detaches the iframe element from the DOM (no unload event fires).
+   * Listen for the parent's `END_SESSION` signal and tear down client-side
+   * state (lobby/heartbeat/stats subscriptions). The parent fires the actual
+   * /end-session HTTP request itself (using the JWT we pushed to it via
+   * GAMEPLAY_JWT_READY) — iframe-originated requests get cancelled when the
+   * iframe is detached, but parent-originated keepalive fetches survive.
    *
-   * We deliberately do NOT listen for `beforeunload`. `beforeunload` runs
-   * before the browser's "Leave site?" confirmation dialog — if we ran our
-   * teardown there and the user clicked Cancel, the session would already be
-   * marked ended on the server while the iframe stayed alive on the client.
+   * The parent only posts END_SESSION on committed leaves (its own pagehide
+   * after the user accepts the leave dialog, or SvelteKit beforeNavigate on
+   * SPA route change), so cancelling the "Leave site?" dialog leaves the
+   * SDK and its Convex subscriptions intact.
    */
   private setupSessionEndListeners(): void {
-    const endSessionEndpoint = `${this.convexHttpUrl}/gameplay/end-session`;
-
     const endGameplaySession = () => {
       if (this.sessionEndSent) return;
-      if (!this.gameplayJwt) return;
       this.sessionEndSent = true;
-
-      const pendingData = this.statsManager.getPendingData();
       this.lobbyManager.destroy();
       this.heartbeatManager.destroy();
       this.statsManager.destroy();
-
-      const body: Record<string, unknown> = {
-        gameplayJwt: this.gameplayJwt
-      };
-      if (pendingData?.stats?.length) {
-        body.stats = pendingData.stats;
-      }
-      if (pendingData?.achievements?.length) {
-        body.achievements = pendingData.achievements;
-      }
-
-      // sendBeacon with a string body uses Content-Type: text/plain;charset=UTF-8,
-      // which is a "simple" CORS request — no preflight, no Authorization
-      // header. The endpoint parses the body as JSON regardless of header.
-      const payload = JSON.stringify(body);
-      const beaconSent = navigator?.sendBeacon?.(endSessionEndpoint, payload);
-
-      if (!beaconSent) {
-        // Fallback for environments without sendBeacon. keepalive lets the
-        // request outlive the document; same simple-request shape as above.
-        fetch(endSessionEndpoint, {
-          method: "POST",
-          body: payload,
-          keepalive: true
-        }).catch(() => {});
-      }
     };
 
-    window.addEventListener("pagehide", endGameplaySession);
     iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.END_SESSION,
       endGameplaySession
