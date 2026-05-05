@@ -1337,10 +1337,16 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Set up listeners that flush the end-of-session request when the iframe
-   * is going away. We listen for three signals:
-   *   - `beforeunload` / `pagehide` on our own window: covers tab close, hard
-   *     reload, and top-level navigation of the parent.
+   * is going away. We listen for two signals:
+   *   - `pagehide` on our own window: covers tab close, hard reload, and
+   *     top-level navigation of the parent.
    *   - `END_SESSION` postMessage from the parent: covers parent SPA navigation
+   *     that detaches the iframe element from the DOM (no unload event fires).
+   *
+   * We deliberately do NOT listen for `beforeunload`. `beforeunload` runs
+   * before the browser's "Leave site?" confirmation dialog — if we ran our
+   * teardown there and the user clicked Cancel, the session would already be
+   * marked ended on the server while the iframe stayed alive on the client.
    */
   private setupSessionEndListeners(): void {
     const endSessionEndpoint = `${this.convexHttpUrl}/gameplay/end-session`;
@@ -1382,7 +1388,6 @@ class WavedashSDK extends EventTarget {
       }
     };
 
-    window.addEventListener("beforeunload", endGameplaySession);
     window.addEventListener("pagehide", endGameplaySession);
     iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.END_SESSION,
