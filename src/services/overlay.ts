@@ -1,5 +1,6 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { type WavedashSDK } from "../index";
+import { WavedashManager } from "./manager";
 
 /**
  * OverlayManager
@@ -12,11 +13,9 @@ import { type WavedashSDK } from "../index";
  * - `takeFocus()` is also called after load completes so the game starts
  *   with keyboard focus without the player clicking first.
  */
-export class OverlayManager {
-  private sdk: WavedashSDK;
-
+export class OverlayManager extends WavedashManager {
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
 
     this.sdk.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.TAKE_FOCUS,

@@ -3,6 +3,7 @@ import type { WavedashSDK } from "..";
 import type { StatsStoredPayload } from "../types";
 import { WavedashEvents } from "../events";
 import debounce from "lodash.debounce";
+import { WavedashManager } from "./manager";
 
 type StatEntry = { identifier: string; value: number };
 
@@ -14,9 +15,7 @@ const STORE_DEBOUNCE_MS = 1000;
 // mutation during iframe teardown — see comment in destroy()).
 const PERIODIC_PERSIST_MS = 10_000;
 
-export class StatsManager {
-  private sdk: WavedashSDK;
-
+export class StatsManager extends WavedashManager {
   // Current user values
   private stats: Map<string, number> = new Map();
   private unlockedAchievements: Set<string> = new Set();
@@ -40,7 +39,7 @@ export class StatsManager {
   private periodicPersistInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
     this.subscribe();
     this.requestStats().catch((error) => {
       this.sdk.logger.error("Initial stats fetch failed:", error);
@@ -51,11 +50,6 @@ export class StatsManager {
   }
 
   destroy(): void {
-    // We deliberately do NOT fire a final persist here. By the time destroy()
-    // runs (in response to the parent's END_SESSION) the iframe is about to
-    // be detached, and Convex mutations go over the WebSocket — which has no
-    // `keepalive` equivalent. The mutation would die mid-flight. The
-    // PERIODIC_PERSIST_MS flush bounds worst-case loss to that window.
     this.debouncedPersist.cancel();
     if (this.periodicPersistInterval !== null) {
       clearInterval(this.periodicPersistInterval);

@@ -9,18 +9,18 @@ import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
 import { getCdnImageUrl } from "../utils/cdn";
 import { AvatarSize } from "../constants";
+import { WavedashManager } from "./manager";
 
 interface CachedUser {
   username: string;
   avatarR2Key?: string; // The r2Key (backend returns this as "avatarUrl")
 }
 
-export class FriendsManager {
-  private sdk: WavedashSDK;
+export class FriendsManager extends WavedashManager {
   private userCache: Map<Id<"users">, CachedUser> = new Map();
 
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
   }
 
   /**

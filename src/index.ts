@@ -26,6 +26,7 @@ import {
 } from "./constants";
 import { WavedashEvents } from "./events";
 import type { WavedashEventMap } from "./types";
+import type { WavedashManager } from "./services/manager";
 
 type WavedashService =
   | LobbyManager
@@ -91,7 +92,7 @@ class WavedashSDK extends EventTarget {
     return this._eventsReady;
   }
   private launchParams: GameLaunchParams;
-  private sessionEndSent: boolean = false;
+  private destroyed: boolean = false;
   private gameFinishedLoading: boolean = false;
 
   // Expose constants for easy access `Wavedash.LobbyVisibility.PUBLIC` etc.
@@ -126,6 +127,7 @@ class WavedashSDK extends EventTarget {
   p2pManager: P2PManager;
   fullscreenManager: FullscreenManager;
   overlayManager: OverlayManager;
+  private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
   private setupWarningTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -157,6 +159,23 @@ class WavedashSDK extends EventTarget {
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
     this.overlayManager = new OverlayManager(this);
+
+    // Single source of truth for teardown — `destroy()` iterates this list.
+    // Order matches construction so destroys happen in dependency order
+    // (e.g. lobby's destroy may want p2p, but lobby is created after p2p).
+    this.managers = [
+      this.p2pManager,
+      this.lobbyManager,
+      this.statsManager,
+      this.heartbeatManager,
+      this.fileSystemManager,
+      this.ugcManager,
+      this.leaderboardManager,
+      this.friendsManager,
+      this.gameEventManager,
+      this.fullscreenManager,
+      this.overlayManager
+    ];
 
     // Cache current user for avatar lookups
     this.friendsManager.cacheUsers([
@@ -1340,29 +1359,22 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Listen for the parent's `END_SESSION` signal and tear down client-side
-   * state (lobby/heartbeat/stats subscriptions). The parent fires the actual
-   * /end-session HTTP request itself (using the JWT we pushed to it via
-   * GAMEPLAY_JWT_READY) — iframe-originated requests get cancelled when the
-   * iframe is detached, but parent-originated keepalive fetches survive.
-   *
-   * The parent only posts END_SESSION on committed leaves (its own pagehide
-   * after the user accepts the leave dialog, or SvelteKit beforeNavigate on
-   * SPA route change), so cancelling the "Leave site?" dialog leaves the
-   * SDK and its Convex subscriptions intact.
+   * Tear down every manager. Called on the parent's `END_SESSION` signal
+   * (committed leaves only — see GameRunnerComponent.svelte). Idempotent.
+   * Each manager's `destroy()` defaults to a no-op; managers with ongoing
+   * state (subscriptions, intervals, peer connections) override it.
    */
-  private setupSessionEndListeners(): void {
-    const endGameplaySession = () => {
-      if (this.sessionEndSent) return;
-      this.sessionEndSent = true;
-      this.lobbyManager.destroy();
-      this.heartbeatManager.destroy();
-      this.statsManager.destroy();
-    };
+  private destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    for (const manager of this.managers) {
+      manager.destroy();
+    }
+  }
 
-    iframeMessenger.addEventListener(
-      IFRAME_MESSAGE_TYPE.END_SESSION,
-      endGameplaySession
+  private setupSessionEndListeners(): void {
+    iframeMessenger.addEventListener(IFRAME_MESSAGE_TYPE.END_SESSION, () =>
+      this.destroy()
     );
   }
 }

@@ -14,15 +14,14 @@ import type {
 } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
+import { WavedashManager } from "./manager";
 
-export class LeaderboardManager {
-  private sdk: WavedashSDK;
-
+export class LeaderboardManager extends WavedashManager {
   // Cache leaderboards to return totalEntries synchronously without a network call
   private leaderboardCache: Map<Id<"leaderboards">, Leaderboard> = new Map();
 
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
   }
 
   async getLeaderboard(name: string): Promise<Leaderboard> {

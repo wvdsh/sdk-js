@@ -1,17 +1,17 @@
 import type { WavedashSDK } from "../index";
 import type { WavedashEvent } from "../types";
+import { WavedashManager } from "./manager";
 
 interface QueuedEvent {
   event: WavedashEvent;
   payload: string | number | object;
 }
 
-export class GameEventManager {
-  private sdk: WavedashSDK;
+export class GameEventManager extends WavedashManager {
   private eventQueue: QueuedEvent[] = [];
 
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
   }
 
   // ==============================

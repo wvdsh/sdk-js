@@ -28,10 +28,9 @@ import {
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
 import { api, IFRAME_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
+import { WavedashManager } from "./manager";
 
-export class LobbyManager {
-  private sdk: WavedashSDK;
-
+export class LobbyManager extends WavedashManager {
   // Track current lobby state
   private unsubscribeLobbyMessages: (() => void) | null = null;
   private unsubscribeLobbyUsers: (() => void) | null = null;
@@ -58,7 +57,7 @@ export class LobbyManager {
   private p2pUpdateQueue: Promise<void> = Promise.resolve();
 
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
     this.unsubscribeLobbyInvites = this.sdk.convexClient.onUpdate(
       api.sdk.gameLobby.getLobbyInvites,
       {},

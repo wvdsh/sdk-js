@@ -7,12 +7,11 @@
 import type { Id, UGCType, UGCVisibility } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
+import { WavedashManager } from "./manager";
 
-export class UGCManager {
-  private sdk: WavedashSDK;
-
+export class UGCManager extends WavedashManager {
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
   }
 
   async createUGCItem(

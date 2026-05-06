@@ -21,6 +21,7 @@ import type {
 } from "../types";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
+import { WavedashManager } from "./manager";
 import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
 
 // Internal P2P signaling/TURN types — not part of the public SDK surface.
@@ -43,8 +44,7 @@ const DEFAULT_P2P_CONFIG: Required<P2PConfig> = {
   maxIncomingMessages: 1024
 };
 
-export class P2PManager {
-  private sdk: WavedashSDK;
+export class P2PManager extends WavedashManager {
   private config: Required<P2PConfig>;
   private currentConnection: P2PConnection | null = null;
 
@@ -173,8 +173,12 @@ export class P2PManager {
   private initialized = false;
 
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
     this.config = { ...DEFAULT_P2P_CONFIG };
+  }
+
+  destroy(): void {
+    this.disconnectP2P();
   }
 
   private ensureInitialized(): void {

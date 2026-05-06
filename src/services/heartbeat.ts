@@ -12,13 +12,13 @@ import {
   HEARTBEAT,
   IFRAME_MESSAGE_TYPE
 } from "@wvdsh/api";
-import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type { ConnectionState } from "convex/browser";
 import type { BackendConnectionPayload } from "../types";
+import { WavedashManager } from "./manager";
+import type { WavedashSDK } from "../index";
 
-export class HeartbeatManager {
-  private sdk: WavedashSDK;
+export class HeartbeatManager extends WavedashManager {
   private deviceFingerprint: DeviceFingerprint | undefined = undefined;
   // Resolves once the parent has answered the device fingerprint request
   // (or we've given up on it). Always resolves — never rejects. Best-effort:
@@ -38,7 +38,7 @@ export class HeartbeatManager {
   private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
 
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
 
     this.isConnected =
       this.sdk.convexClient.client.connectionState().isWebSocketConnected;
