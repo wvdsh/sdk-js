@@ -26,17 +26,7 @@ import {
 } from "./constants";
 import { WavedashEvents } from "./events";
 import type { WavedashEventMap } from "./types";
-
-type WavedashService =
-  | LobbyManager
-  | FileSystemManager
-  | UGCManager
-  | LeaderboardManager
-  | P2PManager
-  | HeartbeatManager
-  | FriendsManager
-  | StatsManager
-  | FullscreenManager;
+import type { WavedashManager } from "./services/manager";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
@@ -91,8 +81,7 @@ class WavedashSDK extends EventTarget {
     return this._eventsReady;
   }
   private launchParams: GameLaunchParams;
-  private sessionEndSent: boolean = false;
-  private convexHttpUrl: string;
+  private destroyed: boolean = false;
   private gameFinishedLoading: boolean = false;
 
   // Expose constants for easy access `Wavedash.LobbyVisibility.PUBLIC` etc.
@@ -127,6 +116,7 @@ class WavedashSDK extends EventTarget {
   p2pManager: P2PManager;
   fullscreenManager: FullscreenManager;
   overlayManager: OverlayManager;
+  private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
   private setupWarningTimeout: ReturnType<typeof setTimeout> | null = null;
@@ -142,7 +132,6 @@ class WavedashSDK extends EventTarget {
     this.convexClient.setAuth(({ forceRefreshToken }) =>
       this.getAuthToken(forceRefreshToken)
     );
-    this.convexHttpUrl = sdkConfig.convexHttpUrl;
     this.wavedashUser = sdkConfig.wavedashUser;
     this.iframeMessenger = iframeMessenger;
     this.ugcHost = sdkConfig.ugcHost;
@@ -159,6 +148,23 @@ class WavedashSDK extends EventTarget {
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
     this.overlayManager = new OverlayManager(this);
+
+    // Single source of truth for teardown — `destroy()` iterates this list.
+    // Order matches construction so destroys happen in dependency order
+    // (e.g. lobby's destroy may want p2p, but lobby is created after p2p).
+    this.managers = [
+      this.p2pManager,
+      this.lobbyManager,
+      this.statsManager,
+      this.heartbeatManager,
+      this.fileSystemManager,
+      this.ugcManager,
+      this.leaderboardManager,
+      this.friendsManager,
+      this.gameEventManager,
+      this.fullscreenManager,
+      this.overlayManager
+    ];
 
     // Cache current user for avatar lookups
     this.friendsManager.cacheUsers([
@@ -1232,7 +1238,7 @@ class WavedashSDK extends EventTarget {
     }
   }
 
-  private async apiCall<T extends WavedashService, K extends string & keyof T>(
+  private async apiCall<T extends WavedashManager, K extends string & keyof T>(
     manager: T,
     method: K,
     argSpecs: readonly ArgSpec[],
@@ -1250,7 +1256,7 @@ class WavedashSDK extends EventTarget {
     }
   }
 
-  private apiCallSync<T extends WavedashService, K extends string & keyof T>(
+  private apiCallSync<T extends WavedashManager, K extends string & keyof T>(
     target: T,
     method: K,
     argSpecs: readonly ArgSpec[],
@@ -1315,6 +1321,12 @@ class WavedashSDK extends EventTarget {
         throw new Error(`Failed to refresh gameplay token: ${response.status}`);
       }
       this.gameplayJwt = await response.text();
+      // Push the JWT to the parent so it can fire /end-session on its own
+      // pagehide / beforeNavigate. Parent-driven so the request originates
+      // from a context that won't be destroyed when the iframe is detached.
+      iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
+        gameplayJwt: this.gameplayJwt
+      });
       return this.gameplayJwt;
     })().finally(() => {
       if (this.gameplayJwtPromise === promise) {
@@ -1336,57 +1348,22 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Set up listeners that flush the end-of-session request when the iframe
-   * is going away. We listen for three signals:
-   *   - `beforeunload` / `pagehide` on our own window: covers tab close, hard
-   *     reload, and top-level navigation of the parent.
-   *   - `END_SESSION` postMessage from the parent: covers parent SPA navigation
+   * Tear down every manager. Called on the parent's `END_SESSION` signal
+   * (committed leaves only — see GameRunnerComponent.svelte). Idempotent.
+   * Each manager's `destroy()` defaults to a no-op; managers with ongoing
+   * state (subscriptions, intervals, peer connections) override it.
    */
+  private destroy(): void {
+    if (this.destroyed) return;
+    this.destroyed = true;
+    for (const manager of this.managers) {
+      manager.destroy();
+    }
+  }
+
   private setupSessionEndListeners(): void {
-    const endSessionEndpoint = `${this.convexHttpUrl}/gameplay/end-session`;
-
-    const endGameplaySession = () => {
-      if (this.sessionEndSent) return;
-      if (!this.gameplayJwt) return;
-      this.sessionEndSent = true;
-
-      const pendingData = this.statsManager.getPendingData();
-      this.lobbyManager.destroy();
-      this.heartbeatManager.destroy();
-      this.statsManager.destroy();
-
-      const body: Record<string, unknown> = {
-        gameplayJwt: this.gameplayJwt
-      };
-      if (pendingData?.stats?.length) {
-        body.stats = pendingData.stats;
-      }
-      if (pendingData?.achievements?.length) {
-        body.achievements = pendingData.achievements;
-      }
-
-      // sendBeacon with a string body uses Content-Type: text/plain;charset=UTF-8,
-      // which is a "simple" CORS request — no preflight, no Authorization
-      // header. The endpoint parses the body as JSON regardless of header.
-      const payload = JSON.stringify(body);
-      const beaconSent = navigator?.sendBeacon?.(endSessionEndpoint, payload);
-
-      if (!beaconSent) {
-        // Fallback for environments without sendBeacon. keepalive lets the
-        // request outlive the document; same simple-request shape as above.
-        fetch(endSessionEndpoint, {
-          method: "POST",
-          body: payload,
-          keepalive: true
-        }).catch(() => {});
-      }
-    };
-
-    window.addEventListener("beforeunload", endGameplaySession);
-    window.addEventListener("pagehide", endGameplaySession);
-    iframeMessenger.addEventListener(
-      IFRAME_MESSAGE_TYPE.END_SESSION,
-      endGameplaySession
+    iframeMessenger.addEventListener(IFRAME_MESSAGE_TYPE.END_SESSION, () =>
+      this.destroy()
     );
   }
 }

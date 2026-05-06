@@ -2,6 +2,7 @@ import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type { FullscreenChangedPayload } from "../types";
+import { WavedashManager } from "./manager";
 
 /**
  * FullscreenManager
@@ -22,13 +23,12 @@ import type { FullscreenChangedPayload } from "../types";
  * calls route through us. The iframe isn't granted the fullscreen feature
  * policy anymore, so without these shims those calls would silently reject.
  */
-export class FullscreenManager {
+export class FullscreenManager extends WavedashManager {
   private _isFullscreen = false;
   private listeners = new Set<(isFullscreen: boolean) => void>();
-  private sdk: WavedashSDK;
 
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
     this.sdk.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.FULLSCREEN_CHANGED,
       (data) => {

@@ -3,14 +3,19 @@ import type { WavedashSDK } from "..";
 import type { StatsStoredPayload } from "../types";
 import { WavedashEvents } from "../events";
 import debounce from "lodash.debounce";
+import { WavedashManager } from "./manager";
 
 type StatEntry = { identifier: string; value: number };
 
 const STORE_DEBOUNCE_MS = 1000;
 
-export class StatsManager {
-  private sdk: WavedashSDK;
+// Background safety-net flush: persists any dirty stats/achievements that the
+// game forgot to flag with `storeNow`. Bounds worst-case data loss to this
+// interval if the session ends abruptly (the SDK can't reliably fire one last
+// mutation during iframe teardown — see comment in destroy()).
+const PERIODIC_PERSIST_MS = 10_000;
 
+export class StatsManager extends WavedashManager {
   // Current user values
   private stats: Map<string, number> = new Map();
   private unlockedAchievements: Set<string> = new Set();
@@ -30,16 +35,26 @@ export class StatsManager {
   // Subscription cleanup
   private subscriptions: (() => void)[] = [];
 
+  // Background flush timer — see PERIODIC_PERSIST_MS
+  private periodicPersistInterval: ReturnType<typeof setInterval> | null = null;
+
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
     this.subscribe();
     this.requestStats().catch((error) => {
       this.sdk.logger.error("Initial stats fetch failed:", error);
     });
+    this.periodicPersistInterval = setInterval(() => {
+      void this.persist();
+    }, PERIODIC_PERSIST_MS);
   }
 
   destroy(): void {
     this.debouncedPersist.cancel();
+    if (this.periodicPersistInterval !== null) {
+      clearInterval(this.periodicPersistInterval);
+      this.periodicPersistInterval = null;
+    }
     for (const unsub of this.subscriptions) unsub();
     this.subscriptions = [];
   }

@@ -9,6 +9,7 @@
 import type { RemoteFileMetadata } from "../types";
 import type { WavedashSDK } from "../index";
 import * as indexedDBUtils from "../utils/indexedDB";
+import { WavedashManager } from "./manager";
 import { api } from "@wvdsh/api";
 
 // Name of the remote R2 folder that stores user files
@@ -18,12 +19,11 @@ const REMOTE_STORAGE_FOLDER = "userfs";
 // Stable path used as the remote key prefix, replacing the per-build Unity persistentDataPath
 const WAVEDASH_PERSISTENT_DATA_PATH = "/idbfs/wavedash";
 
-export class FileSystemManager {
-  private sdk: WavedashSDK;
+export class FileSystemManager extends WavedashManager {
   private remoteStorageOrigin: string | undefined;
 
   constructor(sdk: WavedashSDK) {
-    this.sdk = sdk;
+    super(sdk);
   }
 
   /**
