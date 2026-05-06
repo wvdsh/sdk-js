@@ -28,17 +28,6 @@ import { WavedashEvents } from "./events";
 import type { WavedashEventMap } from "./types";
 import type { WavedashManager } from "./services/manager";
 
-type WavedashService =
-  | LobbyManager
-  | FileSystemManager
-  | UGCManager
-  | LeaderboardManager
-  | P2PManager
-  | HeartbeatManager
-  | FriendsManager
-  | StatsManager
-  | FullscreenManager;
-
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
 
@@ -1249,7 +1238,7 @@ class WavedashSDK extends EventTarget {
     }
   }
 
-  private async apiCall<T extends WavedashService, K extends string & keyof T>(
+  private async apiCall<T extends WavedashManager, K extends string & keyof T>(
     manager: T,
     method: K,
     argSpecs: readonly ArgSpec[],
@@ -1267,7 +1256,7 @@ class WavedashSDK extends EventTarget {
     }
   }
 
-  private apiCallSync<T extends WavedashService, K extends string & keyof T>(
+  private apiCallSync<T extends WavedashManager, K extends string & keyof T>(
     target: T,
     method: K,
     argSpecs: readonly ArgSpec[],
