@@ -1364,9 +1364,6 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Tear down every manager. Called on the parent's `END_SESSION` signal
-   * (committed leaves only — see GameRunnerComponent.svelte). Idempotent.
-   * Each manager's `destroy()` defaults to a no-op; managers with ongoing
-   * state (subscriptions, intervals, peer connections) override it.
    */
   private destroy(): void {
     if (this.destroyed) return;

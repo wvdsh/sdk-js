@@ -40,9 +40,6 @@ export class UGCManager extends WavedashManager {
         uploadUrl,
         filePath
       );
-      // Status flips to COMPLETED via the R2 event-notification webhook on the
-      // server. If the PUT failed, we throw here and a server-side reaper flips
-      // the row UPLOADING → FAILED after a timeout.
       if (!success) {
         throw new Error(`Failed to upload UGC item: ${filePath}`);
       }
