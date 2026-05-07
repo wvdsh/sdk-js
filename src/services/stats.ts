@@ -9,12 +9,6 @@ type StatEntry = { identifier: string; value: number };
 
 const STORE_THROTTLE_MS = 1000;
 
-// Background safety-net flush: persists any dirty stats/achievements that the
-// game forgot to flag with `storeNow`. Bounds worst-case data loss to this
-// interval if the session ends abruptly (the SDK can't reliably fire one last
-// mutation during iframe teardown — see comment in destroy()).
-const PERIODIC_PERSIST_MS = 10_000;
-
 export class StatsManager extends WavedashManager {
   // Current user values
   private stats: Map<string, number> = new Map();
@@ -35,8 +29,14 @@ export class StatsManager extends WavedashManager {
   // Subscription cleanup
   private subscriptions: (() => void)[] = [];
 
-  // Background flush timer — see PERIODIC_PERSIST_MS
-  private periodicPersistInterval: ReturnType<typeof setInterval> | null = null;
+  // Single in-flight persist mutation; prevents OCC self-conflicts.
+  private inFlightPersist: Promise<unknown> | null = null;
+
+  // Set when a storeNow flush hits the in-flight gate; persist's .finally()
+  // checks this and fires immediately on the next cycle instead of waiting
+  // out the throttle window. (lodash treats the gated flush as a successful
+  // invocation, so without this flag a contended storeNow waits ~THROTTLE_MS.)
+  private flushRequested = false;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -44,17 +44,10 @@ export class StatsManager extends WavedashManager {
     this.requestStats().catch((error) => {
       this.sdk.logger.error("Initial stats fetch failed:", error);
     });
-    this.periodicPersistInterval = setInterval(() => {
-      void this.persist();
-    }, PERIODIC_PERSIST_MS);
   }
 
   destroy(): void {
     this.throttledPersist.cancel();
-    if (this.periodicPersistInterval !== null) {
-      clearInterval(this.periodicPersistInterval);
-      this.periodicPersistInterval = null;
-    }
     for (const unsub of this.subscriptions) unsub();
     this.subscriptions = [];
   }
@@ -126,55 +119,79 @@ export class StatsManager extends WavedashManager {
   // Store / Persist
   // ================
 
-  // Leading+trailing: first storeNow fires immediately, subsequent calls in the
-  // window coalesce into one trailing call (guaranteed within STORE_THROTTLE_MS).
+  // leading: false so a single setStat doesn't fire synchronously inside the
+  // setter; trailing: true to flush coalesced edits at the end of the window.
+  // storeNow=true (and storeStats()) call .flush() to fire the pending invocation
+  // immediately. The in-flight gate in persist() covers mutations that outlast
+  // the throttle window, which would otherwise overlap and cause OCC conflicts.
   private throttledPersist = throttle(
     () => this.persist(),
     STORE_THROTTLE_MS,
-    { leading: true, trailing: true }
+    { leading: false, trailing: true }
   );
 
   storeStats(): boolean {
     if (!this.isReady()) return false;
-    this.throttledPersist.cancel();
-    this.persist();
+    this.throttledPersist();
+    this.requestPersistFlush();
     return true;
   }
 
-  private async persist(): Promise<void> {
+  // Force-fire the throttled persist now. If a mutation is already in flight,
+  // the gate will swallow the flush(), so we also flag flushRequested so the
+  // next .finally() flushes again instead of waiting a full throttle window.
+  private requestPersistFlush(): void {
+    if (this.inFlightPersist !== null) this.flushRequested = true;
+    this.throttledPersist.flush();
+  }
+
+  private persist(): void {
+    // Skip if a mutation is already in flight; .finally() will reschedule.
+    if (this.inFlightPersist !== null) return;
+    if (this.dirtyStats.size === 0 && this.dirtyAchievements.size === 0) return;
+
     const pending = this.getPendingData();
     if (!pending) return;
 
-    try {
-      await Promise.all([
-        pending.stats.length > 0
-          ? this.sdk.convexClient.mutation(
-              api.sdk.gameAchievements.setUserGameStats,
-              { stats: pending.stats }
-            )
-          : Promise.resolve(),
-        pending.achievements.length > 0
-          ? this.sdk.convexClient.mutation(
-              api.sdk.gameAchievements.setUserGameAchievements,
-              { achievements: pending.achievements }
-            )
-          : Promise.resolve()
-      ]);
-
-      this.sdk.gameEventManager.notifyGame(WavedashEvents.STATS_STORED, {
-        success: true
-      } satisfies StatsStoredPayload);
-    } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : `Error storing stats: ${error}`;
-      this.sdk.logger.error(message);
-      this.sdk.gameEventManager.notifyGame(WavedashEvents.STATS_STORED, {
-        success: false,
-        message
-      } satisfies StatsStoredPayload);
-    }
+    this.inFlightPersist = Promise.all([
+      pending.stats.length > 0
+        ? this.sdk.convexClient.mutation(
+            api.sdk.gameAchievements.setUserGameStats,
+            { stats: pending.stats }
+          )
+        : Promise.resolve(),
+      pending.achievements.length > 0
+        ? this.sdk.convexClient.mutation(
+            api.sdk.gameAchievements.setUserGameAchievements,
+            { achievements: pending.achievements }
+          )
+        : Promise.resolve()
+    ])
+      .then(() => {
+        this.sdk.gameEventManager.notifyGame(WavedashEvents.STATS_STORED, {
+          success: true
+        } satisfies StatsStoredPayload);
+      })
+      .catch((error: unknown) => {
+        const message =
+          error instanceof Error
+            ? error.message
+            : `Error storing stats: ${error}`;
+        this.sdk.logger.error(message);
+        this.sdk.gameEventManager.notifyGame(WavedashEvents.STATS_STORED, {
+          success: false,
+          message
+        } satisfies StatsStoredPayload);
+      })
+      .finally(() => {
+        this.inFlightPersist = null;
+        const shouldFlushNow = this.flushRequested;
+        this.flushRequested = false;
+        if (this.dirtyStats.size > 0 || this.dirtyAchievements.size > 0) {
+          this.throttledPersist();
+          if (shouldFlushNow) this.throttledPersist.flush();
+        }
+      });
   }
 
   // ================
@@ -195,8 +212,9 @@ export class StatsManager extends WavedashManager {
     if (this.stats.get(identifier) !== value) {
       this.stats.set(identifier, value);
       this.dirtyStats.add(identifier);
+      this.throttledPersist();
     }
-    if (storeNow) this.throttledPersist();
+    if (storeNow) this.requestPersistFlush();
     return true;
   }
 
@@ -216,17 +234,14 @@ export class StatsManager extends WavedashManager {
     if (!this.unlockedAchievements.has(identifier)) {
       this.unlockedAchievements.add(identifier);
       this.dirtyAchievements.add(identifier);
+      this.throttledPersist();
     }
-    if (storeNow) this.throttledPersist();
+    if (storeNow) this.requestPersistFlush();
     return true;
   }
 
-  // ================
-  // Session End
-  // ================
-
   /** @destructive - Returns the pending stats and achievements and resets the dirty collections */
-  getPendingData(): { stats: StatEntry[]; achievements: string[] } | null {
+  private getPendingData(): { stats: StatEntry[]; achievements: string[] } | null {
     if (this.dirtyStats.size === 0 && this.dirtyAchievements.size === 0) {
       return null;
     }

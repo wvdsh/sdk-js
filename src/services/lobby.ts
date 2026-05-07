@@ -46,7 +46,7 @@ export class LobbyManager extends WavedashManager {
     new Map();
   
   // Throttle (not debounce) batches rapid setLobbyData calls; the in-flight
-  // gate in flushPendingLobbyDataUpdates prevents OCC self-conflicts.
+  // gate in setMetadata prevents OCC self-conflicts.
   private static readonly METADATA_UPDATE_THROTTLE_MS = 150;
   private inFlightMetadataUpdate: Promise<unknown> | null = null;
 
@@ -153,7 +153,7 @@ export class LobbyManager extends WavedashManager {
       this.lobbyMetadata[key] = value;
     }
     this.pendingMetadataUpdates[key] = value;
-    this.throttledMetadataFlush();
+    this.throttledSetMetadata();
     return true;
   }
 
@@ -379,7 +379,7 @@ export class LobbyManager extends WavedashManager {
     // Set lobbyId to null immediately to guard against multiple calls (e.g., from concurrent subscription errors)
     this.lobbyId = null;
 
-    this.throttledMetadataFlush.cancel();
+    this.throttledSetMetadata.cancel();
     this.pendingMetadataUpdates = {};
 
     if (this.unsubscribeLobbyMessages) {
@@ -466,13 +466,13 @@ export class LobbyManager extends WavedashManager {
   // leading: false so the first call doesn't fire synchronously inside setLobbyData
   // (which is called from a tight loop); trailing: true to flush coalesced updates
   // at the end of the window.
-  private throttledMetadataFlush = throttle(
-    () => this.flushPendingLobbyDataUpdates(),
+  private throttledSetMetadata = throttle(
+    () => this.setMetadata(),
     LobbyManager.METADATA_UPDATE_THROTTLE_MS,
     { leading: false, trailing: true }
   );
 
-  private flushPendingLobbyDataUpdates(): void {
+  private setMetadata(): void {
     // Skip if a mutation is already in flight; .finally() will reschedule.
     if (this.inFlightMetadataUpdate !== null) return;
     if (this.lobbyId === null) return;
@@ -491,7 +491,7 @@ export class LobbyManager extends WavedashManager {
       .finally(() => {
         this.inFlightMetadataUpdate = null;
         if (Object.keys(this.pendingMetadataUpdates).length > 0) {
-          this.throttledMetadataFlush();
+          this.throttledSetMetadata();
         }
       });
   }
