@@ -40,11 +40,6 @@ export class UGCManager extends WavedashManager {
         uploadUrl,
         filePath
       );
-      // TODO: This should be handled on the backend using R2 event notifications
-      await this.sdk.convexClient.mutation(
-        api.sdk.userGeneratedContent.finishUGCUpload,
-        { success, ugcId }
-      );
       if (!success) {
         throw new Error(`Failed to upload UGC item: ${filePath}`);
       }
@@ -78,15 +73,20 @@ export class UGCManager extends WavedashManager {
         uploadUrl,
         filePath
       );
-      // TODO: This should be handled on the backend using R2 event notifications
-      await this.sdk.convexClient.mutation(
-        api.sdk.userGeneratedContent.finishUGCUpload,
-        { success, ugcId }
-      );
       if (!success) {
         throw new Error(`Failed to upload UGC item: ${filePath}`);
       }
     }
+    return ugcId;
+  }
+
+  async deleteUGCItem(
+    ugcId: Id<"userGeneratedContent">
+  ): Promise<Id<"userGeneratedContent">> {
+    await this.sdk.convexClient.mutation(
+      api.sdk.userGeneratedContent.deleteUGCItem,
+      { ugcId }
+    );
     return ugcId;
   }
 

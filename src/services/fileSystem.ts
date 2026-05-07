@@ -88,9 +88,19 @@ export class FileSystemManager extends WavedashManager {
    * @returns The path of the remote file that was deleted
    */
   async deleteRemoteFile(filePath: string): Promise<string> {
-    await this.sdk.convexClient.action(api.sdk.remoteFileStorage.deleteFile, {
-      path: this.toRemoteKey(filePath)
+    const url = this.getRemoteStorageUrl(filePath);
+    const jwt = await this.sdk.ensureGameplayJwt();
+    const response = await fetch(url, {
+      method: "DELETE",
+      headers: {
+        Authorization: `Bearer ${jwt}`
+      }
     });
+    if (!response.ok) {
+      const msg = `Failed to delete remote file ${filePath}: ${response.status} (${response.statusText})`;
+      this.sdk.logger.error(msg);
+      throw new Error(msg);
+    }
     return filePath;
   }
 
