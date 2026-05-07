@@ -20,11 +20,8 @@ import type { WavedashSDK } from "../index";
 
 export class HeartbeatManager extends WavedashManager {
   private deviceFingerprint: DeviceFingerprint | undefined = undefined;
-  // Resolves once the parent has answered the device fingerprint request
-  // (or we've given up on it). Always resolves — never rejects. Best-effort:
-  // the backend stamps whatever fingerprint is present on the first heartbeat
-  // into the gameplaySession metadata, so we delay the first tick until this
-  // settles, but an empty fingerprint is acceptable.
+  // Always resolves — never rejects. Best-effort: the backend stamps whatever
+  // fingerprint is present on the first heartbeat into the gameplaySession metadata
   private deviceFingerprintReady: Promise<void>;
   private testConnectionInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
@@ -138,8 +135,12 @@ export class HeartbeatManager extends WavedashManager {
 
     this.sdk.convexClient
       .mutation(api.sdk.presence.heartbeat, {
-        ...(reestablish ? { data: { forceUpdate: true } } : {}),
-        deviceFingerprint: this.deviceFingerprint
+        ...(reestablish
+          ? {
+              data: { forceUpdate: true },
+              deviceFingerprint: this.deviceFingerprint
+            }
+          : {})
       })
       .then((accepted: boolean) => {
         if (accepted) {
