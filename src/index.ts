@@ -698,6 +698,21 @@ class WavedashSDK extends EventTarget {
     );
   }
 
+  /**
+   * Delete a UGC item: removes the row, the R2 object, and frees up the
+   * user's storage quota by the size of the deleted upload.
+   */
+  async deleteUGCItem(
+    ugcId: Id<"userGeneratedContent">
+  ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
+    return this.apiCall(
+      this.ugcManager,
+      "deleteUGCItem",
+      [["ugcId", vId("userGeneratedContent")]],
+      ugcId
+    );
+  }
+
   async downloadUGCItem(
     ugcId: Id<"userGeneratedContent">,
     filePath: string
@@ -1349,9 +1364,6 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Tear down every manager. Called on the parent's `END_SESSION` signal
-   * (committed leaves only — see GameRunnerComponent.svelte). Idempotent.
-   * Each manager's `destroy()` defaults to a no-op; managers with ongoing
-   * state (subscriptions, intervals, peer connections) override it.
    */
   private destroy(): void {
     if (this.destroyed) return;
