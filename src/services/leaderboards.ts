@@ -65,7 +65,8 @@ export class LeaderboardManager extends WavedashManager {
       ? {
           ...result.entry,
           userId: this.sdk.wavedashUser.id,
-          username: this.sdk.wavedashUser.username
+          username: this.sdk.wavedashUser.username,
+          userAvatarUrl: this.sdk.wavedashUser.avatarUrl
         }
       : null;
 
@@ -87,6 +88,7 @@ export class LeaderboardManager extends WavedashManager {
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
     return result.entries;
   }
 
@@ -103,6 +105,7 @@ export class LeaderboardManager extends WavedashManager {
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
     return result.entries;
   }
 
