@@ -87,6 +87,7 @@ export class LeaderboardManager extends WavedashManager {
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
     return result.entries;
   }
 
@@ -103,6 +104,7 @@ export class LeaderboardManager extends WavedashManager {
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
     return result.entries;
   }
 
