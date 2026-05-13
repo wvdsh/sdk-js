@@ -65,7 +65,8 @@ export class LeaderboardManager extends WavedashManager {
       ? {
           ...result.entry,
           userId: this.sdk.wavedashUser.id,
-          username: this.sdk.wavedashUser.username
+          username: this.sdk.wavedashUser.username,
+          userAvatarUrl: this.sdk.wavedashUser.avatarUrl
         }
       : null;
 
