@@ -71,11 +71,15 @@ export class SwMessenger {
     if (!set || set.size === 0) return;
 
     const port = event.ports?.[0];
+    // Always send via both port and controller. `MessagePort.postMessage` to a
+    // closed port silently drops (no throw), so if the SW timed out and closed
+    // its end before we replied, the port-only path would be lost. The SW's
+    // message handler merges credentials idempotently, so a double-delivery on
+    // the happy path is harmless — cheaper than detecting port liveness.
     const reply: SwReply = (message) => {
       if (port) {
         try {
           port.postMessage(message);
-          return;
         } catch (err) {
           logger.warn("Failed to reply to SW via port", err);
         }
