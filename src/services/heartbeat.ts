@@ -16,6 +16,7 @@ import { WavedashEvents } from "../events";
 import type { ConnectionState } from "convex/browser";
 import type { BackendConnectionPayload } from "../types";
 import { WavedashManager } from "./manager";
+import { logger } from "../utils/logger";
 import type { WavedashSDK } from "../index";
 
 export class HeartbeatManager extends WavedashManager {
@@ -148,7 +149,7 @@ export class HeartbeatManager extends WavedashManager {
         }
       })
       .catch((error: unknown) => {
-        this.sdk.logger.error(`Heartbeat failed: ${error}`);
+        logger.error(`Heartbeat failed: ${error}`);
       })
       .finally(() => {
         this.heartbeatInFlight = false;
@@ -170,7 +171,7 @@ export class HeartbeatManager extends WavedashManager {
       });
       return true;
     } catch (error) {
-      this.sdk.logger.error(`Error updating presence: ${error}`);
+      logger.error(`Error updating presence: ${error}`);
       return false;
     }
   }
@@ -204,7 +205,7 @@ export class HeartbeatManager extends WavedashManager {
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedAt = Date.now();
-        this.sdk.logger.warn(
+        logger.warn(
           "Backend disconnected - attempting to reconnect..."
         );
         this.sdk.gameEventManager.notifyGame(
@@ -231,7 +232,7 @@ export class HeartbeatManager extends WavedashManager {
         this.sentDisconnectedEvent = false;
       }
     } catch (error) {
-      this.sdk.logger.error("Error testing connection:", error);
+      logger.error("Error testing connection:", error);
     }
   }
 

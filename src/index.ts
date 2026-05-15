@@ -10,7 +10,7 @@ import { GameEventManager } from "./services/gameEvents";
 import { FullscreenManager } from "./services/fullscreen";
 import { OverlayManager } from "./services/overlay";
 import { FriendsManager } from "./services/friends";
-import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
+import { logger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { SwMessenger } from "./utils/swMessenger";
 import {
@@ -112,7 +112,6 @@ class WavedashSDK extends EventTarget {
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
   engineInstance: EngineInstance | null = null;
-  logger: WavedashLogger;
   iframeMessenger: IFrameMessenger;
   swMessenger: SwMessenger;
   p2pManager: P2PManager;
@@ -138,8 +137,7 @@ class WavedashSDK extends EventTarget {
     this.iframeMessenger = iframeMessenger;
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
-    this.logger = new WavedashLogger();
-    this.swMessenger = new SwMessenger(this.logger);
+    this.swMessenger = new SwMessenger();
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
@@ -185,7 +183,7 @@ class WavedashSDK extends EventTarget {
 
     this.setupWarningTimeout = setTimeout(() => {
       this.setupWarningTimeout = null;
-      this.logger.warn(
+      logger.warn(
         "Wavedash.init(), Wavedash.loadComplete(), or Wavedash.updateLoadProgressZeroToOne() not called yet"
       );
     }, 10_000);
@@ -205,14 +203,14 @@ class WavedashSDK extends EventTarget {
   init(config?: WavedashConfig): boolean {
     this.loadComplete();
     if (this._initialized) {
-      this.logger.warn("init called twice! Already initialized, skipping init");
+      logger.warn("init called twice! Already initialized, skipping init");
       return false;
     }
     if (typeof config === "string") {
       try {
         config = JSON.parse(config);
       } catch (error) {
-        this.logger.error("Initialized with invalid config:", error);
+        logger.error("Initialized with invalid config:", error);
         return false;
       }
     }
@@ -221,14 +219,14 @@ class WavedashSDK extends EventTarget {
     this._initialized = true;
 
     // Update logger debug mode based on config
-    this.logger.setLogLevel(
+    logger.setLogLevel(
       this.config.debug ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN
     );
 
     // Initialize P2P manager with config (validates and allocates ring buffers)
     this.p2pManager.init(this.config.p2p);
 
-    this.logger.debug("Initialized with config:", this.config);
+    logger.debug("Initialized with config:", this.config);
 
     if (!this.config.deferEvents) {
       this.readyForEvents();
@@ -454,13 +452,13 @@ class WavedashSDK extends EventTarget {
    * @returns The user's JWT signed by the Wavedash backend
    */
   async getUserJwt(): Promise<WavedashResponse<string>> {
-    this.logger.debug("getUserJwt");
+    logger.debug("getUserJwt");
     try {
       const data = await this.ensureGameplayJwt();
       return this.formatResponse({ success: true, data });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error("getUserJwt", message);
+      logger.error("getUserJwt", message);
       return this.formatResponse({ success: false, data: null, message });
     }
   }
@@ -1252,7 +1250,7 @@ class WavedashSDK extends EventTarget {
   // require config or produce events (lobby join/create, P2P).
   private ensureInit(): void {
     if (!this._initialized) {
-      this.logger.error("SDK not initialized. Call WavedashJS.init first.");
+      logger.error("SDK not initialized. Call WavedashJS.init first.");
       throw new Error("SDK not initialized");
     }
   }
@@ -1263,14 +1261,14 @@ class WavedashSDK extends EventTarget {
     argSpecs: readonly ArgSpec[],
     ...args: Parameters<Extract<T[K], AnyFn>>
   ): Promise<WavedashResponse<Awaited<ReturnType<Extract<T[K], AnyFn>>>>> {
-    this.logger.debug(method, ...args);
+    logger.debug(method, ...args);
     try {
       validateArgs(method, argSpecs, args);
       const data = await (manager[method] as AnyFn)(...args);
       return this.formatResponse({ success: true, data });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(method, message);
+      logger.error(method, message);
       return this.formatResponse({ success: false, data: null, message });
     }
   }
@@ -1281,7 +1279,7 @@ class WavedashSDK extends EventTarget {
     argSpecs: readonly ArgSpec[],
     ...args: Parameters<Extract<T[K], AnyFn>>
   ): ReturnType<Extract<T[K], AnyFn>> {
-    this.logger.debug(method, ...args);
+    logger.debug(method, ...args);
     // Validation errors rethrow — sync callsites don't have a WavedashResponse
     // envelope to surface them through. The logger.error makes the cause
     // obvious in the browser console before the throw propagates.
@@ -1289,7 +1287,7 @@ class WavedashSDK extends EventTarget {
       validateArgs(method, argSpecs, args);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      this.logger.error(method, message);
+      logger.error(method, message);
       throw error;
     }
     return this.formatResponse((target[method] as AnyFn)(...args));
@@ -1400,7 +1398,7 @@ class WavedashSDK extends EventTarget {
         try {
           jwt = await this.ensureGameplayJwt();
         } catch (err) {
-          this.logger.warn("Failed to resolve JWT for creds-request", err);
+          logger.warn("Failed to resolve JWT for creds-request", err);
           return;
         }
         reply({

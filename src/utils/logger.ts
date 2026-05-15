@@ -50,3 +50,5 @@ export class WavedashLogger implements Logger {
     }
   }
 }
+
+export const logger = new WavedashLogger();

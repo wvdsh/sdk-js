@@ -1,14 +1,9 @@
 /**
- * Utilities for messaging between the SDK (running in the embed iframe) and
- * the play-domain service worker that proxies API requests on its behalf.
- *
- * The SW lives at the /play origin and may be terminated at any time (Safari
- * ITP is aggressive). On wake it can ping the SDK via `embed.creds-request`
- * to recover the gameplay JWT; the SDK pushes updates via `embed.jwt-update`
- * when a fresh token is minted.
+ * Utilities for messaging between the SDK and the service worker
+ * that proxies API requests on its behalf.
  */
 
-import { WavedashLogger } from "./logger";
+import { logger } from "./logger";
 
 export type SwMessage<T = unknown> = {
   type: string;
@@ -21,11 +16,9 @@ type SwListener = (payload: unknown, reply: SwReply) => void;
 
 export class SwMessenger {
   private listeners: Map<string, Set<SwListener>>;
-  private logger: WavedashLogger;
 
-  constructor(logger: WavedashLogger) {
+  constructor() {
     this.listeners = new Map();
-    this.logger = logger;
 
     if (typeof navigator !== "undefined" && navigator.serviceWorker) {
       navigator.serviceWorker.addEventListener("message", this.handleMessage);
@@ -64,7 +57,7 @@ export class SwMessenger {
       navigator.serviceWorker.controller?.postMessage(message);
       return true;
     } catch (err) {
-      this.logger.warn("Failed to post message to service worker", err);
+      logger.warn("Failed to post message to service worker", err);
       return false;
     }
   }
@@ -84,7 +77,7 @@ export class SwMessenger {
           port.postMessage(message);
           return;
         } catch (err) {
-          this.logger.warn("Failed to reply to SW via port", err);
+          logger.warn("Failed to reply to SW via port", err);
         }
       }
       this.postToServiceWorker(message);

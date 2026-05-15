@@ -10,6 +10,7 @@ import type { RemoteFileMetadata } from "../types";
 import type { WavedashSDK } from "../index";
 import * as indexedDBUtils from "../utils/indexedDB";
 import { WavedashManager } from "./manager";
+import { logger } from "../utils/logger";
 import { api } from "@wvdsh/api";
 
 // Name of the remote R2 folder that stores user files
@@ -98,7 +99,7 @@ export class FileSystemManager extends WavedashManager {
     });
     if (!response.ok) {
       const msg = `Failed to delete remote file ${filePath}: ${response.status} (${response.statusText})`;
-      this.sdk.logger.error(msg);
+      logger.error(msg);
       throw new Error(msg);
     }
     return filePath;
@@ -165,9 +166,9 @@ export class FileSystemManager extends WavedashManager {
   }
 
   async writeLocalFile(filePath: string, data: Uint8Array): Promise<boolean> {
-    this.sdk.logger.debug(`Writing local file: ${filePath}`);
+    logger.debug(`Writing local file: ${filePath}`);
     if (this.sdk.engineInstance?.FS) {
-      this.sdk.logger.error(
+      logger.error(
         `${this.sdk.engineInstance.type} engine detected, use engine's builtin file access to save files.`
       );
       return false;
@@ -177,15 +178,15 @@ export class FileSystemManager extends WavedashManager {
       await indexedDBUtils.writeToIndexedDB(filePath, data);
       return true;
     } catch (error) {
-      this.sdk.logger.error(`Failed to write local file: ${error}`);
+      logger.error(`Failed to write local file: ${error}`);
       return false;
     }
   }
 
   async readLocalFile(filePath: string): Promise<Uint8Array | null> {
-    this.sdk.logger.debug(`Reading local file: ${filePath}`);
+    logger.debug(`Reading local file: ${filePath}`);
     if (this.sdk.engineInstance?.FS) {
-      this.sdk.logger.error(
+      logger.error(
         `${this.sdk.engineInstance.type} engine detected, use engine's builtin file access to read files.`
       );
       return null;
@@ -196,7 +197,7 @@ export class FileSystemManager extends WavedashManager {
       const arrayBuffer = await blob.arrayBuffer();
       return new Uint8Array(arrayBuffer);
     } catch (error) {
-      this.sdk.logger.error(`Failed to read local file: ${error}`);
+      logger.error(`Failed to read local file: ${error}`);
       return null;
     }
   }
@@ -207,9 +208,9 @@ export class FileSystemManager extends WavedashManager {
 
   // Helper to upload a local file to a presigned URL
   async upload(presignedUploadUrl: string, filePath: string): Promise<boolean> {
-    this.sdk.logger.debug(`Uploading ${filePath} to: ${presignedUploadUrl}`);
+    logger.debug(`Uploading ${filePath} to: ${presignedUploadUrl}`);
     if (this.sdk.engineInstance && !this.sdk.engineInstance.FS) {
-      this.sdk.logger.error("Engine instance is missing the Emscripten FS API");
+      logger.error("Engine instance is missing the Emscripten FS API");
       return false;
     }
     let success = false;
@@ -224,9 +225,9 @@ export class FileSystemManager extends WavedashManager {
 
   // Helper to download a file from a URL and save locally
   async download(url: string, filePath: string): Promise<boolean> {
-    this.sdk.logger.debug(`Downloading ${filePath} from: ${url}`);
+    logger.debug(`Downloading ${filePath} from: ${url}`);
     if (this.sdk.engineInstance && !this.sdk.engineInstance.FS) {
-      this.sdk.logger.error("Engine instance is missing the Emscripten FS API");
+      logger.error("Engine instance is missing the Emscripten FS API");
       return false;
     }
 
@@ -238,7 +239,7 @@ export class FileSystemManager extends WavedashManager {
       }
     });
     if (!response.ok) {
-      this.sdk.logger.error(
+      logger.error(
         `Failed to download remote file: ${response.status} (${response.statusText})`
       );
       return false;
@@ -266,10 +267,10 @@ export class FileSystemManager extends WavedashManager {
         const success = await this.writeLocalFile(filePath, dataArray);
         if (!success) return false;
       }
-      this.sdk.logger.debug(`Successfully saved to: ${filePath}`);
+      logger.debug(`Successfully saved to: ${filePath}`);
       return true;
     } catch (error) {
-      this.sdk.logger.error(
+      logger.error(
         `Failed to save file ${filePath}: ${error instanceof Error ? error.message : String(error)}`
       );
       return false;
@@ -322,7 +323,7 @@ export class FileSystemManager extends WavedashManager {
     try {
       const blob = await this.readLocalFileBlob(indexedDBKey);
       if (!blob) {
-        this.sdk.logger.error(`File not found in IndexedDB: ${indexedDBKey}`);
+        logger.error(`File not found in IndexedDB: ${indexedDBKey}`);
         return false;
       }
       const response = await fetch(presignedUploadUrl, {
@@ -332,7 +333,7 @@ export class FileSystemManager extends WavedashManager {
       });
       return response.ok;
     } catch (error) {
-      this.sdk.logger.error(`Error uploading from IndexedDB: ${error}`);
+      logger.error(`Error uploading from IndexedDB: ${error}`);
       return false;
     }
   }
@@ -359,15 +360,15 @@ export class FileSystemManager extends WavedashManager {
       return response.ok;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
-      this.sdk.logger.error(`Error uploading from FS: ${msg}`);
+      logger.error(`Error uploading from FS: ${msg}`);
       return false;
     }
   }
 
   private async readLocalFileBlob(filePath: string): Promise<Blob | null> {
-    this.sdk.logger.debug(`Reading local file (blob): ${filePath}`);
+    logger.debug(`Reading local file (blob): ${filePath}`);
     if (this.sdk.engineInstance?.FS) {
-      this.sdk.logger.error(
+      logger.error(
         `${this.sdk.engineInstance.type} engine detected, use engine's builtin file access to read files.`
       );
       return null;
@@ -379,7 +380,7 @@ export class FileSystemManager extends WavedashManager {
 
       return indexedDBUtils.toBlobFromIndexedDBValue(record);
     } catch (error) {
-      this.sdk.logger.error(`Failed to read local file blob: ${error}`);
+      logger.error(`Failed to read local file blob: ${error}`);
       return null;
     }
   }
