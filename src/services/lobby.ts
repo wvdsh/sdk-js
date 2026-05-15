@@ -29,6 +29,7 @@ import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
 import { api, IFRAME_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
+import { logger } from "../utils/logger";
 
 export class LobbyManager extends WavedashManager {
   // Track current lobby state
@@ -68,7 +69,7 @@ export class LobbyManager extends WavedashManager {
       {},
       this.processInviteUpdates,
       (error) => {
-        this.sdk.logger.error(`Lobby invites subscription error: ${error}`);
+        logger.error(`Lobby invites subscription error: ${error}`);
       }
     );
   }
@@ -102,7 +103,7 @@ export class LobbyManager extends WavedashManager {
 
   getLobbyUsers(lobbyId: Id<"lobbies">): LobbyUser[] {
     if (this.lobbyId !== lobbyId) {
-      this.sdk.logger.error(
+      logger.error(
         "Must be a member of the lobby to access user list"
       );
       return [];
@@ -112,7 +113,7 @@ export class LobbyManager extends WavedashManager {
 
   getHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
     if (this.lobbyId !== lobbyId) {
-      this.sdk.logger.error(
+      logger.error(
         "Must be a member of the lobby to access the host ID"
       );
       return null;
@@ -205,11 +206,11 @@ export class LobbyManager extends WavedashManager {
   sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
     const args = { lobbyId, message };
     if (message.length === 0) {
-      this.sdk.logger.error("Message cannot be empty");
+      logger.error("Message cannot be empty");
       return false;
     }
     if (message.length > LOBBY_MESSAGE_MAX_LENGTH) {
-      this.sdk.logger.error(
+      logger.error(
         `Message cannot be longer than ${LOBBY_MESSAGE_MAX_LENGTH} characters`
       );
       return false;
@@ -218,7 +219,7 @@ export class LobbyManager extends WavedashManager {
       // Fire and forget, not awaiting the result
       this.sdk.convexClient.mutation(api.sdk.gameLobby.sendMessage, args);
     } catch (error) {
-      this.sdk.logger.error(`Error sending lobby message: ${error}`);
+      logger.error(`Error sending lobby message: ${error}`);
       return false;
     }
 
@@ -276,7 +277,7 @@ export class LobbyManager extends WavedashManager {
 
     // Error handler for subscription failures (e.g., kicked from lobby)
     const onLobbySubscriptionError = (error: Error) => {
-      this.sdk.logger.error(`Lobby subscription error: ${error.message}`);
+      logger.error(`Lobby subscription error: ${error.message}`);
       // Check if this is a "not a member" error indicating we were kicked
       if (error.message.includes("not a member")) {
         this.handleLobbyKicked(LobbyKickedReason.KICKED);
@@ -321,7 +322,7 @@ export class LobbyManager extends WavedashManager {
     if (response.users.length > 1) {
       this.p2pUpdateQueue = this.updateP2PConnections(response.users).catch(
         (error) => {
-          this.sdk.logger.error("Error initializing P2P on join:", error);
+          logger.error("Error initializing P2P on join:", error);
         }
       );
     }
@@ -338,7 +339,7 @@ export class LobbyManager extends WavedashManager {
       metadata: response.metadata
     } satisfies LobbyJoinedPayload);
 
-    this.sdk.logger.debug("Subscribed to lobby:", response.lobbyId);
+    logger.debug("Subscribed to lobby:", response.lobbyId);
   }
 
   /**
@@ -352,7 +353,7 @@ export class LobbyManager extends WavedashManager {
     const lobbyId = this.lobbyId;
     if (!lobbyId) return;
 
-    this.sdk.logger.warn(
+    logger.warn(
       `User was removed from lobby: ${lobbyId} (reason: ${reason})`
     );
     this.cleanupLobbyState();
@@ -486,7 +487,7 @@ export class LobbyManager extends WavedashManager {
         updates
       })
       .catch((error) => {
-        this.sdk.logger.error("Error updating lobby metadata:", error);
+        logger.error("Error updating lobby metadata:", error);
       })
       .finally(() => {
         this.inFlightMetadataUpdate = null;
@@ -529,7 +530,7 @@ export class LobbyManager extends WavedashManager {
     for (const user of previousUsers) {
       if (!newUserIds.has(user.userId)) {
         if (user.userId === this.sdk.getUserId()) {
-          this.sdk.logger.warn(
+          logger.warn(
             "USER WAS KICKED FROM LOBBY! Received notification for myself leaving."
           );
         }
@@ -552,7 +553,7 @@ export class LobbyManager extends WavedashManager {
       this.p2pUpdateQueue = this.p2pUpdateQueue
         .then(() => this.updateP2PConnections(newUsers))
         .catch((error) => {
-          this.sdk.logger.error("Error in queued P2P update:", error);
+          logger.error("Error in queued P2P update:", error);
         });
     }
   };
@@ -603,7 +604,7 @@ export class LobbyManager extends WavedashManager {
       if (newUsers.length <= 1) {
         // If only one user left, disconnect all P2P connections
         this.sdk.p2pManager.disconnectP2P();
-        this.sdk.logger.debug(
+        logger.debug(
           "Only one user in lobby, P2P connections disconnected"
         );
         return;
@@ -620,11 +621,11 @@ export class LobbyManager extends WavedashManager {
         this.lobbyId,
         wavedashUsers
       );
-      this.sdk.logger.debug(
+      logger.debug(
         `P2P connections updated for lobby ${this.lobbyId} with ${wavedashUsers.length} users`
       );
     } catch (error) {
-      this.sdk.logger.error("Error updating P2P connections:", error);
+      logger.error("Error updating P2P connections:", error);
     }
   }
 }

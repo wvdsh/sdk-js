@@ -3,6 +3,7 @@ import type { WavedashSDK } from "..";
 import type { StatsStoredPayload } from "../types";
 import { WavedashEvents } from "../events";
 import { WavedashManager } from "./manager";
+import { logger } from "../utils/logger";
 import throttle from "lodash.throttle";
 
 type StatEntry = { identifier: string; value: number };
@@ -42,7 +43,7 @@ export class StatsManager extends WavedashManager {
     super(sdk);
     this.subscribe();
     this.requestStats().catch((error) => {
-      this.sdk.logger.error("Initial stats fetch failed:", error);
+      logger.error("Initial stats fetch failed:", error);
     });
   }
 
@@ -69,7 +70,7 @@ export class StatsManager extends WavedashManager {
           this.knownStatIds = new Set(ids);
         },
         (error) => {
-          this.sdk.logger.error("Stat identifiers subscription error:", error);
+          logger.error("Stat identifiers subscription error:", error);
         }
       ),
       this.sdk.convexClient.onUpdate(
@@ -79,7 +80,7 @@ export class StatsManager extends WavedashManager {
           this.knownAchievementIds = new Set(ids);
         },
         (error) => {
-          this.sdk.logger.error(
+          logger.error(
             "Achievement identifiers subscription error:",
             error
           );
@@ -95,7 +96,7 @@ export class StatsManager extends WavedashManager {
           }
         },
         (error) => {
-          this.sdk.logger.error("Achievement subscription error:", error);
+          logger.error("Achievement subscription error:", error);
         }
       )
     );
@@ -177,7 +178,7 @@ export class StatsManager extends WavedashManager {
           error instanceof Error
             ? error.message
             : `Error storing stats: ${error}`;
-        this.sdk.logger.error(message);
+        logger.error(message);
         this.sdk.gameEventManager.notifyGame(WavedashEvents.STATS_STORED, {
           success: false,
           message

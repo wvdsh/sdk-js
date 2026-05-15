@@ -22,6 +22,7 @@ import type {
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
 import { WavedashManager } from "./manager";
+import { logger } from "../utils/logger";
 import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
 
 // Internal P2P signaling/TURN types — not part of the public SDK surface.
@@ -255,7 +256,7 @@ export class P2PManager extends WavedashManager {
       this.initializationInProgress &&
       this.initializationLobbyId === lobbyId
     ) {
-      this.sdk.logger.debug(
+      logger.debug(
         "P2P initialization already in progress, waiting..."
       );
       await this.initializationInProgress;
@@ -348,7 +349,7 @@ export class P2PManager extends WavedashManager {
       throw new Error("No existing P2P connection to update");
     }
 
-    this.sdk.logger.debug("Updating P2P connection with new member list");
+    logger.debug("Updating P2P connection with new member list");
 
     const currentPeerUserIds = new Set(
       Object.keys(this.currentConnection.peers)
@@ -368,7 +369,7 @@ export class P2PManager extends WavedashManager {
           existingPeer.username = member.username;
         }
       } else {
-        this.sdk.logger.debug(
+        logger.debug(
           `Adding new peer: ${member.username} (${member.id})`
         );
 
@@ -386,7 +387,7 @@ export class P2PManager extends WavedashManager {
       const currentUserId = this.sdk.getUserId();
       const connectionPromises = connectionsToCreate.map((userId) => {
         const shouldCreateChannels = currentUserId < userId;
-        this.sdk.logger.debug(
+        logger.debug(
           `Creating connection to new peer ${userId}, shouldCreateChannels: ${shouldCreateChannels}`
         );
         return this.createPeerConnection(
@@ -404,14 +405,14 @@ export class P2PManager extends WavedashManager {
 
       if (peersToInitiate.length > 0) {
         const offerPromises = peersToInitiate.map((userId) => {
-          this.sdk.logger.debug(
+          logger.debug(
             `Initiating offer to new peer ${userId} (lower userId rule)`
           );
           return this.createOfferToPeer(userId);
         });
 
         await Promise.all(offerPromises);
-        this.sdk.logger.debug(
+        logger.debug(
           `Initiated ${offerPromises.length} offers to new peers`
         );
       }
@@ -423,7 +424,7 @@ export class P2PManager extends WavedashManager {
     ) as Id<"users">[]) {
       if (!newPeerUserIds.has(userId)) {
         const peer = this.currentConnection.peers[userId];
-        this.sdk.logger.debug(`Peer left: ${peer.username} (${userId})`);
+        logger.debug(`Peer left: ${peer.username} (${userId})`);
 
         // Clean up WebRTC resources
         const pc = this.peerConnections.get(userId);
@@ -457,7 +458,7 @@ export class P2PManager extends WavedashManager {
     // This ensures we can receive answers to our offers
     if (this.signalingSubscriptionReady) {
       await this.signalingSubscriptionReady;
-      this.sdk.logger.debug("Signaling subscription confirmed ready");
+      logger.debug("Signaling subscription confirmed ready");
     }
 
     // Establish WebRTC connections (creates offers)
@@ -528,7 +529,7 @@ export class P2PManager extends WavedashManager {
         await this.handleSignalingMessage(message, connection);
         this.processedSignalingMessages.add(message._id);
       } catch (error) {
-        this.sdk.logger.error("Error handling signaling message:", error);
+        logger.error("Error handling signaling message:", error);
       }
     }
 
@@ -545,7 +546,7 @@ export class P2PManager extends WavedashManager {
           this.pendingProcessedMessageIds.delete(messageId);
         }
       } catch (error) {
-        this.sdk.logger.error(
+        logger.error(
           "Failed to mark signaling messages as processed:",
           error
         );
@@ -573,7 +574,7 @@ export class P2PManager extends WavedashManager {
     // sends an offer before our updateP2PConnection has been called with them in the member list.
     if (!this.peerConnections.has(remoteUserId)) {
       if (message.messageType === P2P_SIGNALING_MESSAGE_TYPE.OFFER) {
-        this.sdk.logger.debug(
+        logger.debug(
           `Received offer from ${remoteUserId} before peer connection exists, creating on-demand`
         );
 
@@ -593,14 +594,14 @@ export class P2PManager extends WavedashManager {
         );
 
         if (!success) {
-          this.sdk.logger.error(
+          logger.error(
             `Failed to create on-demand peer connection for ${remoteUserId}`
           );
           return;
         }
       } else {
         // For non-OFFER messages, we need the peer connection to exist first
-        this.sdk.logger.warn(
+        logger.warn(
           `No peer connection for user ${remoteUserId}, dropping ${message.messageType} message`
         );
         return;
@@ -614,7 +615,7 @@ export class P2PManager extends WavedashManager {
         // Receiving an offer means peer is handling connection/restart - clear our restart state
         this.iceRestartInProgress.delete(remoteUserId);
 
-        this.sdk.logger.debug(`Processing offer from peer ${remoteUserId}:`);
+        logger.debug(`Processing offer from peer ${remoteUserId}:`);
 
         await pc.setRemoteDescription(
           new RTCSessionDescription(message.data as RTCSessionDescriptionInit)
@@ -626,7 +627,7 @@ export class P2PManager extends WavedashManager {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
-        this.sdk.logger.debug(
+        logger.debug(
           `  Answer created, waiting for ondatachannel events...`
         );
 
@@ -659,7 +660,7 @@ export class P2PManager extends WavedashManager {
           const pending = this.pendingIceCandidates.get(remoteUserId) || [];
           pending.push(iceData);
           this.pendingIceCandidates.set(remoteUserId, pending);
-          this.sdk.logger.debug(
+          logger.debug(
             `Buffered ICE candidate for ${remoteUserId} (remote description not yet set, ${pending.length} buffered)`
           );
         } else {
@@ -669,7 +670,7 @@ export class P2PManager extends WavedashManager {
       }
 
       default:
-        this.sdk.logger.warn(
+        logger.warn(
           "Unknown signaling message type:",
           message.messageType
         );
@@ -690,7 +691,7 @@ export class P2PManager extends WavedashManager {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(candidate));
         } catch (error) {
-          this.sdk.logger.warn(
+          logger.warn(
             `Failed to add buffered ICE candidate for ${remoteUserId}:`,
             error
           );
@@ -703,7 +704,7 @@ export class P2PManager extends WavedashManager {
   private async establishPeerConnections(
     connection: P2PConnection
   ): Promise<void> {
-    this.sdk.logger.debug("Establishing WebRTC connections to peers...");
+    logger.debug("Establishing WebRTC connections to peers...");
 
     const currentUserId = this.sdk.getUserId();
     const connectionPromises: Promise<boolean>[] = [];
@@ -712,7 +713,7 @@ export class P2PManager extends WavedashManager {
     (Object.entries(connection.peers) as [Id<"users">, P2PPeer][]).forEach(
       ([userId, peer]) => {
         const shouldCreateChannels = currentUserId < userId;
-        this.sdk.logger.debug(
+        logger.debug(
           `Creating connection to peer ${userId} (${peer.username}), shouldCreateChannels: ${shouldCreateChannels}`
         );
         connectionPromises.push(
@@ -731,18 +732,18 @@ export class P2PManager extends WavedashManager {
 
     if (peersToInitiate.length > 0) {
       const offerPromises = peersToInitiate.map((userId) => {
-        this.sdk.logger.debug(
+        logger.debug(
           `Initiating offer to peer ${userId} (lower userId rule)`
         );
         return this.createOfferToPeer(userId);
       });
 
       await Promise.all(offerPromises);
-      this.sdk.logger.debug(
+      logger.debug(
         `Created ${connectionPromises.length} peer connections and initiated ${offerPromises.length} offers`
       );
     } else {
-      this.sdk.logger.debug(
+      logger.debug(
         `Created ${connectionPromises.length} peer connections, no offers to initiate`
       );
     }
@@ -757,11 +758,11 @@ export class P2PManager extends WavedashManager {
     // Log channel states before creating offer
     const reliableChannel = this.reliableChannels.get(remoteUserId);
     const unreliableChannel = this.unreliableChannels.get(remoteUserId);
-    this.sdk.logger.debug(`Creating offer to peer ${remoteUserId}:`);
-    this.sdk.logger.debug(
+    logger.debug(`Creating offer to peer ${remoteUserId}:`);
+    logger.debug(
       `  Reliable channel state: ${reliableChannel?.readyState || "none"}`
     );
-    this.sdk.logger.debug(
+    logger.debug(
       `  Unreliable channel state: ${unreliableChannel?.readyState || "none"}`
     );
 
@@ -787,7 +788,7 @@ export class P2PManager extends WavedashManager {
   ): Promise<boolean> {
     const iceServers = await this.getIceServers();
     if (!iceServers) {
-      this.sdk.logger.error(
+      logger.error(
         `No ICE servers available for peer ${remoteUserId}`
       );
       this.sdk.gameEventManager.notifyGame(
@@ -813,7 +814,7 @@ export class P2PManager extends WavedashManager {
 
     // Only create data channels if this peer will initiate the offer
     if (shouldCreateChannels) {
-      this.sdk.logger.debug(`Creating data channels for peer ${remoteUserId}`);
+      logger.debug(`Creating data channels for peer ${remoteUserId}`);
 
       if (this.config.enableReliableChannel) {
         const reliableChannel = pc.createDataChannel("reliable", {
@@ -841,7 +842,7 @@ export class P2PManager extends WavedashManager {
         );
       }
     } else {
-      this.sdk.logger.debug(
+      logger.debug(
         `Will receive data channels from peer ${remoteUserId} via ondatachannel`
       );
     }
@@ -858,10 +859,10 @@ export class P2PManager extends WavedashManager {
               ? "relay (TURN)"
               : "unknown";
 
-        this.sdk.logger.debug(
+        logger.debug(
           `Peer ${remoteUserId} gathered ICE candidate: ${candidateType}`
         );
-        this.sdk.logger.debug(`  Candidate: ${event.candidate.candidate}`);
+        logger.debug(`  Candidate: ${event.candidate.candidate}`);
 
         // Convert RTCIceCandidate to a plain object for Convex serialization
         const candidateData = {
@@ -880,7 +881,7 @@ export class P2PManager extends WavedashManager {
 
     pc.ondatachannel = (event) => {
       const channel = event.channel;
-      this.sdk.logger.debug(
+      logger.debug(
         `Received ${channel.label} data channel from peer ${remoteUserId}`
       );
 
@@ -900,22 +901,22 @@ export class P2PManager extends WavedashManager {
 
     // Add connection state monitoring for debugging
     pc.onconnectionstatechange = () => {
-      this.sdk.logger.debug(
+      logger.debug(
         `Peer ${remoteUserId} connection state: ${pc.connectionState}`
       );
       if (pc.connectionState === "connected") {
-        this.sdk.logger.debug(
+        logger.debug(
           `  Peer ${remoteUserId} fully connected, expecting ondatachannel events now...`
         );
       }
     };
 
     pc.oniceconnectionstatechange = () => {
-      this.sdk.logger.debug(
+      logger.debug(
         `Peer ${remoteUserId} ICE connection state: ${pc.iceConnectionState}`
       );
       if (pc.iceConnectionState === "connected") {
-        this.sdk.logger.debug(
+        logger.debug(
           `  ICE connected to peer ${remoteUserId}, data channels should be available...`
         );
         // Reset restart state on successful connection
@@ -939,7 +940,7 @@ export class P2PManager extends WavedashManager {
       } else if (pc.iceConnectionState === "failed") {
         // ICE connection failed - wait briefly before restarting to avoid
         // reacting to transient failures during network switches (Wi-Fi hiccups, etc.)
-        this.sdk.logger.debug(
+        logger.debug(
           `ICE connection to peer ${remoteUserId} failed, will retry in 500ms...`
         );
 
@@ -963,7 +964,7 @@ export class P2PManager extends WavedashManager {
 
         setTimeout(() => {
           if (pc.iceConnectionState === "failed") {
-            this.sdk.logger.warn(
+            logger.warn(
               `ICE connection to peer ${remoteUserId} still failed after delay, attempting ICE restart...`
             );
             this.attemptIceRestart(remoteUserId, pc);
@@ -971,14 +972,14 @@ export class P2PManager extends WavedashManager {
         }, 500);
       } else if (pc.iceConnectionState === "disconnected") {
         // Disconnected state may recover on its own, but log it
-        this.sdk.logger.debug(
+        logger.debug(
           `ICE connection to peer ${remoteUserId} disconnected, may recover...`
         );
       }
     };
 
     pc.onicegatheringstatechange = () => {
-      this.sdk.logger.debug(
+      logger.debug(
         `Peer ${remoteUserId} ICE gathering state: ${pc.iceGatheringState}`
       );
     };
@@ -999,7 +1000,7 @@ export class P2PManager extends WavedashManager {
 
     // Only the peer with lower userId initiates restart to avoid both sides restarting simultaneously
     if (currentUserId > remoteUserId) {
-      this.sdk.logger.debug(
+      logger.debug(
         `Waiting for peer ${remoteUserId} to initiate ICE restart (they have lower userId)`
       );
       return;
@@ -1007,7 +1008,7 @@ export class P2PManager extends WavedashManager {
 
     // Skip if restart already in progress for this peer
     if (this.iceRestartInProgress.has(remoteUserId)) {
-      this.sdk.logger.debug(
+      logger.debug(
         `ICE restart already in progress for peer ${remoteUserId}, skipping`
       );
       return;
@@ -1016,7 +1017,7 @@ export class P2PManager extends WavedashManager {
     // Check restart attempt count
     const attempts = this.iceRestartAttempts.get(remoteUserId) || 0;
     if (attempts >= this.MAX_ICE_RESTART_ATTEMPTS) {
-      this.sdk.logger.error(
+      logger.error(
         `Max ICE restart attempts (${this.MAX_ICE_RESTART_ATTEMPTS}) reached for peer ${remoteUserId}, giving up`
       );
       // Clear reconnecting/established flags since we're reporting terminal
@@ -1045,7 +1046,7 @@ export class P2PManager extends WavedashManager {
 
     this.iceRestartAttempts.set(remoteUserId, attempts + 1);
     this.iceRestartInProgress.add(remoteUserId);
-    this.sdk.logger.debug(
+    logger.debug(
       `ICE restart attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS} for peer ${remoteUserId}`
     );
 
@@ -1067,9 +1068,9 @@ export class P2PManager extends WavedashManager {
         data: offerData
       });
 
-      this.sdk.logger.debug(`ICE restart offer sent to peer ${remoteUserId}`);
+      logger.debug(`ICE restart offer sent to peer ${remoteUserId}`);
     } catch (error) {
-      this.sdk.logger.error(
+      logger.error(
         `Failed to initiate ICE restart for peer ${remoteUserId}:`,
         error
       );
@@ -1082,7 +1083,7 @@ export class P2PManager extends WavedashManager {
     type: "reliable" | "unreliable"
   ): void {
     channel.onopen = () => {
-      this.sdk.logger.debug(
+      logger.debug(
         `${type} data channel opened with peer ${remoteUserId}`
       );
 
@@ -1113,7 +1114,7 @@ export class P2PManager extends WavedashManager {
     };
 
     channel.onerror = (error: RTCErrorEvent) => {
-      this.sdk.logger.error(
+      logger.error(
         `Data channel error with peer ${remoteUserId}:`,
         error
       );
@@ -1131,7 +1132,7 @@ export class P2PManager extends WavedashManager {
     };
 
     channel.onclose = () => {
-      this.sdk.logger.debug(
+      logger.debug(
         `${type} data channel closed with peer ${remoteUserId}`
       );
       // Clear per-peer flags so a rejoining peer starts clean: a fresh
@@ -1167,7 +1168,7 @@ export class P2PManager extends WavedashManager {
     this.ensureInitialized();
     try {
       if (!this.currentConnection) {
-        this.sdk.logger.error(
+        logger.error(
           `P2P send called before P2P is initialized, dropping message.`
         );
         this.reportPacketDrop(appChannel, "SEND", "PEER_NOT_READY");
@@ -1175,7 +1176,7 @@ export class P2PManager extends WavedashManager {
       }
 
       if (!payload) {
-        this.sdk.logger.error(
+        logger.error(
           `P2P send called with missing payload, dropping message.`
         );
         this.reportPacketDrop(appChannel, "SEND", "INVALID_PAYLOAD_SIZE");
@@ -1187,7 +1188,7 @@ export class P2PManager extends WavedashManager {
         appChannel < 0 ||
         appChannel >= this.MAX_CHANNELS
       ) {
-        this.sdk.logger.error(
+        logger.error(
           `P2P appChannel must be an integer in [0, ${this.MAX_CHANNELS}), received ${appChannel}, dropping message.`
         );
         // Emit -1 (the JSDoc's sentinel for "not determinable") rather than
@@ -1197,7 +1198,7 @@ export class P2PManager extends WavedashManager {
       }
 
       if (payloadSize <= 0) {
-        this.sdk.logger.error(
+        logger.error(
           `P2P payloadSize must be greater than 0, received ${payloadSize}, dropping message.`
         );
         this.reportPacketDrop(appChannel, "SEND", "INVALID_PAYLOAD_SIZE");
@@ -1205,7 +1206,7 @@ export class P2PManager extends WavedashManager {
       }
 
       if (payloadSize > this.MAX_PAYLOAD_SIZE) {
-        this.sdk.logger.error(
+        logger.error(
           `P2P payload too large: ${payloadSize} bytes exceeds max ${this.MAX_PAYLOAD_SIZE} bytes, dropping message.`
         );
         this.reportPacketDrop(appChannel, "SEND", "PAYLOAD_TOO_LARGE");
@@ -1213,7 +1214,7 @@ export class P2PManager extends WavedashManager {
       }
 
       if (payloadSize > payload.length) {
-        this.sdk.logger.error(
+        logger.error(
           `payloadSize is greater than payload buffer length: ${payloadSize} > ${payload.length}, dropping message.`
         );
         this.reportPacketDrop(appChannel, "SEND", "INVALID_PAYLOAD_SIZE");
@@ -1243,7 +1244,7 @@ export class P2PManager extends WavedashManager {
           } catch (error) {
             // Just log the error, don't report a packet drop.
             // Game can listen for P2PPeerReconnecting/P2PConnectionFailed for reachability
-            this.sdk.logger.error(
+            logger.error(
               `P2P broadcast to peer ${peerUserId} failed:`,
               error
             );
@@ -1253,7 +1254,7 @@ export class P2PManager extends WavedashManager {
         // Send to specific peer
         const channel = channelMap.get(toUserId);
         if (!channel || channel.readyState !== "open") {
-          this.sdk.logger.error(
+          logger.error(
             `P2P no open channel to peer ${toUserId}, dropping message.`
           );
           this.reportPacketDrop(appChannel, "SEND", "PEER_NOT_READY");
@@ -1262,7 +1263,7 @@ export class P2PManager extends WavedashManager {
         try {
           channel.send(messageData as Uint8Array<ArrayBuffer>);
         } catch (error) {
-          this.sdk.logger.error(
+          logger.error(
             `P2P send to peer ${toUserId} failed, dropping message:`,
             error
           );
@@ -1273,7 +1274,7 @@ export class P2PManager extends WavedashManager {
 
       return true;
     } catch (error) {
-      this.sdk.logger.error(`Error sending P2P message:`, error);
+      logger.error(`Error sending P2P message:`, error);
       return false;
     }
   }
@@ -1303,9 +1304,9 @@ export class P2PManager extends WavedashManager {
           data: message.data
         }
       );
-      this.sdk.logger.debug("Sent signaling message:", message.type);
+      logger.debug("Sent signaling message:", message.type);
     } catch (error) {
-      this.sdk.logger.error("Failed to send signaling message:", error);
+      logger.error("Failed to send signaling message:", error);
       throw error;
     }
   }
@@ -1427,7 +1428,7 @@ export class P2PManager extends WavedashManager {
       incomingDataView
     });
 
-    this.sdk.logger.debug(
+    logger.debug(
       `Allocated P2P ring buffer for channel ${channel} ` +
         `(${(queueDataSize / 1024 / 1024).toFixed(1)}MB)`
     );
@@ -1525,7 +1526,7 @@ export class P2PManager extends WavedashManager {
   private enqueueMessage(wireData: ArrayBuffer, fromUserId: Id<"users">): void {
     try {
       if (wireData.byteLength < this.WIRE_PAYLOAD_OFFSET) {
-        this.sdk.logger.warn("Binary message too short to extract channel");
+        logger.warn("Binary message too short to extract channel");
         this.reportPacketDrop(-1, "RECEIVE", "MALFORMED");
         return;
       }
@@ -1537,7 +1538,7 @@ export class P2PManager extends WavedashManager {
       // Create channel queue if it doesn't exist
       if (!this.channelQueues.has(channel)) {
         if (channel >= this.MAX_CHANNELS) {
-          this.sdk.logger.warn(
+          logger.warn(
             `Channel ${channel} exceeds max channels (${this.MAX_CHANNELS}), dropping message`
           );
           this.reportPacketDrop(channel, "RECEIVE", "INVALID_CHANNEL");
@@ -1550,7 +1551,7 @@ export class P2PManager extends WavedashManager {
 
       // Check if queue is full
       if (queue.messageCount >= this.QUEUE_SIZE) {
-        this.sdk.logger.warn(
+        logger.warn(
           `P2P message queue full for channel ${channel}, dropping message`
         );
         this.reportPacketDrop(channel, "RECEIVE", "QUEUE_FULL");
@@ -1563,7 +1564,7 @@ export class P2PManager extends WavedashManager {
       const storedSize = this.PAYLOAD_OFFSET + payloadLength;
       const maxMessageSize = this.MESSAGE_SIZE - this.MESSAGE_SLOT_HEADER_SIZE;
       if (storedSize > maxMessageSize) {
-        this.sdk.logger.warn(
+        logger.warn(
           `Message too large for queue: ${storedSize} > ${maxMessageSize}, dropping message.`
         );
         this.reportPacketDrop(channel, "RECEIVE", "PAYLOAD_TOO_LARGE");
@@ -1619,7 +1620,7 @@ export class P2PManager extends WavedashManager {
       queue.writeIndex = (queue.writeIndex + 1) % this.QUEUE_SIZE;
       queue.messageCount++;
     } catch (error) {
-      this.sdk.logger.error(`Error enqueuing binary P2P message:`, error);
+      logger.error(`Error enqueuing binary P2P message:`, error);
     }
   }
 

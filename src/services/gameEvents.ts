@@ -1,6 +1,7 @@
 import type { WavedashSDK } from "../index";
 import type { WavedashEvent } from "../types";
 import { WavedashManager } from "./manager";
+import { logger } from "../utils/logger";
 
 interface QueuedEvent {
   event: WavedashEvent;
@@ -20,7 +21,7 @@ export class GameEventManager extends WavedashManager {
   notifyGame(event: WavedashEvent, payload: string | number | object): void {
     if (!this.sdk.eventsReady) {
       this.eventQueue.push({ event, payload });
-      this.sdk.logger.debug(`Queued event: ${event}`);
+      logger.debug(`Queued event: ${event}`);
       return;
     }
 
@@ -44,7 +45,7 @@ export class GameEventManager extends WavedashManager {
         data
       );
     } else {
-      this.sdk.logger.error("Engine instance not set. Dropping event:", event);
+      logger.error("Engine instance not set. Dropping event:", event);
     }
   }
 
