@@ -12,6 +12,7 @@ import { OverlayManager } from "./services/overlay";
 import { FriendsManager } from "./services/friends";
 import { WavedashLogger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
+import { SwMessenger } from "./utils/swMessenger";
 import {
   LobbyKickedReason,
   LobbyUserChangeType,
@@ -113,6 +114,7 @@ class WavedashSDK extends EventTarget {
   engineInstance: EngineInstance | null = null;
   logger: WavedashLogger;
   iframeMessenger: IFrameMessenger;
+  swMessenger: SwMessenger;
   p2pManager: P2PManager;
   fullscreenManager: FullscreenManager;
   overlayManager: OverlayManager;
@@ -137,6 +139,7 @@ class WavedashSDK extends EventTarget {
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
     this.logger = new WavedashLogger();
+    this.swMessenger = new SwMessenger(this.logger);
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
@@ -176,6 +179,7 @@ class WavedashSDK extends EventTarget {
     ]);
 
     this.setupSessionEndListeners();
+    this.setupSwCredsListener();
 
     this.launchParams = sdkConfig.launchParams ?? {};
 
@@ -1336,11 +1340,14 @@ class WavedashSDK extends EventTarget {
         throw new Error(`Failed to refresh gameplay token: ${response.status}`);
       }
       this.gameplayJwt = await response.text();
-      // Push the JWT to the parent so it can fire /end-session on its own
-      // pagehide / beforeNavigate. Parent-driven so the request originates
-      // from a context that won't be destroyed when the iframe is detached.
+      // Push to parent so it can handle /end-session on its own
       iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
         gameplayJwt: this.gameplayJwt
+      });
+      // Push to service worker so it can attach Bearer token
+      this.swMessenger.postToServiceWorker({
+        type: "embed.jwt-update",
+        payload: { gameplayJwt: this.gameplayJwt }
       });
       return this.gameplayJwt;
     })().finally(() => {
@@ -1376,6 +1383,31 @@ class WavedashSDK extends EventTarget {
   private setupSessionEndListeners(): void {
     iframeMessenger.addEventListener(IFRAME_MESSAGE_TYPE.END_SESSION, () =>
       this.destroy()
+    );
+  }
+
+  /**
+   * Respond to the service worker's `embed.creds-request` with the SDK's
+   * current gameplay JWT. The SW asks when it wakes from termination with no
+   * in-memory or IDB credentials (e.g. Safari ITP storage decay) — we're the
+   * fastest live source. JWT only; sessionToken is owned by the SW + cookies.
+   */
+  private setupSwCredsListener(): void {
+    this.swMessenger.addEventListener(
+      "embed.creds-request",
+      async (_payload, reply) => {
+        let jwt: string;
+        try {
+          jwt = await this.ensureGameplayJwt();
+        } catch (err) {
+          this.logger.warn("Failed to resolve JWT for creds-request", err);
+          return;
+        }
+        reply({
+          type: "embed.creds-response",
+          payload: { gameplayJwt: jwt }
+        });
+      }
     );
   }
 }
