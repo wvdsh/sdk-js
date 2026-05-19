@@ -80,10 +80,7 @@ export class StatsManager extends WavedashManager {
           this.knownAchievementIds = new Set(ids);
         },
         (error) => {
-          logger.error(
-            "Achievement identifiers subscription error:",
-            error
-          );
+          logger.error("Achievement identifiers subscription error:", error);
         }
       ),
       this.sdk.convexClient.onUpdate(
@@ -125,11 +122,10 @@ export class StatsManager extends WavedashManager {
   // storeNow=true (and storeStats()) call .flush() to fire the pending invocation
   // immediately. The in-flight gate in persist() covers mutations that outlast
   // the throttle window, which would otherwise overlap and cause OCC conflicts.
-  private throttledPersist = throttle(
-    () => this.persist(),
-    STORE_THROTTLE_MS,
-    { leading: false, trailing: true }
-  );
+  private throttledPersist = throttle(() => this.persist(), STORE_THROTTLE_MS, {
+    leading: false,
+    trailing: true
+  });
 
   storeStats(): boolean {
     if (!this.isReady()) return false;
@@ -242,7 +238,10 @@ export class StatsManager extends WavedashManager {
   }
 
   /** @destructive - Returns the pending stats and achievements and resets the dirty collections */
-  private getPendingData(): { stats: StatEntry[]; achievements: string[] } | null {
+  private getPendingData(): {
+    stats: StatEntry[];
+    achievements: string[];
+  } | null {
     if (this.dirtyStats.size === 0 && this.dirtyAchievements.size === 0) {
       return null;
     }

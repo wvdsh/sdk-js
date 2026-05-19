@@ -98,12 +98,11 @@ export class UGCManager extends WavedashManager {
       api.sdk.userGeneratedContent.getUGCItemDownloadUrl,
       { ugcId }
     );
-    const success = await this.sdk.fileSystemManager.download(
-      downloadUrl,
-      filePath
-    );
-    if (!success) {
-      throw new Error(`Failed to download UGC item: ${ugcId}`);
+    try {
+      await this.sdk.fileSystemManager.download(downloadUrl, filePath);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      throw new Error(`Failed to download UGC item ${ugcId}: ${msg}`);
     }
     return ugcId;
   }

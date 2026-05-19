@@ -45,7 +45,7 @@ export class LobbyManager extends WavedashManager {
   private maybeBeingDeletedLobbyIds: Set<Id<"lobbies">> = new Set();
   private resetMaybeBeingDeletedLobbyIdTimeouts: Map<Id<"lobbies">, number> =
     new Map();
-  
+
   // Throttle (not debounce) batches rapid setLobbyData calls; the in-flight
   // gate in setMetadata prevents OCC self-conflicts.
   private static readonly METADATA_UPDATE_THROTTLE_MS = 150;
@@ -103,9 +103,7 @@ export class LobbyManager extends WavedashManager {
 
   getLobbyUsers(lobbyId: Id<"lobbies">): LobbyUser[] {
     if (this.lobbyId !== lobbyId) {
-      logger.error(
-        "Must be a member of the lobby to access user list"
-      );
+      logger.error("Must be a member of the lobby to access user list");
       return [];
     }
     return this.lobbyUsers;
@@ -113,9 +111,7 @@ export class LobbyManager extends WavedashManager {
 
   getHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
     if (this.lobbyId !== lobbyId) {
-      logger.error(
-        "Must be a member of the lobby to access the host ID"
-      );
+      logger.error("Must be a member of the lobby to access the host ID");
       return null;
     }
     return this.lobbyHostId;
@@ -353,9 +349,7 @@ export class LobbyManager extends WavedashManager {
     const lobbyId = this.lobbyId;
     if (!lobbyId) return;
 
-    logger.warn(
-      `User was removed from lobby: ${lobbyId} (reason: ${reason})`
-    );
+    logger.warn(`User was removed from lobby: ${lobbyId} (reason: ${reason})`);
     this.cleanupLobbyState();
 
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
@@ -604,9 +598,7 @@ export class LobbyManager extends WavedashManager {
       if (newUsers.length <= 1) {
         // If only one user left, disconnect all P2P connections
         this.sdk.p2pManager.disconnectP2P();
-        logger.debug(
-          "Only one user in lobby, P2P connections disconnected"
-        );
+        logger.debug("Only one user in lobby, P2P connections disconnected");
         return;
       }
 

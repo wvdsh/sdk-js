@@ -106,22 +106,43 @@ export class FileSystemManager extends WavedashManager {
   }
 
   /**
-   * Downloads a remote file to a local location
+   * Downloads a remote file to a local location.
+   * Throws on failure; the error message is the server's HTTP status (e.g. "404 (Not Found)")
+   * or a network-level description if the server didn't respond. See also: {@link remoteFileExists}
    * @param filePath - The path of the remote file to download
    * @returns The path of the local file that the remote file was downloaded to
    */
   async downloadRemoteFile(filePath: string): Promise<string> {
     const url = this.getRemoteStorageUrl(filePath);
-    const success = await this.download(url, filePath);
-    if (!success) {
-      throw new Error(`Failed to download file: ${filePath}`);
-    }
+    await this.download(url, filePath);
     return filePath;
   }
 
   /**
-   * Lists each file in a remote directory, including its subdirectories
-   * Returns only file paths, no directory paths
+   * Checks whether a remote file exists by issuing a HEAD request.
+   * Does NOT throw for the "file does not exist" case — returns false.
+   * Throws only for real errors (network failure, auth failure, server error).
+   * @param filePath - The path of the remote file to check
+   * @returns true if the remote file exists, false otherwise
+   */
+  async remoteFileExists(filePath: string): Promise<boolean> {
+    const url = this.getRemoteStorageUrl(filePath);
+    const jwt = await this.sdk.ensureGameplayJwt();
+    const response = await fetch(url, {
+      method: "HEAD",
+      headers: {
+        Authorization: `Bearer ${jwt}`
+      }
+    });
+    if (response.status === 404) return false;
+    if (response.ok) return true;
+    throw new Error(`${response.status} (${response.statusText})`);
+  }
+
+  /**
+   * Lists each file in a remote directory, including its subdirectories.
+   * Returns only file paths, no directory paths.
+   * An empty or non-existent directory returns an empty array — not an error.
    * @param path - The path of the remote directory to list
    * @returns A list of metadata for each file in the remote directory
    */
@@ -134,6 +155,9 @@ export class FileSystemManager extends WavedashManager {
         Authorization: `Bearer ${jwt}`
       }
     });
+    // UGC host returns 200 with an empty `.files` array. Older deployments
+    // (and any rollout skew) returned 404 — treat both as "no files," not an error.
+    if (response.status === 404) return [];
     if (!response.ok) {
       throw new Error(`${response.status} (${response.statusText})`);
     }
@@ -151,8 +175,14 @@ export class FileSystemManager extends WavedashManager {
 
     const downloadPromises = files.map(async (file) => {
       const url = this.getRemoteStorageUrl(file.key);
-      const success = await this.download(url, file.key);
-      return { fileName: file.name, success };
+      try {
+        await this.download(url, file.key);
+        return { fileName: file.name, success: true };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        logger.error(`Failed to download ${file.name}: ${message}`);
+        return { fileName: file.name, success: false };
+      }
     });
 
     const downloadResults = await Promise.all(downloadPromises);
@@ -223,12 +253,15 @@ export class FileSystemManager extends WavedashManager {
     return success;
   }
 
-  // Helper to download a file from a URL and save locally
-  async download(url: string, filePath: string): Promise<boolean> {
+  // Helper to download a file from a URL and save locally.
+  // Throws on any failure with a message containing the HTTP status (e.g.
+  // "404 (Not Found)") for server-side failures, or a network/FS error
+  // description otherwise. Callers should let the error propagate; the
+  // public apiCall wrapper surfaces the message in WavedashResponse.message.
+  async download(url: string, filePath: string): Promise<void> {
     logger.debug(`Downloading ${filePath} from: ${url}`);
     if (this.sdk.engineInstance && !this.sdk.engineInstance.FS) {
-      logger.error("Engine instance is missing the Emscripten FS API");
-      return false;
+      throw new Error("Engine instance is missing the Emscripten FS API");
     }
 
     const jwt = await this.sdk.ensureGameplayJwt();
@@ -239,42 +272,40 @@ export class FileSystemManager extends WavedashManager {
       }
     });
     if (!response.ok) {
-      logger.error(
-        `Failed to download remote file: ${response.status} (${response.statusText})`
-      );
-      return false;
+      throw new Error(`${response.status} (${response.statusText})`);
     }
 
     const blob = await response.blob();
     const arrayBuffer = await blob.arrayBuffer();
     const dataArray = new Uint8Array(arrayBuffer);
 
-    try {
-      if (this.sdk.engineInstance) {
-        // Save to engine filesystem
-        // Create intermediate directory tree if necessary
-        const dirPath = filePath.substring(0, filePath.lastIndexOf("/"));
-        if (dirPath) {
-          try {
-            this.sdk.engineInstance.FS.mkdirTree(dirPath);
-          } catch (_error) {
-            // Directory might already exist, which is fine
-          }
+    if (this.sdk.engineInstance) {
+      // Save to engine filesystem
+      // Create intermediate directory tree if necessary
+      const dirPath = filePath.substring(0, filePath.lastIndexOf("/"));
+      if (dirPath) {
+        try {
+          this.sdk.engineInstance.FS.mkdirTree(dirPath);
+        } catch (_error) {
+          // Directory might already exist, which is fine
         }
-        this.sdk.engineInstance.FS.writeFile(filePath, dataArray);
-      } else {
-        // Save directly to IndexedDB for non-engine contexts
-        const success = await this.writeLocalFile(filePath, dataArray);
-        if (!success) return false;
       }
-      logger.debug(`Successfully saved to: ${filePath}`);
-      return true;
-    } catch (error) {
-      logger.error(
-        `Failed to save file ${filePath}: ${error instanceof Error ? error.message : String(error)}`
-      );
-      return false;
+      try {
+        this.sdk.engineInstance.FS.writeFile(filePath, dataArray);
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to save file ${filePath} to engine FS: ${msg}`);
+      }
+    } else {
+      // Save directly to IndexedDB for non-engine contexts
+      const success = await this.writeLocalFile(filePath, dataArray);
+      if (!success) {
+        throw new Error(
+          `Failed to save file ${filePath} to local IndexedDB storage`
+        );
+      }
     }
+    logger.debug(`Successfully saved to: ${filePath}`);
   }
 
   // ================
