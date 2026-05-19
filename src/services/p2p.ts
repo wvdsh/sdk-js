@@ -256,9 +256,7 @@ export class P2PManager extends WavedashManager {
       this.initializationInProgress &&
       this.initializationLobbyId === lobbyId
     ) {
-      logger.debug(
-        "P2P initialization already in progress, waiting..."
-      );
+      logger.debug("P2P initialization already in progress, waiting...");
       await this.initializationInProgress;
       // After waiting, update with potentially new members
       if (this.currentConnection) {
@@ -369,9 +367,7 @@ export class P2PManager extends WavedashManager {
           existingPeer.username = member.username;
         }
       } else {
-        logger.debug(
-          `Adding new peer: ${member.username} (${member.id})`
-        );
+        logger.debug(`Adding new peer: ${member.username} (${member.id})`);
 
         // Add new peer to connection
         this.currentConnection.peers[member.id] = {
@@ -412,9 +408,7 @@ export class P2PManager extends WavedashManager {
         });
 
         await Promise.all(offerPromises);
-        logger.debug(
-          `Initiated ${offerPromises.length} offers to new peers`
-        );
+        logger.debug(`Initiated ${offerPromises.length} offers to new peers`);
       }
     }
 
@@ -546,10 +540,7 @@ export class P2PManager extends WavedashManager {
           this.pendingProcessedMessageIds.delete(messageId);
         }
       } catch (error) {
-        logger.error(
-          "Failed to mark signaling messages as processed:",
-          error
-        );
+        logger.error("Failed to mark signaling messages as processed:", error);
         // Remove from pending set even on failure to avoid permanent blocking
         for (const messageId of newMessageIds) {
           this.pendingProcessedMessageIds.delete(messageId);
@@ -627,9 +618,7 @@ export class P2PManager extends WavedashManager {
         const answer = await pc.createAnswer();
         await pc.setLocalDescription(answer);
 
-        logger.debug(
-          `  Answer created, waiting for ondatachannel events...`
-        );
+        logger.debug(`  Answer created, waiting for ondatachannel events...`);
 
         // Convert RTCSessionDescription to plain object for Convex
         const answerData = {
@@ -670,10 +659,7 @@ export class P2PManager extends WavedashManager {
       }
 
       default:
-        logger.warn(
-          "Unknown signaling message type:",
-          message.messageType
-        );
+        logger.warn("Unknown signaling message type:", message.messageType);
     }
   }
 
@@ -732,9 +718,7 @@ export class P2PManager extends WavedashManager {
 
     if (peersToInitiate.length > 0) {
       const offerPromises = peersToInitiate.map((userId) => {
-        logger.debug(
-          `Initiating offer to peer ${userId} (lower userId rule)`
-        );
+        logger.debug(`Initiating offer to peer ${userId} (lower userId rule)`);
         return this.createOfferToPeer(userId);
       });
 
@@ -788,9 +772,7 @@ export class P2PManager extends WavedashManager {
   ): Promise<boolean> {
     const iceServers = await this.getIceServers();
     if (!iceServers) {
-      logger.error(
-        `No ICE servers available for peer ${remoteUserId}`
-      );
+      logger.error(`No ICE servers available for peer ${remoteUserId}`);
       this.sdk.gameEventManager.notifyGame(
         WavedashEvents.P2P_CONNECTION_FAILED,
         {
@@ -1083,9 +1065,7 @@ export class P2PManager extends WavedashManager {
     type: "reliable" | "unreliable"
   ): void {
     channel.onopen = () => {
-      logger.debug(
-        `${type} data channel opened with peer ${remoteUserId}`
-      );
+      logger.debug(`${type} data channel opened with peer ${remoteUserId}`);
 
       // Check if this peer is now fully ready (both channels open if both are enabled).
       // Guarded so we only emit once per peer connection lifetime — the flag is
@@ -1114,10 +1094,7 @@ export class P2PManager extends WavedashManager {
     };
 
     channel.onerror = (error: RTCErrorEvent) => {
-      logger.error(
-        `Data channel error with peer ${remoteUserId}:`,
-        error
-      );
+      logger.error(`Data channel error with peer ${remoteUserId}:`, error);
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
         this.sdk.gameEventManager.notifyGame(
@@ -1132,9 +1109,7 @@ export class P2PManager extends WavedashManager {
     };
 
     channel.onclose = () => {
-      logger.debug(
-        `${type} data channel closed with peer ${remoteUserId}`
-      );
+      logger.debug(`${type} data channel closed with peer ${remoteUserId}`);
       // Clear per-peer flags so a rejoining peer starts clean: a fresh
       // ESTABLISHED and no spurious RECONNECTED from a stale reconnecting
       // flag left over from the failure that caused this close.
@@ -1176,9 +1151,7 @@ export class P2PManager extends WavedashManager {
       }
 
       if (!payload) {
-        logger.error(
-          `P2P send called with missing payload, dropping message.`
-        );
+        logger.error(`P2P send called with missing payload, dropping message.`);
         this.reportPacketDrop(appChannel, "SEND", "INVALID_PAYLOAD_SIZE");
         return false;
       }
@@ -1244,10 +1217,7 @@ export class P2PManager extends WavedashManager {
           } catch (error) {
             // Just log the error, don't report a packet drop.
             // Game can listen for P2PPeerReconnecting/P2PConnectionFailed for reachability
-            logger.error(
-              `P2P broadcast to peer ${peerUserId} failed:`,
-              error
-            );
+            logger.error(`P2P broadcast to peer ${peerUserId} failed:`, error);
           }
         });
       } else {

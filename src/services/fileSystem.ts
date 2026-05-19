@@ -265,18 +265,12 @@ export class FileSystemManager extends WavedashManager {
     }
 
     const jwt = await this.sdk.ensureGameplayJwt();
-    let response: Response;
-    try {
-      response = await fetch(url, {
-        method: "GET",
-        headers: {
-          Authorization: `Bearer ${jwt}`
-        }
-      });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : String(error);
-      throw new Error(`Network error: ${msg}`);
-    }
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${jwt}`
+      }
+    });
     if (!response.ok) {
       throw new Error(`${response.status} (${response.statusText})`);
     }

@@ -219,9 +219,7 @@ class WavedashSDK extends EventTarget {
     this._initialized = true;
 
     // Update logger debug mode based on config
-    logger.setLogLevel(
-      this.config.debug ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN
-    );
+    logger.setLogLevel(this.config.debug ? LOG_LEVEL.DEBUG : LOG_LEVEL.WARN);
 
     // Initialize P2P manager with config (validates and allocates ring buffers)
     this.p2pManager.init(this.config.p2p);
@@ -750,7 +748,7 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Downloads a remote file to IndexedDB, preserving the requested file path.
+   * Downloads a remote file to a local location.
    * Returns success=false (with the server status in `message`) if the file
    * doesn't exist or any other error occurs. See also: {@link remoteFileExists}
    * @param filePath - The path of the remote file to download
@@ -768,16 +766,11 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Checks whether a remote file exists. Issues a lightweight HEAD request —
-   * no body transfer.
+   * Checks whether a remote file exists. Sends a lightweight HEAD request to check for existence.
    * @param filePath - The path of the remote file to check
    * @returns true if the remote file exists, false if it does not.
-   *          success=false (with server status in `message`) only for real
-   *          failures (network down, auth invalid, server error).
    */
-  async remoteFileExists(
-    filePath: string
-  ): Promise<WavedashResponse<boolean>> {
+  async remoteFileExists(filePath: string): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
       this.fileSystemManager,
       "remoteFileExists",

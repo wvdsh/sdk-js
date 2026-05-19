@@ -108,7 +108,7 @@ export class FriendsManager extends WavedashManager {
   /**
    * Replace the leaderboard-page cache with the users from a single page of
    * leaderboard entries.
-   * 
+   *
    * In general devs should just use the username and userAvatarUrl returned
    * from `listLeaderboardEntries` directly, but we cache the latest leaderboard
    * page here just so getUserAvatarUrl and getUsername still work for the current page.

@@ -205,9 +205,7 @@ export class HeartbeatManager extends WavedashManager {
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedAt = Date.now();
-        logger.warn(
-          "Backend disconnected - attempting to reconnect..."
-        );
+        logger.warn("Backend disconnected - attempting to reconnect...");
         this.sdk.gameEventManager.notifyGame(
           WavedashEvents.BACKEND_RECONNECTING,
           connection
