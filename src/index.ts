@@ -750,9 +750,10 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Downloads a remote file to a local location
+   * Downloads a remote file to IndexedDB, preserving the requested file path.
+   * Returns success=false (with the server status in `message`) if the file
+   * doesn't exist or any other error occurs. See also: {@link remoteFileExists}
    * @param filePath - The path of the remote file to download
-   * @param downloadTo - Optionally provide a path to download the file to, defaults to the same path as the remote file
    * @returns The path of the local file that the remote file was downloaded to
    */
   async downloadRemoteFile(
@@ -761,6 +762,25 @@ class WavedashSDK extends EventTarget {
     return this.apiCall(
       this.fileSystemManager,
       "downloadRemoteFile",
+      [["filePath", vString]],
+      filePath
+    );
+  }
+
+  /**
+   * Checks whether a remote file exists. Issues a lightweight HEAD request —
+   * no body transfer.
+   * @param filePath - The path of the remote file to check
+   * @returns true if the remote file exists, false if it does not.
+   *          success=false (with server status in `message`) only for real
+   *          failures (network down, auth invalid, server error).
+   */
+  async remoteFileExists(
+    filePath: string
+  ): Promise<WavedashResponse<boolean>> {
+    return this.apiCall(
+      this.fileSystemManager,
+      "remoteFileExists",
       [["filePath", vString]],
       filePath
     );
