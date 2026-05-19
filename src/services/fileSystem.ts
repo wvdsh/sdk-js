@@ -155,9 +155,8 @@ export class FileSystemManager extends WavedashManager {
         Authorization: `Bearer ${jwt}`
       }
     });
-    // The server returns 404 for empty/non-existent prefixes. From the SDK's
-    // perspective that's just "no files" — the expected first-time state, not
-    // an error. Translate to an empty list so callers can branch on length.
+    // UGC host returns 200 with an empty `.files` array. Older deployments
+    // (and any rollout skew) returned 404 — treat both as "no files," not an error.
     if (response.status === 404) return [];
     if (!response.ok) {
       throw new Error(`${response.status} (${response.statusText})`);
