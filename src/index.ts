@@ -45,6 +45,7 @@ import type {
   UpsertedLeaderboardEntry,
   UGCType,
   UGCVisibility,
+  UpdateUGCItemArgs,
   RemoteFileMetadata,
   P2PMessage,
   LobbyUser,
@@ -66,7 +67,8 @@ import {
   vRecord,
   vString,
   vUint8Array,
-  vUnion
+  vUnion,
+  vObject
 } from "./utils/validation";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -665,36 +667,33 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Updates a UGC item and uploads the file to the server if a filePath is provided
-   * TODO: GD Script cannot call with optional arguments, convert this to accept a single dictionary of updates
-   * @param ugcId
-   * @param title
-   * @param description
-   * @param visibility
-   * @param filePath - optional IndexedDB key file path to upload to the server. If not provided, the UGC item will be updated but no file will be uploaded.
+   * @param ugcId - The ID of the UGC item to update
+   * @param updates - Object containing the fields to update
    * @returns ugcId
    */
   async updateUGCItem(
     ugcId: Id<"userGeneratedContent">,
-    title?: string,
-    description?: string,
-    visibility?: UGCVisibility,
-    filePath?: string
+    updates: UpdateUGCItemArgs = {}
   ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
     return this.apiCall(
       this.ugcManager,
       "updateUGCItem",
       [
         ["ugcId", vId("userGeneratedContent")],
-        ["title", vOptional(vString)],
-        ["description", vOptional(vString)],
-        ["visibility", vOptional(vEnum(UGC_VISIBILITY, "UGCVisibility"))],
-        ["filePath", vOptional(vString)]
+        [
+          "updates",
+          vOptional(
+            vObject({
+              title: vOptional(vString),
+              description: vOptional(vString),
+              visibility: vOptional(vEnum(UGC_VISIBILITY, "UGCVisibility")),
+              filePath: vOptional(vString)
+            })
+          )
+        ]
       ],
       ugcId,
-      title,
-      description,
-      visibility,
-      filePath
+      updates
     );
   }
 

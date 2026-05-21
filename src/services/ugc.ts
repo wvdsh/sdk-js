@@ -4,7 +4,7 @@
  * Implements each of the user generated content methods of the Wavedash SDK
  */
 
-import type { Id, UGCType, UGCVisibility } from "../types";
+import type { Id, UGCType, UGCVisibility, UpdateUGCItemArgs } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
@@ -49,11 +49,9 @@ export class UGCManager extends WavedashManager {
 
   async updateUGCItem(
     ugcId: Id<"userGeneratedContent">,
-    title?: string,
-    description?: string,
-    visibility?: UGCVisibility,
-    filePath?: string
+    updates: UpdateUGCItemArgs = {}
   ): Promise<Id<"userGeneratedContent">> {
+    const { title, description, visibility, filePath } = updates;
     const { uploadUrl } = await this.sdk.convexClient.mutation(
       api.sdk.userGeneratedContent.updateUGCItem,
       {
