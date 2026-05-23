@@ -45,6 +45,9 @@ import type {
   UpsertedLeaderboardEntry,
   UGCType,
   UGCVisibility,
+  UpdateUGCItemArgs,
+  PaginatedUGCItems,
+  ListUGCItemsArgs,
   RemoteFileMetadata,
   P2PMessage,
   LobbyUser,
@@ -66,7 +69,8 @@ import {
   vRecord,
   vString,
   vUint8Array,
-  vUnion
+  vUnion,
+  vObject
 } from "./utils/validation";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -665,36 +669,48 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Updates a UGC item and uploads the file to the server if a filePath is provided
-   * TODO: GD Script cannot call with optional arguments, convert this to accept a single dictionary of updates
-   * @param ugcId
-   * @param title
-   * @param description
-   * @param visibility
-   * @param filePath - optional IndexedDB key file path to upload to the server. If not provided, the UGC item will be updated but no file will be uploaded.
+   * @param ugcId - The ID of the UGC item to update
+   * @param updates - Object containing the fields to update. May also be passed
+   *   as a JSON string by engine bridges (Godot) that can't marshal a dict.
    * @returns ugcId
    */
   async updateUGCItem(
     ugcId: Id<"userGeneratedContent">,
-    title?: string,
-    description?: string,
-    visibility?: UGCVisibility,
-    filePath?: string
+    updates: UpdateUGCItemArgs = {}
   ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
+    if (typeof updates === "string") {
+      const raw = updates;
+      try {
+        updates = JSON.parse(raw);
+      } catch (error) {
+        const message = `updateUGCItem: invalid JSON: ${raw}`;
+        logger.error(message, error);
+        return this.formatResponse({
+          success: false,
+          data: null,
+          message
+        });
+      }
+    }
     return this.apiCall(
       this.ugcManager,
       "updateUGCItem",
       [
         ["ugcId", vId("userGeneratedContent")],
-        ["title", vOptional(vString)],
-        ["description", vOptional(vString)],
-        ["visibility", vOptional(vEnum(UGC_VISIBILITY, "UGCVisibility"))],
-        ["filePath", vOptional(vString)]
+        [
+          "updates",
+          vOptional(
+            vObject({
+              title: vOptional(vString),
+              description: vOptional(vString),
+              visibility: vOptional(vEnum(UGC_VISIBILITY, "UGCVisibility")),
+              filePath: vOptional(vString)
+            })
+          )
+        ]
       ],
       ugcId,
-      title,
-      description,
-      visibility,
-      filePath
+      updates
     );
   }
 
@@ -726,6 +742,56 @@ class WavedashSDK extends EventTarget {
       ],
       ugcId,
       filePath
+    );
+  }
+
+  async listUGCItems(
+    args: ListUGCItemsArgs = {}
+  ): Promise<WavedashResponse<PaginatedUGCItems>> {
+    if (typeof args === "string") {
+      const raw = args;
+      try {
+        args = JSON.parse(raw);
+      } catch (error) {
+        const message = `listUGCItems: invalid JSON: ${raw}`;
+        logger.error(message, error);
+        return this.formatResponse({
+          success: false,
+          data: null,
+          message
+        });
+      }
+    }
+    return this.apiCall(
+      this.ugcManager,
+      "listUGCItems",
+      [
+        [
+          "args",
+          vOptional((value, path) => {
+            const obj = vObject({
+              createdBy: vOptional(vId("users")),
+              ugcType: vOptional(vEnum(UGC_TYPE, "UGCType")),
+              titleSearch: vOptional(vString),
+              numItems: vOptional(vNumber),
+              continueCursor: vOptional(vString)
+            })(value, path);
+            if (
+              obj.continueCursor !== undefined &&
+              (obj.createdBy !== undefined ||
+                obj.ugcType !== undefined ||
+                obj.titleSearch !== undefined ||
+                obj.numItems !== undefined)
+            ) {
+              throw new Error(
+                `${path}: continueCursor should be the only argument if present`
+              );
+            }
+            return obj;
+          })
+        ]
+      ],
+      args
     );
   }
 
@@ -1217,12 +1283,11 @@ class WavedashSDK extends EventTarget {
   // ==============================
   /**
    * Updates rich user presence so friends can see what the player is doing in game
-   * TODO: data param should be more strongly typed
    * @param data Game data to send to the backend
    * @returns true if the presence was updated successfully
    */
   async updateUserPresence(
-    data?: Record<string, unknown>
+    data?: Record<string, string | number | boolean | null>
   ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
       this.heartbeatManager,

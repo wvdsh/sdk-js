@@ -128,22 +128,55 @@ export function vUnion<T>(...variants: Validator<T>[]): Validator<T> {
   };
 }
 
+/**
+ * Validate an object's shape and key names.
+ * Ensures all keys in the value are present in the shape (detecting typos)
+ * and runs each field's validator.
+ */
+export function vObject<T extends Record<string, unknown>>(shape: {
+  [K in keyof T]: Validator<T[K]>;
+}): Validator<T> {
+  return (value, path) => {
+    const obj = vRecord(value, path);
+
+    // Check for extraneous keys (typos / unrecognized fields)
+    for (const key of Object.keys(obj)) {
+      if (!(key in shape)) {
+        throw new Error(`${path}: unrecognized property "${key}"`);
+      }
+    }
+
+    // Validate each expected key in the shape
+    for (const key of Object.keys(shape) as (keyof T)[]) {
+      shape[key](obj[key as string], `${path}.${key as string}`);
+    }
+
+    return obj as T;
+  };
+}
+
 /** Pair of `[argName, validator]` used by `validateArgs`. */
 export type ArgSpec = readonly [name: string, validator: Validator<unknown>];
 
 /**
  * Validate a list of positional arguments against their specs.
- * Throws on the first failure with a clear message including method + arg name.
+ * Uses vObject internally to unify all argument validation.
  */
 export function validateArgs(
   methodName: string,
   specs: readonly ArgSpec[],
   values: readonly unknown[]
 ): void {
+  const shape: Record<string, Validator<unknown>> = {};
+  const obj: Record<string, unknown> = {};
+
   for (let i = 0; i < specs.length; i++) {
     const [argName, validator] = specs[i];
-    validator(values[i], `${methodName}.${argName}`);
+    shape[argName] = validator;
+    obj[argName] = values[i];
   }
+
+  vObject(shape)(obj, methodName);
 }
 
 function describeValue(value: unknown): string {

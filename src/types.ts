@@ -3,7 +3,7 @@
  */
 
 import { type GenericId as Id } from "convex/values";
-import { type FunctionReturnType } from "convex/server";
+import { type FunctionReturnType, type FunctionArgs } from "convex/server";
 
 import { WavedashEvents } from "./events";
 import { api } from "@wvdsh/api";
@@ -29,6 +29,26 @@ export type LeaderboardDisplayType =
 export type UGCType = (typeof UGC_TYPE)[keyof typeof UGC_TYPE];
 export type UGCVisibility =
   (typeof UGC_VISIBILITY)[keyof typeof UGC_VISIBILITY];
+
+export type UpdateUGCItemArgs = Omit<
+  FunctionArgs<typeof api.sdk.userGeneratedContent.updateUGCItem>,
+  "ugcId" | "createPresignedUploadUrl"
+> & {
+  filePath?: string;
+};
+
+export type UGCItem = FunctionReturnType<
+  typeof api.sdk.userGeneratedContent.listUGCItems
+>["page"][0];
+export type PaginatedUGCItems = FunctionReturnType<
+  typeof api.sdk.userGeneratedContent.listUGCItems
+>;
+type RawListUGCItemsArgs = FunctionArgs<
+  typeof api.sdk.userGeneratedContent.listUGCItems
+>;
+
+export type ListUGCItemsArgs = Omit<RawListUGCItemsArgs, "filters"> &
+  NonNullable<RawListUGCItemsArgs["filters"]>;
 
 // Function return type aliases derived from the API
 export type LobbyUser = FunctionReturnType<
