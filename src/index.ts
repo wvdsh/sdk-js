@@ -670,13 +670,28 @@ class WavedashSDK extends EventTarget {
   /**
    * Updates a UGC item and uploads the file to the server if a filePath is provided
    * @param ugcId - The ID of the UGC item to update
-   * @param updates - Object containing the fields to update
+   * @param updates - Object containing the fields to update. May also be passed
+   *   as a JSON string by engine bridges (Godot) that can't marshal a dict.
    * @returns ugcId
    */
   async updateUGCItem(
     ugcId: Id<"userGeneratedContent">,
     updates: UpdateUGCItemArgs = {}
   ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
+    if (typeof updates === "string") {
+      const raw = updates;
+      try {
+        updates = JSON.parse(raw);
+      } catch (error) {
+        const message = `updateUGCItem: invalid JSON: ${raw}`;
+        logger.error(message, error);
+        return this.formatResponse({
+          success: false,
+          data: null,
+          message
+        });
+      }
+    }
     return this.apiCall(
       this.ugcManager,
       "updateUGCItem",
@@ -733,21 +748,47 @@ class WavedashSDK extends EventTarget {
   async listUGCItems(
     args: ListUGCItemsArgs = {}
   ): Promise<WavedashResponse<PaginatedUGCItems>> {
+    if (typeof args === "string") {
+      const raw = args;
+      try {
+        args = JSON.parse(raw);
+      } catch (error) {
+        const message = `listUGCItems: invalid JSON: ${raw}`;
+        logger.error(message, error);
+        return this.formatResponse({
+          success: false,
+          data: null,
+          message
+        });
+      }
+    }
     return this.apiCall(
       this.ugcManager,
       "listUGCItems",
       [
         [
           "args",
-          vOptional(
-            vObject({
+          vOptional((value, path) => {
+            const obj = vObject({
               createdBy: vOptional(vId("users")),
               ugcType: vOptional(vEnum(UGC_TYPE, "UGCType")),
               titleSearch: vOptional(vString),
               numItems: vOptional(vNumber),
               continueCursor: vOptional(vString)
-            })
-          )
+            })(value, path);
+            if (
+              obj.continueCursor !== undefined &&
+              (obj.createdBy !== undefined ||
+                obj.ugcType !== undefined ||
+                obj.titleSearch !== undefined ||
+                obj.numItems !== undefined)
+            ) {
+              throw new Error(
+                `${path}: continueCursor should be the only argument if present`
+              );
+            }
+            return obj;
+          })
         ]
       ],
       args
