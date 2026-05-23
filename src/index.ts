@@ -46,6 +46,8 @@ import type {
   UGCType,
   UGCVisibility,
   UpdateUGCItemArgs,
+  PaginatedUGCItems,
+  ListUGCItemsArgs,
   RemoteFileMetadata,
   P2PMessage,
   LobbyUser,
@@ -728,6 +730,30 @@ class WavedashSDK extends EventTarget {
     );
   }
 
+  async listUGCItems(
+    args: ListUGCItemsArgs = {}
+  ): Promise<WavedashResponse<PaginatedUGCItems>> {
+    return this.apiCall(
+      this.ugcManager,
+      "listUGCItems",
+      [
+        [
+          "args",
+          vOptional(
+            vObject({
+              createdBy: vOptional(vId("users")),
+              ugcType: vOptional(vEnum(UGC_TYPE, "UGCType")),
+              titleSearch: vOptional(vString),
+              numItems: vOptional(vNumber),
+              continueCursor: vOptional(vString)
+            })
+          )
+        ]
+      ],
+      args
+    );
+  }
+
   // ================================
   // Save state / Remote File Storage
   // ================================
@@ -1216,12 +1242,11 @@ class WavedashSDK extends EventTarget {
   // ==============================
   /**
    * Updates rich user presence so friends can see what the player is doing in game
-   * TODO: data param should be more strongly typed
    * @param data Game data to send to the backend
    * @returns true if the presence was updated successfully
    */
   async updateUserPresence(
-    data?: Record<string, unknown>
+    data?: Record<string, string | number | boolean | null>
   ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
       this.heartbeatManager,

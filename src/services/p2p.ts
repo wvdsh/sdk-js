@@ -1271,7 +1271,8 @@ export class P2PManager extends WavedashManager {
           lobbyId: this.currentConnection.lobbyId,
           toUserId: toUserId,
           messageType: message.type,
-          data: message.data
+          data: message.data as Record<string, string | number | null>
+
         }
       );
       logger.debug("Sent signaling message:", message.type);

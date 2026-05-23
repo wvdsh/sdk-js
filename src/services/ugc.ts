@@ -4,7 +4,14 @@
  * Implements each of the user generated content methods of the Wavedash SDK
  */
 
-import type { Id, UGCType, UGCVisibility, UpdateUGCItemArgs } from "../types";
+import type {
+  Id,
+  UGCType,
+  UGCVisibility,
+  UpdateUGCItemArgs,
+  PaginatedUGCItems,
+  ListUGCItemsArgs
+} from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
@@ -103,5 +110,23 @@ export class UGCManager extends WavedashManager {
       throw new Error(`Failed to download UGC item ${ugcId}: ${msg}`);
     }
     return ugcId;
+  }
+
+  async listUGCItems(args: ListUGCItemsArgs = {}): Promise<PaginatedUGCItems> {
+    const { createdBy, ugcType, titleSearch, numItems, continueCursor } = args;
+    const filters =
+      createdBy !== undefined ||
+      ugcType !== undefined ||
+      titleSearch !== undefined
+        ? { createdBy, ugcType, titleSearch }
+        : undefined;
+    return await this.sdk.convexClient.query(
+      api.sdk.userGeneratedContent.listUGCItems,
+      {
+        filters,
+        numItems,
+        continueCursor
+      }
+    );
   }
 }

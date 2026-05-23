@@ -49,7 +49,7 @@
     "typescript-eslint": "^8.52.0"
   },
   "dependencies": {
-    "@wvdsh/api": "^0.1.16",
+    "@wvdsh/api": "^0.1.25",
     "convex": "^1.38.0",
     "lodash.throttle": "^4.1.1"
   }

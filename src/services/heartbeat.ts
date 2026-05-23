@@ -161,7 +161,9 @@ export class HeartbeatManager extends WavedashManager {
    * @param data - Data to send to the backend
    * @returns true if the presence was updated successfully
    */
-  async updateUserPresence(data?: Record<string, unknown>): Promise<boolean> {
+  async updateUserPresence(
+    data?: Record<string, string | number | boolean | null>
+  ): Promise<boolean> {
     try {
       // Add a default value to guarantee that the presence is updated
       const dataToSend = data ?? { forceUpdate: true };

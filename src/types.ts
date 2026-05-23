@@ -37,6 +37,19 @@ export type UpdateUGCItemArgs = Omit<
   filePath?: string;
 };
 
+export type UGCItem = FunctionReturnType<
+  typeof api.sdk.userGeneratedContent.listUGCItems
+>["page"][0];
+export type PaginatedUGCItems = FunctionReturnType<
+  typeof api.sdk.userGeneratedContent.listUGCItems
+>;
+type RawListUGCItemsArgs = FunctionArgs<
+  typeof api.sdk.userGeneratedContent.listUGCItems
+>;
+
+export type ListUGCItemsArgs = Omit<RawListUGCItemsArgs, "filters"> &
+  NonNullable<RawListUGCItemsArgs["filters"]>;
+
 // Function return type aliases derived from the API
 export type LobbyUser = FunctionReturnType<
   typeof api.sdk.gameLobby.lobbyUsers
