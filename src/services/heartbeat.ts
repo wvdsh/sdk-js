@@ -157,18 +157,18 @@ export class HeartbeatManager extends WavedashManager {
   }
 
   /**
-   * Updates user presence in the backend
+   * Updates user presence in the backend.
+   * Empty object sends a heartbeat without changing fields; `null` values clear
+   * individual keys.
    * @param data - Data to send to the backend
    * @returns true if the presence was updated successfully
    */
   async updateUserPresence(
-    data?: Record<string, string | number | boolean | null>
+    data: Record<string, string | number | boolean | null>
   ): Promise<boolean> {
     try {
-      // Add a default value to guarantee that the presence is updated
-      const dataToSend = data ?? { forceUpdate: true };
       await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
-        data: dataToSend,
+        data,
         deviceFingerprint: this.deviceFingerprint
       });
       return true;
