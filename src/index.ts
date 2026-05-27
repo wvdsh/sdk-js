@@ -1282,17 +1282,36 @@ class WavedashSDK extends EventTarget {
   // User Presence
   // ==============================
   /**
-   * Updates rich user presence so friends can see what the player is doing in game
-   * @param data Game data to send to the backend
+   * Updates rich user presence so friends can see what the player is doing in game.
+   * Supported keys:
+   *   `status`  — one-line activity shown as the primary line (e.g. "Traveling in a group")
+   *   `details` — secondary context shown beneath the status (e.g. current zone or mode)
+   * 
+   * Pass an empty dictionary to clear all presence fields.
+   * @param data Presence fields to update.
    * @returns true if the presence was updated successfully
    */
   async updateUserPresence(
-    data?: Record<string, string | number | boolean | null>
+    data: Record<string, string | number | boolean | null>
   ): Promise<WavedashResponse<boolean>> {
+    if (typeof data === "string") {
+      const raw = data as string;
+      try {
+        data = JSON.parse(raw);
+      } catch (error) {
+        const message = `updateUserPresence: invalid JSON: ${raw}`;
+        logger.error(message, error);
+        return this.formatResponse({
+          success: false,
+          data: null,
+          message
+        });
+      }
+    }
     return this.apiCall(
       this.heartbeatManager,
       "updateUserPresence",
-      [["data", vOptional(vRecord)]],
+      [["data", vRecord]],
       data
     );
   }

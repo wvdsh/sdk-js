@@ -58,13 +58,20 @@ export const vUint8Array: Validator<Uint8Array> = (value, path) => {
   return value;
 };
 
-export const vRecord: Validator<Record<string, unknown>> = (value, path) => {
+export const vRecord: Validator<Record<string, string | number | boolean | null>> = (value, path) => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(
       `${path}: expected plain object, got ${describeValue(value)}`
     );
   }
-  return value as Record<string, unknown>;
+  for (const [key, val] of Object.entries(value)) {
+    if (typeof val === "object" && val !== null) {
+      throw new Error(
+        `${path}: expected flat record with no nested objects, but key "${key}" contains ${describeValue(val)}`
+      );
+    }
+  }
+  return value as Record<string, string | number | boolean | null>;
 };
 
 /**
@@ -137,7 +144,12 @@ export function vObject<T extends Record<string, unknown>>(shape: {
   [K in keyof T]: Validator<T[K]>;
 }): Validator<T> {
   return (value, path) => {
-    const obj = vRecord(value, path);
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new Error(
+        `${path}: expected plain object, got ${describeValue(value)}`
+      );
+    }
+    const obj = value as Record<string, unknown>;
 
     // Check for extraneous keys (typos / unrecognized fields)
     for (const key of Object.keys(obj)) {

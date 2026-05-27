@@ -34,6 +34,7 @@ export class HeartbeatManager extends WavedashManager {
   private isFirstTick: boolean = true;
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
   private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
+  private cachedPresenceData: Record<string, string | number | boolean | null> = {};
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -138,7 +139,7 @@ export class HeartbeatManager extends WavedashManager {
       .mutation(api.sdk.presence.heartbeat, {
         ...(reestablish
           ? {
-              data: { forceUpdate: true },
+              data: this.cachedPresenceData,
               deviceFingerprint: this.deviceFingerprint
             }
           : {})
@@ -157,18 +158,17 @@ export class HeartbeatManager extends WavedashManager {
   }
 
   /**
-   * Updates user presence in the backend
+   * Updates user presence in the backend.
    * @param data - Data to send to the backend
    * @returns true if the presence was updated successfully
    */
   async updateUserPresence(
-    data?: Record<string, string | number | boolean | null>
+    data: Record<string, string | number | boolean | null>
   ): Promise<boolean> {
     try {
-      // Add a default value to guarantee that the presence is updated
-      const dataToSend = data ?? { forceUpdate: true };
+      this.cachedPresenceData = data;
       await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
-        data: dataToSend,
+        data,
         deviceFingerprint: this.deviceFingerprint
       });
       return true;
