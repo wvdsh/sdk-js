@@ -9,6 +9,7 @@ import { HeartbeatManager } from "./services/heartbeat";
 import { GameEventManager } from "./services/gameEvents";
 import { FullscreenManager } from "./services/fullscreen";
 import { OverlayManager } from "./services/overlay";
+import { AudioManager } from "./services/audio";
 import { FriendsManager } from "./services/friends";
 import { logger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
@@ -121,6 +122,7 @@ class WavedashSDK extends EventTarget {
   p2pManager: P2PManager;
   fullscreenManager: FullscreenManager;
   overlayManager: OverlayManager;
+  audioManager: AudioManager;
   private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
@@ -153,6 +155,7 @@ class WavedashSDK extends EventTarget {
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
     this.overlayManager = new OverlayManager(this);
+    this.audioManager = new AudioManager(this);
 
     // Single source of truth for teardown — `destroy()` iterates this list.
     // Order matches construction so destroys happen in dependency order
@@ -168,7 +171,8 @@ class WavedashSDK extends EventTarget {
       this.friendsManager,
       this.gameEventManager,
       this.fullscreenManager,
-      this.overlayManager
+      this.overlayManager,
+      this.audioManager
     ];
 
     // Cache current user for avatar lookups
