@@ -83,10 +83,13 @@ export class AudioManager extends WavedashManager {
     this._isMuted = data.isMuted;
     logger.debug(`[AudioManager] muted=${this._isMuted}`);
 
-    // Web Audio: short ramp avoids audible pops on instant 0↔1 jumps
+    // Web Audio: short ramp avoids audible pops on instant 0↔1 jumps.
+    // cancelScheduledValues clears any in-flight ramp from a recent toggle so
+    // we don't follow a stale target before reaching the new one.
     const target = this._isMuted ? 0 : 1;
     this.contexts.forEach((gain, ctx) => {
       const now = ctx.currentTime;
+      gain.gain.cancelScheduledValues(now);
       gain.gain.setValueAtTime(gain.gain.value, now);
       gain.gain.linearRampToValueAtTime(target, now + 0.05);
     });
