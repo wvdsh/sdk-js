@@ -1286,10 +1286,9 @@ class WavedashSDK extends EventTarget {
    * Supported keys:
    *   `status`  — one-line activity shown as the primary line (e.g. "Traveling in a group")
    *   `details` — secondary context shown beneath the status (e.g. current zone or mode)
-   * Pass `null` for an individual key to clear that field. Pass an empty object to send
-   * a heartbeat without changing fields.
-   * @param data Presence fields. May also be passed as a JSON string by engine
-   *   bridges (Godot, Unity) that can't marshal a plain dict.
+   * 
+   * Pass an empty dictionary to clear all presence fields.
+   * @param data Presence fields to update.
    * @returns true if the presence was updated successfully
    */
   async updateUserPresence(
