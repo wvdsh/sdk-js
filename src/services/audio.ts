@@ -1,7 +1,8 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { type WavedashSDK } from "../index";
 import { WavedashManager } from "./manager";
-import { logger } from "../utils/logger";
+import { WavedashEvents } from "../events";
+import type { MuteChangedPayload } from "../types";
 
 /**
  * Set of WeakRefs — lets us iterate tracked elements without preventing GC.
@@ -81,7 +82,6 @@ export class AudioManager extends WavedashManager {
   private handleMute = (data: { isMuted: boolean }): void => {
     if (this._isMuted === data.isMuted) return;
     this._isMuted = data.isMuted;
-    logger.debug(`[AudioManager] muted=${this._isMuted}`);
 
     // Web Audio: short ramp avoids audible pops on instant 0↔1 jumps.
     // cancelScheduledValues clears any in-flight ramp from a recent toggle so
@@ -102,6 +102,12 @@ export class AudioManager extends WavedashManager {
         setMutedNative.call(el, this._isMuted ? true : intended);
       });
     }
+
+    // Notify game in case it needs to update in-game UI
+    this.sdk.gameEventManager.notifyGame(
+      WavedashEvents.MUTE_CHANGED,
+      { isMuted: this._isMuted } satisfies MuteChangedPayload
+    );
   };
 
   /**
