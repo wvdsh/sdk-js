@@ -44,7 +44,7 @@ export class HeartbeatManager extends WavedashManager {
   private isFirstTick: boolean = true;
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
   private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
-  private readonly INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+  private readonly INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
   private readonly INPUT_THROTTLE_MS = 1_000;
   private readonly GAMEPAD_POLL_INTERVAL_MS = 1_000;
   private readonly GAMEPAD_AXIS_DEADZONE = 0.2;
