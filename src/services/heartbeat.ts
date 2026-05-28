@@ -19,6 +19,13 @@ import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
 import type { WavedashSDK } from "../index";
 
+// Capture so we see input regardless of which descendant handles it; passive
+// so we never block the game's own handlers.
+const INPUT_LISTENER_OPTS: AddEventListenerOptions = {
+  passive: true,
+  capture: true
+};
+
 export class HeartbeatManager extends WavedashManager {
   private deviceFingerprint: DeviceFingerprint | undefined = undefined;
   // Always resolves — never rejects. Best-effort: the backend stamps whatever
@@ -26,15 +33,23 @@ export class HeartbeatManager extends WavedashManager {
   private deviceFingerprintReady: Promise<void>;
   private testConnectionInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
+  private gamepadPollInterval: ReturnType<typeof setInterval> | null = null;
+  private inactivityTimeout: ReturnType<typeof setTimeout> | null = null;
   private isConnected: boolean = false;
   private sentDisconnectedEvent: boolean = false;
   private disconnectedAt: number | null = null;
   private lastHeartbeatTime: number = 0;
+  private lastInputResetAt: number = 0;
   private heartbeatInFlight: boolean = false;
   private isFirstTick: boolean = true;
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
   private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
-  private cachedPresenceData: Record<string, string | number | boolean | null> = {};
+  private readonly INACTIVITY_TIMEOUT_MS = 5 * 60 * 1000;
+  private readonly INPUT_THROTTLE_MS = 1_000;
+  private readonly GAMEPAD_POLL_INTERVAL_MS = 1_000;
+  private readonly GAMEPAD_AXIS_DEADZONE = 0.2;
+  private cachedPresenceData: Record<string, string | number | boolean | null> =
+    {};
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -43,6 +58,28 @@ export class HeartbeatManager extends WavedashManager {
       this.sdk.convexClient.client.connectionState().isWebSocketConnected;
 
     document.addEventListener("visibilitychange", this.handleVisibilityChange);
+    window.addEventListener(
+      "keydown",
+      this.handleUserInput,
+      INPUT_LISTENER_OPTS
+    );
+    window.addEventListener(
+      "pointerdown",
+      this.handleUserInput,
+      INPUT_LISTENER_OPTS
+    );
+    window.addEventListener(
+      "pointermove",
+      this.handleUserInput,
+      INPUT_LISTENER_OPTS
+    );
+    window.addEventListener("wheel", this.handleUserInput, INPUT_LISTENER_OPTS);
+    // Gamepad has no event API, so we poll. Runs for the lifetime of the
+    // manager so a gamepad-only player can wake heartbeat back up after the
+    // inactivity timeout fires.
+    this.gamepadPollInterval = setInterval(() => {
+      this.pollGamepads();
+    }, this.GAMEPAD_POLL_INTERVAL_MS);
 
     this.deviceFingerprintReady = this.sdk.iframeMessenger
       .requestFromParent(IFRAME_MESSAGE_TYPE.GET_DEVICE_FINGERPRINT)
@@ -51,24 +88,36 @@ export class HeartbeatManager extends WavedashManager {
       })
       // Required catch handler so this.deviceFingerprintReady always resolves
       .catch(() => {});
+
+    // Don't .start() here, loadComplete() will trigger the first call to start()
   }
 
-  /** Start heartbeat and connection-check intervals */
+  /**
+   * Start (or refresh) the heartbeat. Idempotent: if intervals are already
+   * running this just reschedules the inactivity timer. No-op if the game
+   * hasn't loaded yet or the tab is hidden.
+   */
   start(): void {
-    if (!this.sdk.gameLoaded) {
-      return;
-    }
+    if (!this.sdk.gameLoaded) return;
+    if (document.visibilityState !== "visible") return;
 
-    // Stop any existing intervals before starting fresh
-    this.stop();
+    if (this.inactivityTimeout !== null) {
+      clearTimeout(this.inactivityTimeout);
+    }
+    this.inactivityTimeout = setTimeout(() => {
+      this.stop();
+    }, this.INACTIVITY_TIMEOUT_MS);
+
+    // Already running — timer rescheduled above, nothing else to do.
+    if (this.heartbeatInterval !== null) return;
 
     if (this.isFirstTick) {
       // Defer the very first heartbeat until the device fingerprint has
       // arrived from the parent
       void this.deviceFingerprintReady.then(() => {
         // isFirstTick is flipped to false by tickHeartbeat the first time it
-        // runs, so repeat start() calls during the pending window all queue
-        // a callback but only the first to execute does any work.
+        // runs, so repeat start() calls during the pending window all queue a
+        // callback but only the first to execute does any work.
         if (!this.sdk.gameLoaded || !this.isFirstTick) return;
         this.tickHeartbeat();
       });
@@ -85,8 +134,12 @@ export class HeartbeatManager extends WavedashManager {
     }, this.TEST_CONNECTION_INTERVAL_MS);
   }
 
-  /** Stop heartbeat and connection-check intervals */
+  /** Stop the heartbeat and clear the inactivity timer. Idempotent. */
   stop(): void {
+    if (this.inactivityTimeout !== null) {
+      clearTimeout(this.inactivityTimeout);
+      this.inactivityTimeout = null;
+    }
     if (this.heartbeatInterval !== null) {
       clearInterval(this.heartbeatInterval);
       this.heartbeatInterval = null;
@@ -97,23 +150,67 @@ export class HeartbeatManager extends WavedashManager {
     }
   }
 
+  /**
+   * Updates user presence in the backend.
+   * @param data - Data to send to the backend
+   * @returns true if the presence was updated successfully
+   */
+  async updateUserPresence(
+    data: Record<string, string | number | boolean | null>
+  ): Promise<boolean> {
+    try {
+      this.cachedPresenceData = data;
+      await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
+        data,
+        deviceFingerprint: this.deviceFingerprint
+      });
+      return true;
+    } catch (error) {
+      logger.error(`Error updating presence: ${error}`);
+      return false;
+    }
+  }
+
+  isCurrentlyConnected(): boolean {
+    return this.isConnected;
+  }
+
   /** Full teardown — stops intervals and removes all listeners */
   destroy(): void {
     this.stop();
+    if (this.gamepadPollInterval !== null) {
+      clearInterval(this.gamepadPollInterval);
+      this.gamepadPollInterval = null;
+    }
     document.removeEventListener(
       "visibilitychange",
       this.handleVisibilityChange
     );
+    window.removeEventListener(
+      "keydown",
+      this.handleUserInput,
+      INPUT_LISTENER_OPTS
+    );
+    window.removeEventListener(
+      "pointerdown",
+      this.handleUserInput,
+      INPUT_LISTENER_OPTS
+    );
+    window.removeEventListener(
+      "pointermove",
+      this.handleUserInput,
+      INPUT_LISTENER_OPTS
+    );
+    window.removeEventListener(
+      "wheel",
+      this.handleUserInput,
+      INPUT_LISTENER_OPTS
+    );
   }
 
-  private handleVisibilityChange = (): void => {
-    if (document.visibilityState === "visible") {
-      this.start();
-    } else {
-      this.stop();
-    }
-  };
-
+  // =================
+  // Private functions
+  // =================
   private tickHeartbeat(): void {
     const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
     const needsReestablish =
@@ -157,24 +254,38 @@ export class HeartbeatManager extends WavedashManager {
       });
   }
 
+  private handleVisibilityChange = (): void => {
+    if (document.visibilityState === "visible") {
+      this.start();
+    } else {
+      this.stop();
+    }
+  };
+
+  private handleUserInput = (): void => {
+    const now = Date.now();
+    if (now - this.lastInputResetAt < this.INPUT_THROTTLE_MS) return;
+    this.lastInputResetAt = now;
+    this.start();
+  };
+
   /**
-   * Updates user presence in the backend.
-   * @param data - Data to send to the backend
-   * @returns true if the presence was updated successfully
+   * Polls connected gamepads; any pressed button or out-of-deadzone axis
+   * counts as user activity and (re)starts the heartbeat.
    */
-  async updateUserPresence(
-    data: Record<string, string | number | boolean | null>
-  ): Promise<boolean> {
-    try {
-      this.cachedPresenceData = data;
-      await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
-        data,
-        deviceFingerprint: this.deviceFingerprint
-      });
-      return true;
-    } catch (error) {
-      logger.error(`Error updating presence: ${error}`);
-      return false;
+  private pollGamepads(): void {
+    if (typeof navigator === "undefined" || !navigator.getGamepads) return;
+    const pads = navigator.getGamepads();
+    for (const pad of pads) {
+      if (!pad) continue;
+      if (pad.buttons.some((b) => b.pressed)) {
+        this.start();
+        return;
+      }
+      if (pad.axes.some((a) => Math.abs(a) > this.GAMEPAD_AXIS_DEADZONE)) {
+        this.start();
+        return;
+      }
     }
   }
 
@@ -234,9 +345,5 @@ export class HeartbeatManager extends WavedashManager {
     } catch (error) {
       logger.error("Error testing connection:", error);
     }
-  }
-
-  isCurrentlyConnected(): boolean {
-    return this.isConnected;
   }
 }
