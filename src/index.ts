@@ -135,12 +135,12 @@ class WavedashSDK extends EventTarget {
     this.convexClient = new ConvexClient(sdkConfig.convexCloudUrl, {
       expectAuth: true
     });
-    this.gameCloudId = sdkConfig.gameCloudId; // needs to be above getAuthToken don't move this
+    this.gameCloudId = sdkConfig.gameCloudId;
+    this.iframeMessenger = iframeMessenger;  // should be above getAuthToken so it can post to parent, don't move this
     this.convexClient.setAuth(({ forceRefreshToken }) =>
       this.getAuthToken(forceRefreshToken)
     );
     this.wavedashUser = sdkConfig.wavedashUser;
-    this.iframeMessenger = iframeMessenger;
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
     this.swMessenger = new SwMessenger();
