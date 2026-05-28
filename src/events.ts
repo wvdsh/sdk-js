@@ -33,7 +33,10 @@ export const WavedashEvents = {
   BACKEND_RECONNECTING: "BackendReconnecting", // attempting to reconnect to backend
 
   // Fullscreen events
-  FULLSCREEN_CHANGED: "FullscreenChanged" // fullscreen state changed
+  FULLSCREEN_CHANGED: "FullscreenChanged", // fullscreen state changed
+
+  // Audio events
+  MUTE_CHANGED: "MuteChanged" // mute state changed
 
   // TODO: Future events to implement
   // P2P_CONNECTION_REQUESTED: 'P2PConnectionRequested', // for now we always connect all lobby members

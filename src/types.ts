@@ -258,6 +258,13 @@ export interface FullscreenChangedPayload {
   isFullscreen: boolean;
 }
 
+// --- Audio Events ---
+
+/** Payload for MuteChanged event - emitted when mute state flips */
+export interface MuteChangedPayload {
+  isMuted: boolean;
+}
+
 // =============================================================================
 // Event map: links each event name to its payload type so addEventListener,
 // removeEventListener, on, and off can infer the right CustomEvent / payload.
@@ -280,6 +287,7 @@ export type WavedashEventMap = {
   [WavedashEvents.BACKEND_DISCONNECTED]: BackendConnectionPayload;
   [WavedashEvents.BACKEND_RECONNECTING]: BackendConnectionPayload;
   [WavedashEvents.FULLSCREEN_CHANGED]: FullscreenChangedPayload;
+  [WavedashEvents.MUTE_CHANGED]: MuteChangedPayload;
 };
 
 // =============================================================================
