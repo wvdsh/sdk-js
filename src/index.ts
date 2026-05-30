@@ -11,6 +11,7 @@ import { FullscreenManager } from "./services/fullscreen";
 import { OverlayManager } from "./services/overlay";
 import { AudioManager } from "./services/audio";
 import { FriendsManager } from "./services/friends";
+import { PaidContentManager } from "./services/paidContent";
 import { logger, LOG_LEVEL } from "./utils/logger";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { SwMessenger } from "./utils/swMessenger";
@@ -123,6 +124,7 @@ class WavedashSDK extends EventTarget {
   fullscreenManager: FullscreenManager;
   overlayManager: OverlayManager;
   audioManager: AudioManager;
+  paidContentManager: PaidContentManager;
   private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
@@ -156,6 +158,7 @@ class WavedashSDK extends EventTarget {
     this.fullscreenManager = new FullscreenManager(this);
     this.overlayManager = new OverlayManager(this);
     this.audioManager = new AudioManager(this);
+    this.paidContentManager = new PaidContentManager(this);
 
     // Single source of truth for teardown — `destroy()` iterates this list.
     // Order matches construction so destroys happen in dependency order
@@ -172,7 +175,8 @@ class WavedashSDK extends EventTarget {
       this.gameEventManager,
       this.fullscreenManager,
       this.overlayManager,
-      this.audioManager
+      this.audioManager,
+      this.paidContentManager
     ];
 
     // Cache current user for avatar lookups
@@ -1282,6 +1286,42 @@ class WavedashSDK extends EventTarget {
     );
   }
 
+  // ============
+  // Paid content
+  // ============
+
+  /**
+   * Returns true if the player owns the given paid content for this game.
+   * Local check against the gameplay JWT's `ents` claim — no network call.
+   * Pair with triggerPaywall() to drive your in-game purchase UI.
+   */
+  async userHasAccess(contentIdentifier: string): Promise<boolean> {
+    validateArgs(
+      "userHasAccess",
+      [["contentIdentifier", vString]],
+      [contentIdentifier]
+    );
+    return this.paidContentManager.userHasAccess(contentIdentifier);
+  }
+
+  /**
+   * Trigger the Wavedash-rendered paywall flow for the given content. Resolves
+   * immediately with `{ purchased: true }` if the player already owns it;
+   * otherwise opens the modal and resolves once the user clicks BUY or CANCEL.
+   * After a successful purchase the JWT is refreshed automatically so a
+   * subsequent userHasAccess() call reflects the new entitlement.
+   */
+  async triggerPaywall(
+    contentIdentifier: string
+  ): Promise<WavedashResponse<{ purchased: boolean }>> {
+    return this.apiCall(
+      this.paidContentManager,
+      "triggerPaywall",
+      [["contentIdentifier", vString]],
+      contentIdentifier
+    );
+  }
+
   // ==============================
   // User Presence
   // ==============================
@@ -1464,8 +1504,8 @@ class WavedashSDK extends EventTarget {
    * already running (e.g. from Convex's initial setAuth). Use this anywhere
    * you need to authenticate a request outside of the Convex client.
    */
-  async ensureGameplayJwt(): Promise<string> {
-    return this.getAuthToken();
+  async ensureGameplayJwt(forceRefresh = false): Promise<string> {
+    return this.getAuthToken(forceRefresh);
   }
 
   /**
