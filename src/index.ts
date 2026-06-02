@@ -1321,28 +1321,33 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Returns true if the player owns the given paid content for this game.
-   * Local check against the gameplay JWT's `ents` claim — no network call.
-   * Pair with triggerPaywall() to drive your in-game purchase UI.
+   * Reads the `entitlements` claim from the gameplay JWT — this is a UX hint, not a
+   * security check. The play worker re-verifies the JWT signature and gates
+   * paid asset bytes on every request, so a tampered client return value
+   * doesn't actually unlock anything. Pair with triggerPaywall() to drive
+   * your in-game purchase UI.
    */
-  async userHasAccess(contentIdentifier: string): Promise<boolean> {
-    validateArgs(
+  async userHasAccess(
+    contentIdentifier: string
+  ): Promise<WavedashResponse<boolean>> {
+    return this.apiCall(
+      this.paidContentManager,
       "userHasAccess",
       [["contentIdentifier", vString]],
-      [contentIdentifier]
+      contentIdentifier
     );
-    return this.paidContentManager.userHasAccess(contentIdentifier);
   }
 
   /**
    * Trigger the Wavedash-rendered paywall flow for the given content. Resolves
-   * immediately with `{ purchased: true }` if the player already owns it;
-   * otherwise opens the modal and resolves once the user clicks BUY or CANCEL.
+   * immediately with `true` (data) if the player already owns it; otherwise
+   * opens the modal and resolves with whether the user clicked BUY or CANCEL.
    * After a successful purchase the JWT is refreshed automatically so a
    * subsequent userHasAccess() call reflects the new entitlement.
    */
   async triggerPaywall(
     contentIdentifier: string
-  ): Promise<WavedashResponse<{ purchased: boolean }>> {
+  ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
       this.paidContentManager,
       "triggerPaywall",
