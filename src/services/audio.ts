@@ -79,6 +79,33 @@ export class AudioManager extends WavedashManager {
     return this._isMuted;
   }
 
+  /**
+   * Ask the host to mute (true) or unmute (false). Resolves to `true` if the
+   * host applied the change, `false` otherwise — notably, the host rejects an
+   * unmute when the user muted the game from the Wavedash UI, so games can't
+   * override an explicit user mute. The resulting state arrives via the usual
+   * MUTE_CHANGED broadcast, so `isMuted()` updates independently of this result.
+   */
+  async requestMute(muted: boolean): Promise<boolean> {
+    const response = await this.sdk.iframeMessenger.requestFromParent(
+      IFRAME_MESSAGE_TYPE.SET_MUTE,
+      { muted }
+    );
+    return response.success;
+  }
+
+  /**
+   * Toggle mute. Like `requestMute`, the host may reject the unmute half of a
+   * toggle if the user muted from the Wavedash UI. Resolves to `true` if the
+   * host applied the change.
+   */
+  async toggleMute(): Promise<boolean> {
+    const response = await this.sdk.iframeMessenger.requestFromParent(
+      IFRAME_MESSAGE_TYPE.TOGGLE_MUTE
+    );
+    return response.success;
+  }
+
   private handleMute = (data: { isMuted: boolean }): void => {
     if (this._isMuted === data.isMuted) return;
     this._isMuted = data.isMuted;

@@ -423,6 +423,35 @@ class WavedashSDK extends EventTarget {
     return this.fullscreenManager.toggleFullscreen();
   }
 
+  // =====
+  // Audio
+  // =====
+
+  /**
+   * Whether the game is currently muted. Mirrored from the Wavedash host page,
+   * which owns the mute control so its UI button and the game stay in sync.
+   */
+  isMuted(): boolean {
+    return this.audioManager.isMuted();
+  }
+
+  /**
+   * Ask the host to mute (true) or unmute (false). Resolves to `true` if the
+   * change was applied, `false` if it was rejected — the host won't let the
+   * game unmute when the user has muted from the Wavedash UI.
+   */
+  async requestMute(muted: boolean): Promise<boolean> {
+    return this.audioManager.requestMute(muted);
+  }
+
+  /**
+   * Toggle mute. Resolves to `true` if the change was applied, `false` if it
+   * was rejected (e.g. trying to unmute over an explicit user mute).
+   */
+  async toggleMute(): Promise<boolean> {
+    return this.audioManager.toggleMute();
+  }
+
   // ============
   // User methods
   // ============
