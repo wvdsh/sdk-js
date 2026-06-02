@@ -1,82 +1,65 @@
-import { api, IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
+import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
 
 const PAYWALL_TIMEOUT_MS = 10 * 60 * 1000;
 
-interface PaywallOffer {
-  paidContentId: string;
-  contentIdentifier: string;
-  title: string;
-  message: string;
-  features: string[];
-  buttonLabel: string;
-  imageR2Key?: string;
-  priceCents: number;
-}
-
-function parseEntsFromJwt(jwt: string): string[] {
+/**
+ * Decode the gameplay JWT payload to read the `entitlements` claim. We don't
+ * verify the signature here — a hostile client can patch this function to
+ * return whatever it wants either way, so verifying locally adds bar but no
+ * real boundary. The play worker re-verifies the JWT signature on every
+ * paid-asset request — that's the actual security gate.
+ *
+ * UTF-8 safe: claims may carry arbitrary user/file paths (e.g. r2key).
+ */
+function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
   try {
     const [, payloadB64] = jwt.split(".");
-    if (!payloadB64) return [];
+    if (!payloadB64) return null;
     const b64 = payloadB64.replace(/-/g, "+").replace(/_/g, "/");
     const padded = b64 + "===".slice((b64.length + 3) % 4);
-    const json = atob(padded);
-    const payload = JSON.parse(json) as { ents?: unknown };
-    if (Array.isArray(payload.ents)) {
-      return payload.ents.filter((e): e is string => typeof e === "string");
-    }
-    return [];
+    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
+    const json = new TextDecoder().decode(bytes);
+    return JSON.parse(json) as Record<string, unknown>;
   } catch (err) {
-    logger.warn("Failed to parse ents from gameplay JWT", err);
-    return [];
+    logger.warn("Failed to decode JWT payload", err);
+    return null;
   }
+}
+
+function readEntitlementsFromJwt(jwt: string): string[] {
+  const payload = decodeJwtPayload(jwt);
+  const entitlements = payload?.entitlements;
+  if (!Array.isArray(entitlements)) return [];
+  return entitlements.filter((e): e is string => typeof e === "string");
 }
 
 export class PaidContentManager extends WavedashManager {
   async userHasAccess(contentIdentifier: string): Promise<boolean> {
     const jwt = await this.sdk.ensureGameplayJwt();
-    return parseEntsFromJwt(jwt).includes(contentIdentifier);
+    return readEntitlementsFromJwt(jwt).includes(contentIdentifier);
   }
 
-  async triggerPaywall(
-    contentIdentifier: string
-  ): Promise<{ purchased: boolean }> {
+  async triggerPaywall(contentIdentifier: string): Promise<boolean> {
     // Short-circuit when the player is already entitled — never show the modal
     // for already-purchased content. Game flows can call triggerPaywall freely.
-    if (await this.userHasAccess(contentIdentifier)) {
-      return { purchased: true };
-    }
+    if (await this.userHasAccess(contentIdentifier)) return true;
 
-    let offer: PaywallOffer;
-    try {
-      offer = (await this.sdk.convexClient.query(api.sdk.paidContent.getOffer, {
-        contentIdentifier
-      })) as PaywallOffer;
-    } catch (error) {
-      logger.error("Failed to fetch paywall offer", error);
-      return { purchased: false };
-    }
-
+    // The SDK only knows the contentIdentifier — parent (mainsite) fetches the
+    // offer, displays the modal, and runs the purchase mutation. We just wait
+    // for the response.
     const response = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.TRIGGER_PAYWALL,
-      { offer },
+      { contentIdentifier },
       PAYWALL_TIMEOUT_MS
     );
-    if (!response.purchased) return { purchased: false };
+    if (!response.purchased) return false;
 
-    try {
-      await this.sdk.convexClient.mutation(
-        api.sdk.paidContent.mockFulfillPurchase,
-        { paidContentId: offer.paidContentId }
-      );
-    } catch (error) {
-      logger.error("Mock fulfill failed", error);
-      return { purchased: false };
-    }
-
-    // Force a JWT refresh so the new `ents` entry is live before we return
+    // Refresh through /auth/refresh so the play worker's session cookies stay
+    // in sync — accepting a JWT directly from the parent would leave the
+    // cookie fallback path on a stale token.
     await this.sdk.ensureGameplayJwt(true);
-    return { purchased: true };
+    return true;
   }
 }
