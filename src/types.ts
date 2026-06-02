@@ -79,6 +79,8 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<
   userId: Id<"users">;
   username: string;
   userAvatarUrl?: string;
+  submittedScore: number;
+  submittedRank: number;
 };
 
 // Type helper to get event values as a union type

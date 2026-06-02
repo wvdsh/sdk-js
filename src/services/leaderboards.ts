@@ -123,7 +123,12 @@ export class LeaderboardManager extends WavedashManager {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
     return {
+      // Where your current leaderboard standing ranks
       ...result.entry,
+      // Where the submission itself ranks
+      submittedScore: result.submission.score,
+      submittedRank: result.submission.globalRank,
+      // User info
       userId: this.sdk.wavedashUser.id,
       username: this.sdk.wavedashUser.username,
       userAvatarUrl: this.sdk.wavedashUser.avatarUrl
