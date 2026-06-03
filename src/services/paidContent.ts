@@ -5,10 +5,11 @@ import { logger } from "../utils/logger";
 const PAYWALL_TIMEOUT_MS = 10 * 60 * 1000;
 
 /**
- * Decode the gameplay JWT payload to read the `entitlements` claim. We don't
- * verify the signature here — a hostile client can patch this function to
- * return whatever it wants either way, so verifying locally adds bar but no
- * real boundary. The play worker re-verifies the JWT signature on every
+ * Decode the gameplay JWT payload to read the `ents` claim (short on the wire
+ * to keep token size down; surfaced as `entitlements` everywhere else). We
+ * don't verify the signature here — a hostile client can patch this function
+ * to return whatever it wants either way, so verifying locally adds bar but
+ * no real boundary. The play worker re-verifies the JWT signature on every
  * paid-asset request — that's the actual security gate.
  *
  * UTF-8 safe: claims may carry arbitrary user/file paths (e.g. r2key).
@@ -30,9 +31,9 @@ function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
 
 function readEntitlementsFromJwt(jwt: string): string[] {
   const payload = decodeJwtPayload(jwt);
-  const entitlements = payload?.entitlements;
-  if (!Array.isArray(entitlements)) return [];
-  return entitlements.filter((e): e is string => typeof e === "string");
+  const ents = payload?.ents;
+  if (!Array.isArray(ents)) return [];
+  return ents.filter((e): e is string => typeof e === "string");
 }
 
 export class PaidContentManager extends WavedashManager {
