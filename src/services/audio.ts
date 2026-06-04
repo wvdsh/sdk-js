@@ -1,8 +1,8 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
-import { type WavedashSDK } from "../index";
-import { WavedashManager } from "./manager";
 import { WavedashEvents } from "../events";
+import { type WavedashSDK } from "../index";
 import type { MuteChangedPayload } from "../types";
+import { WavedashManager } from "./manager";
 
 /**
  * Set of WeakRefs — lets us iterate tracked elements without preventing GC.
@@ -131,10 +131,9 @@ export class AudioManager extends WavedashManager {
     }
 
     // Notify game in case it needs to update in-game UI
-    this.sdk.gameEventManager.notifyGame(
-      WavedashEvents.MUTE_CHANGED,
-      { isMuted: this._isMuted } satisfies MuteChangedPayload
-    );
+    this.sdk.gameEventManager.notifyGame(WavedashEvents.MUTE_CHANGED, {
+      isMuted: this._isMuted
+    } satisfies MuteChangedPayload);
   };
 
   /**
@@ -166,7 +165,9 @@ export class AudioManager extends WavedashManager {
     };
     if (win.webkitAudioContext) {
       this.originalWebKitAudioContext = win.webkitAudioContext;
-      win.webkitAudioContext = this.shimAudioContextClass(win.webkitAudioContext);
+      win.webkitAudioContext = this.shimAudioContextClass(
+        win.webkitAudioContext
+      );
     }
 
     // 2. `new Audio()` — common pattern for detached one-shot SFX that never

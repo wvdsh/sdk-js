@@ -1,63 +1,63 @@
 import { ConvexClient } from "convex/browser";
-import { LobbyManager } from "./services/lobby";
-import { FileSystemManager } from "./services/fileSystem";
-import { UGCManager } from "./services/ugc";
-import { LeaderboardManager } from "./services/leaderboards";
-import { P2PManager } from "./services/p2p";
-import { StatsManager } from "./services/stats";
-import { HeartbeatManager } from "./services/heartbeat";
-import { GameEventManager } from "./services/gameEvents";
-import { FullscreenManager } from "./services/fullscreen";
-import { OverlayManager } from "./services/overlay";
-import { AudioManager } from "./services/audio";
-import { FriendsManager } from "./services/friends";
-import { PaidContentManager } from "./services/paidContent";
-import { logger, LOG_LEVEL } from "./utils/logger";
-import { IFrameMessenger } from "./utils/iframeMessenger";
-import { SwMessenger } from "./utils/swMessenger";
 import {
+  AvatarSize,
+  GAME_ENGINE,
+  LEADERBOARD_DISPLAY_TYPE,
+  LEADERBOARD_SORT_ORDER,
+  LOBBY_VISIBILITY,
   LobbyKickedReason,
   LobbyUserChangeType,
   P2PPacketDropReason,
-  AvatarSize,
-  LOBBY_VISIBILITY,
-  LEADERBOARD_SORT_ORDER,
-  LEADERBOARD_DISPLAY_TYPE,
   UGC_TYPE,
-  UGC_VISIBILITY,
-  GAME_ENGINE
+  UGC_VISIBILITY
 } from "./constants";
 import { WavedashEvents } from "./events";
-import type { WavedashEventMap } from "./types";
+import { AudioManager } from "./services/audio";
+import { FileSystemManager } from "./services/fileSystem";
+import { FriendsManager } from "./services/friends";
+import { FullscreenManager } from "./services/fullscreen";
+import { GameEventManager } from "./services/gameEvents";
+import { HeartbeatManager } from "./services/heartbeat";
+import { LeaderboardManager } from "./services/leaderboards";
+import { LobbyManager } from "./services/lobby";
 import type { WavedashManager } from "./services/manager";
+import { OverlayManager } from "./services/overlay";
+import { P2PManager } from "./services/p2p";
+import { PaidContentManager } from "./services/paidContent";
+import { StatsManager } from "./services/stats";
+import { UGCManager } from "./services/ugc";
+import type { WavedashEventMap } from "./types";
+import { IFrameMessenger } from "./utils/iframeMessenger";
+import { LOG_LEVEL, logger } from "./utils/logger";
+import { SwMessenger } from "./utils/swMessenger";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
 
+import { IFRAME_MESSAGE_TYPE, SDKConfig, SDKUser, UrlParams } from "@wvdsh/api";
 import type {
-  Id,
-  LobbyVisibility,
-  LeaderboardSortOrder,
-  LeaderboardDisplayType,
-  WavedashConfig,
   EngineInstance,
+  Friend,
+  GameLaunchParams,
+  Id,
   Leaderboard,
+  LeaderboardDisplayType,
   LeaderboardEntries,
-  WavedashResponse,
-  UpsertedLeaderboardEntry,
+  LeaderboardSortOrder,
+  ListUGCItemsArgs,
+  Lobby,
+  LobbyUser,
+  LobbyVisibility,
+  P2PMessage,
+  PaginatedUGCItems,
+  RemoteFileMetadata,
   UGCType,
   UGCVisibility,
   UpdateUGCItemArgs,
-  PaginatedUGCItems,
-  ListUGCItemsArgs,
-  RemoteFileMetadata,
-  P2PMessage,
-  LobbyUser,
-  Lobby,
-  Friend,
-  GameLaunchParams
+  UpsertedLeaderboardEntry,
+  WavedashConfig,
+  WavedashResponse
 } from "./types";
-import { IFRAME_MESSAGE_TYPE, SDKConfig, SDKUser, UrlParams } from "@wvdsh/api";
 import { setParentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
@@ -67,12 +67,12 @@ import {
   vId,
   vNull,
   vNumber,
+  vObject,
   vOptional,
   vRecord,
   vString,
   vUint8Array,
-  vUnion,
-  vObject
+  vUnion
 } from "./utils/validation";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -138,7 +138,7 @@ class WavedashSDK extends EventTarget {
       expectAuth: true
     });
     this.gameCloudId = sdkConfig.gameCloudId;
-    this.iframeMessenger = iframeMessenger;  // should be above getAuthToken so it can post to parent, don't move this
+    this.iframeMessenger = iframeMessenger; // should be above getAuthToken so it can post to parent, don't move this
     this.convexClient.setAuth(({ forceRefreshToken }) =>
       this.getAuthToken(forceRefreshToken)
     );
@@ -1327,7 +1327,7 @@ class WavedashSDK extends EventTarget {
    * doesn't actually unlock anything. Pair with triggerPaywall() to drive
    * your in-game purchase UI.
    */
-  async userHasAccess(
+  async userHasAccess_EXPERIMENTAL(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
@@ -1340,12 +1340,13 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Trigger the Wavedash-rendered paywall flow for the given content. Resolves
-   * immediately with `true` (data) if the player already owns it; otherwise
-   * opens the modal and resolves with whether the user clicked BUY or CANCEL.
+   * immediately with data `true` if the player already owns it; otherwise
+   * opens the modal and resolves with whether the user completed the purchase.
    * After a successful purchase the JWT is refreshed automatically so a
-   * subsequent userHasAccess() call reflects the new entitlement.
+   * subsequent resource fetch is authenticated with the new purchase, and userHasAccess
+   * will return true if the purchase was successful.
    */
-  async triggerPaywall(
+  async triggerPaywall_EXPERIMENTAL(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
@@ -1364,7 +1365,7 @@ class WavedashSDK extends EventTarget {
    * Supported keys:
    *   `status`  — one-line activity shown as the primary line (e.g. "Traveling in a group")
    *   `details` — secondary context shown beneath the status (e.g. current zone or mode)
-   * 
+   *
    * Pass an empty dictionary to clear all presence fields.
    * @param data Presence fields to update.
    * @returns true if the presence was updated successfully
