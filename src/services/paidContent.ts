@@ -37,15 +37,20 @@ function readEntitlementsFromJwt(jwt: string): string[] {
 }
 
 export class PaidContentManager extends WavedashManager {
-  async userHasAccess(contentIdentifier: string): Promise<boolean> {
+  async hasUserPurchased(contentId: string): Promise<boolean> {
     const jwt = await this.sdk.ensureGameplayJwt();
-    return readEntitlementsFromJwt(jwt).includes(contentIdentifier);
+    return readEntitlementsFromJwt(jwt).includes(contentId);
+  }
+
+  async getUserEntitlements(): Promise<string[]> {
+    const jwt = await this.sdk.ensureGameplayJwt();
+    return readEntitlementsFromJwt(jwt);
   }
 
   async triggerPaywall(contentIdentifier: string): Promise<boolean> {
     // Short-circuit when the player is already entitled — never show the modal
     // for already-purchased content. Game flows can call triggerPaywall freely.
-    if (await this.userHasAccess(contentIdentifier)) return true;
+    if (await this.hasUserPurchased(contentIdentifier)) return true;
 
     // The SDK only knows the contentIdentifier — parent (mainsite) fetches the
     // offer, displays the modal, and runs the purchase mutation. We just wait
@@ -57,9 +62,7 @@ export class PaidContentManager extends WavedashManager {
     );
     if (!response.purchased) return false;
 
-    // Refresh through /auth/refresh so the play worker's session cookies stay
-    // in sync — accepting a JWT directly from the parent would leave the
-    // cookie fallback path on a stale token.
+    // Force refresh JWT so the latest entitlements are reflected
     await this.sdk.ensureGameplayJwt(true);
     return true;
   }

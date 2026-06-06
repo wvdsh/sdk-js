@@ -1322,20 +1322,32 @@ class WavedashSDK extends EventTarget {
   /**
    * Returns true if the player owns the given paid content for this game.
    * Reads the `entitlements` claim from the gameplay JWT — this is a UX hint, not a
-   * security check. The play worker re-verifies the JWT signature and gates
+   * security check. The builds server re-verifies the JWT signature and gates
    * paid asset bytes on every request, so a tampered client return value
    * doesn't actually unlock anything. Pair with triggerPaywall() to drive
-   * your in-game purchase UI.
+   * in-game UI.
    */
-  async userHasAccess_EXPERIMENTAL(
-    contentIdentifier: string
+  async hasUserPurchased_EXPERIMENTAL(
+    contentId: string
   ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
       this.paidContentManager,
-      "userHasAccess",
-      [["contentIdentifier", vString]],
-      contentIdentifier
+      "hasUserPurchased",
+      [["contentId", vString]],
+      contentId
     );
+  }
+
+  /**
+   * Returns the full list of paid-content IDs the player owns for this game.
+   * Reads the `entitlements` claim from the gameplay JWT — this is a UX hint,
+   * not a security check (see {@link hasUserPurchased_EXPERIMENTAL}). Useful
+   * for access gating multiple items at once without a call per content ID.
+   */
+  async getUserEntitlements_EXPERIMENTAL(): Promise<
+    WavedashResponse<string[]>
+  > {
+    return this.apiCall(this.paidContentManager, "getUserEntitlements", []);
   }
 
   /**
@@ -1343,7 +1355,7 @@ class WavedashSDK extends EventTarget {
    * immediately with data `true` if the player already owns it; otherwise
    * opens the modal and resolves with whether the user completed the purchase.
    * After a successful purchase the JWT is refreshed automatically so a
-   * subsequent resource fetch is authenticated with the new purchase, and userHasAccess
+   * subsequent resource fetch is authenticated with the new purchase, and hasUserPurchased
    * will return true if the purchase was successful.
    */
   async triggerPaywall_EXPERIMENTAL(
