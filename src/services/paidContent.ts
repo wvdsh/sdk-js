@@ -37,12 +37,12 @@ function readEntitlementsFromJwt(jwt: string): string[] {
 }
 
 export class PaidContentManager extends WavedashManager {
-  async hasUserPurchased(contentId: string): Promise<boolean> {
+  async isEntitled(contentId: string): Promise<boolean> {
     const jwt = await this.sdk.ensureGameplayJwt();
     return readEntitlementsFromJwt(jwt).includes(contentId);
   }
 
-  async getUserEntitlements(): Promise<string[]> {
+  async getEntitlements(): Promise<string[]> {
     const jwt = await this.sdk.ensureGameplayJwt();
     return readEntitlementsFromJwt(jwt);
   }
@@ -50,7 +50,7 @@ export class PaidContentManager extends WavedashManager {
   async triggerPaywall(contentIdentifier: string): Promise<boolean> {
     // Short-circuit when the player is already entitled — never show the modal
     // for already-purchased content. Game flows can call triggerPaywall freely.
-    if (await this.hasUserPurchased(contentIdentifier)) return true;
+    if (await this.isEntitled(contentIdentifier)) return true;
 
     // The SDK only knows the contentIdentifier — parent (mainsite) fetches the
     // offer, displays the modal, and runs the purchase mutation. We just wait

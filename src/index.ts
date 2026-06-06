@@ -1327,12 +1327,12 @@ class WavedashSDK extends EventTarget {
    * doesn't actually unlock anything. Pair with triggerPaywall() to drive
    * in-game UI.
    */
-  async hasUserPurchased_EXPERIMENTAL(
+  async isEntitled_EXPERIMENTAL(
     contentId: string
   ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
       this.paidContentManager,
-      "hasUserPurchased",
+      "isEntitled",
       [["contentId", vString]],
       contentId
     );
@@ -1341,13 +1341,13 @@ class WavedashSDK extends EventTarget {
   /**
    * Returns the full list of paid-content IDs the player owns for this game.
    * Reads the `entitlements` claim from the gameplay JWT — this is a UX hint,
-   * not a security check (see {@link hasUserPurchased_EXPERIMENTAL}). Useful
+   * not a security check (see {@link isEntitled_EXPERIMENTAL}). Useful
    * for access gating multiple items at once without a call per content ID.
    */
-  async getUserEntitlements_EXPERIMENTAL(): Promise<
+  async getEntitlements_EXPERIMENTAL(): Promise<
     WavedashResponse<string[]>
   > {
-    return this.apiCall(this.paidContentManager, "getUserEntitlements", []);
+    return this.apiCall(this.paidContentManager, "getEntitlements", []);
   }
 
   /**
@@ -1355,7 +1355,7 @@ class WavedashSDK extends EventTarget {
    * immediately with data `true` if the player already owns it; otherwise
    * opens the modal and resolves with whether the user completed the purchase.
    * After a successful purchase the JWT is refreshed automatically so a
-   * subsequent resource fetch is authenticated with the new purchase, and hasUserPurchased
+   * subsequent resource fetch is authenticated with the new purchase, and isEntitled
    * will return true if the purchase was successful.
    */
   async triggerPaywall_EXPERIMENTAL(
@@ -1497,17 +1497,15 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Fetches (or returns cached) gameplay JWT. Callers outside of Convex's
-   * setAuth should use {@link ensureGameplayJwt} instead; this method is the
-   * fetcher wired into `ConvexClient.setAuth` and honors `forceRefresh` so the
-   * server can invalidate a stale token.
+   * Fetcher wired into `ConvexClient.setAuth`; other callers use
+   * {@link ensureGameplayJwt}. Same-origin POST to /auth/refresh, authenticated
+   * by the gameplaySession cookie.
    *
-   * Same-origin POST to /auth/refresh on the play domain — the
-   * gameplaySession cookie set by the play server during playKey exchange
-   * authenticates the request, so no cross-origin credentials handling needed.
-   *
-   * Concurrent callers share a single in-flight fetch to avoid duplicate
-   * refresh round-trips.
+   * Concurrent callers share one in-flight fetch. A forced refresh instead
+   * serializes behind any in-flight fetch (it may predate the event that
+   * required it, e.g. a purchase) and becomes the current promise; only the
+   * current promise pushes the result to the parent / service worker, so a
+   * superseded refresh can't broadcast a stale token.
    */
   private getAuthToken(forceRefresh = false): Promise<string> {
     if (!forceRefresh && this.gameplayJwt) {
@@ -1517,7 +1515,13 @@ class WavedashSDK extends EventTarget {
       return this.gameplayJwtPromise;
     }
 
-    const promise = (async () => {
+    // Serialize behind any in-flight refresh so we never run two /auth/refresh
+    // round-trips at once and the later-started one always resolves last.
+    const previous = this.gameplayJwtPromise;
+    const fetchToken = async (): Promise<string> => {
+      if (previous) {
+        await previous.catch(() => {});
+      }
       const response = await fetch("/auth/refresh", {
         method: "POST",
         credentials: "same-origin"
@@ -1525,22 +1529,35 @@ class WavedashSDK extends EventTarget {
       if (!response.ok) {
         throw new Error(`Failed to refresh gameplay token: ${response.status}`);
       }
-      this.gameplayJwt = await response.text();
-      // Push to parent so it can handle /end-session on its own
-      iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
-        gameplayJwt: this.gameplayJwt
+      return response.text();
+    };
+
+    const promise = fetchToken()
+      .then((token) => {
+        // Advance the in-memory cache unconditionally. Refreshes are serialized
+        // (each awaits `previous`), so tokens resolve in start order
+        this.gameplayJwt = token;
+        
+        // Push to the parent / service worker only from the current (latest)
+        // refresh to avoid chatter.
+        if (this.gameplayJwtPromise === promise) {
+          // Push to parent so it can handle /end-session on its own
+          iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
+            gameplayJwt: token
+          });
+          // Push to service worker so it can attach Bearer token
+          this.swMessenger.postToServiceWorker({
+            type: "embed.jwt-update",
+            payload: { gameplayJwt: token }
+          });
+        }
+        return token;
+      })
+      .finally(() => {
+        if (this.gameplayJwtPromise === promise) {
+          this.gameplayJwtPromise = null;
+        }
       });
-      // Push to service worker so it can attach Bearer token
-      this.swMessenger.postToServiceWorker({
-        type: "embed.jwt-update",
-        payload: { gameplayJwt: this.gameplayJwt }
-      });
-      return this.gameplayJwt;
-    })().finally(() => {
-      if (this.gameplayJwtPromise === promise) {
-        this.gameplayJwtPromise = null;
-      }
-    });
 
     this.gameplayJwtPromise = promise;
     return promise;
