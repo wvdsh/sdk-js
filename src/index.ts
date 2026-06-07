@@ -1504,8 +1504,8 @@ class WavedashSDK extends EventTarget {
    * Concurrent callers share one in-flight fetch. A forced refresh instead
    * serializes behind any in-flight fetch (it may predate the event that
    * required it, e.g. a purchase) and becomes the current promise; only the
-   * current promise pushes the result to the parent / service worker, so a
-   * superseded refresh can't broadcast a stale token.
+   * current promise notifies the parent, so a superseded refresh can't
+   * broadcast a stale token
    */
   private getAuthToken(forceRefresh = false): Promise<string> {
     if (!forceRefresh && this.gameplayJwt) {
@@ -1538,17 +1538,10 @@ class WavedashSDK extends EventTarget {
         // (each awaits `previous`), so tokens resolve in start order
         this.gameplayJwt = token;
         
-        // Push to the parent / service worker only from the current (latest)
-        // refresh to avoid chatter.
+        // Notify the parent (for /end-session) only from the latest refresh
         if (this.gameplayJwtPromise === promise) {
-          // Push to parent so it can handle /end-session on its own
           iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
             gameplayJwt: token
-          });
-          // Push to service worker so it can attach Bearer token
-          this.swMessenger.postToServiceWorker({
-            type: "embed.jwt-update",
-            payload: { gameplayJwt: token }
           });
         }
         return token;
