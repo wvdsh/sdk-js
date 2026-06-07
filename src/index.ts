@@ -1561,7 +1561,7 @@ class WavedashSDK extends EventTarget {
    * already running (e.g. from Convex's initial setAuth). Use this anywhere
    * you need to authenticate a request outside of the Convex client.
    */
-  async ensureGameplayJwt(forceRefresh = false): Promise<string> {
+  async ensureGameplayJwt(forceRefresh: boolean = false): Promise<string> {
     return this.getAuthToken(forceRefresh);
   }
 
