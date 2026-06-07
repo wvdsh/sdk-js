@@ -105,7 +105,8 @@ export class IFrameMessenger {
 
   async requestFromParent<T extends keyof IFrameEventPayloadMap>(
     requestType: T,
-    data?: Record<string, unknown>
+    data?: Record<string, unknown>,
+    timeoutMs: number = RESPONSE_TIMEOUT_MS
   ): Promise<IFrameEventPayloadMap[T]> {
     return new Promise((resolve, reject) => {
       const parentOrigin = getParentOrigin();
@@ -120,10 +121,10 @@ export class IFrameMessenger {
         this.pendingRequests.delete(requestId);
         reject(
           new Error(
-            `${requestType} request timed out after ${RESPONSE_TIMEOUT_MS}ms`
+            `${requestType} request timed out after ${timeoutMs}ms`
           )
         );
-      }, RESPONSE_TIMEOUT_MS);
+      }, timeoutMs);
 
       this.pendingRequests.set(requestId, {
         resolve: resolve as (data: IFrameResponseValue) => void,

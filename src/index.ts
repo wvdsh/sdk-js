@@ -1,62 +1,63 @@
 import { ConvexClient } from "convex/browser";
-import { LobbyManager } from "./services/lobby";
-import { FileSystemManager } from "./services/fileSystem";
-import { UGCManager } from "./services/ugc";
-import { LeaderboardManager } from "./services/leaderboards";
-import { P2PManager } from "./services/p2p";
-import { StatsManager } from "./services/stats";
-import { HeartbeatManager } from "./services/heartbeat";
-import { GameEventManager } from "./services/gameEvents";
-import { FullscreenManager } from "./services/fullscreen";
-import { OverlayManager } from "./services/overlay";
-import { AudioManager } from "./services/audio";
-import { FriendsManager } from "./services/friends";
-import { logger, LOG_LEVEL } from "./utils/logger";
-import { IFrameMessenger } from "./utils/iframeMessenger";
-import { SwMessenger } from "./utils/swMessenger";
 import {
+  AvatarSize,
+  GAME_ENGINE,
+  LEADERBOARD_DISPLAY_TYPE,
+  LEADERBOARD_SORT_ORDER,
+  LOBBY_VISIBILITY,
   LobbyKickedReason,
   LobbyUserChangeType,
   P2PPacketDropReason,
-  AvatarSize,
-  LOBBY_VISIBILITY,
-  LEADERBOARD_SORT_ORDER,
-  LEADERBOARD_DISPLAY_TYPE,
   UGC_TYPE,
-  UGC_VISIBILITY,
-  GAME_ENGINE
+  UGC_VISIBILITY
 } from "./constants";
 import { WavedashEvents } from "./events";
-import type { WavedashEventMap } from "./types";
+import { AudioManager } from "./services/audio";
+import { FileSystemManager } from "./services/fileSystem";
+import { FriendsManager } from "./services/friends";
+import { FullscreenManager } from "./services/fullscreen";
+import { GameEventManager } from "./services/gameEvents";
+import { HeartbeatManager } from "./services/heartbeat";
+import { LeaderboardManager } from "./services/leaderboards";
+import { LobbyManager } from "./services/lobby";
 import type { WavedashManager } from "./services/manager";
+import { OverlayManager } from "./services/overlay";
+import { P2PManager } from "./services/p2p";
+import { PaidContentManager } from "./services/paidContent";
+import { StatsManager } from "./services/stats";
+import { UGCManager } from "./services/ugc";
+import type { WavedashEventMap } from "./types";
+import { IFrameMessenger } from "./utils/iframeMessenger";
+import { LOG_LEVEL, logger } from "./utils/logger";
+import { SwMessenger } from "./utils/swMessenger";
 
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
 
+import { IFRAME_MESSAGE_TYPE, SDKConfig, SDKUser, UrlParams } from "@wvdsh/api";
 import type {
-  Id,
-  LobbyVisibility,
-  LeaderboardSortOrder,
-  LeaderboardDisplayType,
-  WavedashConfig,
   EngineInstance,
+  Friend,
+  GameLaunchParams,
+  Id,
   Leaderboard,
+  LeaderboardDisplayType,
   LeaderboardEntries,
-  WavedashResponse,
-  UpsertedLeaderboardEntry,
+  LeaderboardSortOrder,
+  ListUGCItemsArgs,
+  Lobby,
+  LobbyUser,
+  LobbyVisibility,
+  P2PMessage,
+  PaginatedUGCItems,
+  RemoteFileMetadata,
   UGCType,
   UGCVisibility,
   UpdateUGCItemArgs,
-  PaginatedUGCItems,
-  ListUGCItemsArgs,
-  RemoteFileMetadata,
-  P2PMessage,
-  LobbyUser,
-  Lobby,
-  Friend,
-  GameLaunchParams
+  UpsertedLeaderboardEntry,
+  WavedashConfig,
+  WavedashResponse
 } from "./types";
-import { IFRAME_MESSAGE_TYPE, SDKConfig, SDKUser, UrlParams } from "@wvdsh/api";
 import { setParentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
@@ -66,12 +67,12 @@ import {
   vId,
   vNull,
   vNumber,
+  vObject,
   vOptional,
   vRecord,
   vString,
   vUint8Array,
-  vUnion,
-  vObject
+  vUnion
 } from "./utils/validation";
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -123,6 +124,7 @@ class WavedashSDK extends EventTarget {
   fullscreenManager: FullscreenManager;
   overlayManager: OverlayManager;
   audioManager: AudioManager;
+  paidContentManager: PaidContentManager;
   private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
@@ -136,7 +138,7 @@ class WavedashSDK extends EventTarget {
       expectAuth: true
     });
     this.gameCloudId = sdkConfig.gameCloudId;
-    this.iframeMessenger = iframeMessenger;  // should be above getAuthToken so it can post to parent, don't move this
+    this.iframeMessenger = iframeMessenger; // should be above getAuthToken so it can post to parent, don't move this
     this.convexClient.setAuth(({ forceRefreshToken }) =>
       this.getAuthToken(forceRefreshToken)
     );
@@ -156,6 +158,7 @@ class WavedashSDK extends EventTarget {
     this.fullscreenManager = new FullscreenManager(this);
     this.overlayManager = new OverlayManager(this);
     this.audioManager = new AudioManager(this);
+    this.paidContentManager = new PaidContentManager(this);
 
     // Single source of truth for teardown — `destroy()` iterates this list.
     // Order matches construction so destroys happen in dependency order
@@ -172,7 +175,8 @@ class WavedashSDK extends EventTarget {
       this.gameEventManager,
       this.fullscreenManager,
       this.overlayManager,
-      this.audioManager
+      this.audioManager,
+      this.paidContentManager
     ];
 
     // Cache current user for avatar lookups
@@ -1311,6 +1315,60 @@ class WavedashSDK extends EventTarget {
     );
   }
 
+  // ============
+  // Paid content
+  // ============
+
+  /**
+   * Returns true if the player owns the given paid content for this game.
+   * Reads the `entitlements` claim from the gameplay JWT — this is a UX hint, not a
+   * security check. The builds server re-verifies the JWT signature and gates
+   * paid asset bytes on every request, so a tampered client return value
+   * doesn't actually unlock anything. Pair with triggerPaywall() to drive
+   * in-game UI.
+   */
+  async isEntitled_EXPERIMENTAL(
+    contentId: string
+  ): Promise<WavedashResponse<boolean>> {
+    return this.apiCall(
+      this.paidContentManager,
+      "isEntitled",
+      [["contentId", vString]],
+      contentId
+    );
+  }
+
+  /**
+   * Returns the full list of paid-content IDs the player owns for this game.
+   * Reads the `entitlements` claim from the gameplay JWT — this is a UX hint,
+   * not a security check (see {@link isEntitled_EXPERIMENTAL}). Useful
+   * for access gating multiple items at once without a call per content ID.
+   */
+  async getEntitlements_EXPERIMENTAL(): Promise<
+    WavedashResponse<string[]>
+  > {
+    return this.apiCall(this.paidContentManager, "getEntitlements", []);
+  }
+
+  /**
+   * Trigger the Wavedash-rendered paywall flow for the given content. Resolves
+   * immediately with data `true` if the player already owns it; otherwise
+   * opens the modal and resolves with whether the user completed the purchase.
+   * After a successful purchase the JWT is refreshed automatically so a
+   * subsequent resource fetch is authenticated with the new purchase, and isEntitled
+   * will return true if the purchase was successful.
+   */
+  async triggerPaywall_EXPERIMENTAL(
+    contentIdentifier: string
+  ): Promise<WavedashResponse<boolean>> {
+    return this.apiCall(
+      this.paidContentManager,
+      "triggerPaywall",
+      [["contentIdentifier", vString]],
+      contentIdentifier
+    );
+  }
+
   // ==============================
   // User Presence
   // ==============================
@@ -1319,7 +1377,7 @@ class WavedashSDK extends EventTarget {
    * Supported keys:
    *   `status`  — one-line activity shown as the primary line (e.g. "Traveling in a group")
    *   `details` — secondary context shown beneath the status (e.g. current zone or mode)
-   * 
+   *
    * Pass an empty dictionary to clear all presence fields.
    * @param data Presence fields to update.
    * @returns true if the presence was updated successfully
@@ -1439,17 +1497,15 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Fetches (or returns cached) gameplay JWT. Callers outside of Convex's
-   * setAuth should use {@link ensureGameplayJwt} instead; this method is the
-   * fetcher wired into `ConvexClient.setAuth` and honors `forceRefresh` so the
-   * server can invalidate a stale token.
+   * Fetcher wired into `ConvexClient.setAuth`; other callers use
+   * {@link ensureGameplayJwt}. Same-origin POST to /auth/refresh, authenticated
+   * by the gameplaySession cookie.
    *
-   * Same-origin POST to /auth/refresh on the play domain — the
-   * gameplaySession cookie set by the play server during playKey exchange
-   * authenticates the request, so no cross-origin credentials handling needed.
-   *
-   * Concurrent callers share a single in-flight fetch to avoid duplicate
-   * refresh round-trips.
+   * Concurrent callers share one in-flight fetch. A forced refresh instead
+   * serializes behind any in-flight fetch (it may predate the event that
+   * required it, e.g. a purchase) and becomes the current promise; only the
+   * current promise notifies the parent, so a superseded refresh can't
+   * broadcast a stale token
    */
   private getAuthToken(forceRefresh = false): Promise<string> {
     if (!forceRefresh && this.gameplayJwt) {
@@ -1459,7 +1515,13 @@ class WavedashSDK extends EventTarget {
       return this.gameplayJwtPromise;
     }
 
-    const promise = (async () => {
+    // Serialize behind any in-flight refresh so we never run two /auth/refresh
+    // round-trips at once and the later-started one always resolves last.
+    const previous = this.gameplayJwtPromise;
+    const fetchToken = async (): Promise<string> => {
+      if (previous) {
+        await previous.catch(() => {});
+      }
       const response = await fetch("/auth/refresh", {
         method: "POST",
         credentials: "same-origin"
@@ -1467,22 +1529,28 @@ class WavedashSDK extends EventTarget {
       if (!response.ok) {
         throw new Error(`Failed to refresh gameplay token: ${response.status}`);
       }
-      this.gameplayJwt = await response.text();
-      // Push to parent so it can handle /end-session on its own
-      iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
-        gameplayJwt: this.gameplayJwt
+      return response.text();
+    };
+
+    const promise = fetchToken()
+      .then((token) => {
+        // Advance the in-memory cache unconditionally. Refreshes are serialized
+        // (each awaits `previous`), so tokens resolve in start order
+        this.gameplayJwt = token;
+        
+        // Notify the parent (for /end-session) only from the latest refresh
+        if (this.gameplayJwtPromise === promise) {
+          iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
+            gameplayJwt: token
+          });
+        }
+        return token;
+      })
+      .finally(() => {
+        if (this.gameplayJwtPromise === promise) {
+          this.gameplayJwtPromise = null;
+        }
       });
-      // Push to service worker so it can attach Bearer token
-      this.swMessenger.postToServiceWorker({
-        type: "embed.jwt-update",
-        payload: { gameplayJwt: this.gameplayJwt }
-      });
-      return this.gameplayJwt;
-    })().finally(() => {
-      if (this.gameplayJwtPromise === promise) {
-        this.gameplayJwtPromise = null;
-      }
-    });
 
     this.gameplayJwtPromise = promise;
     return promise;
@@ -1493,8 +1561,8 @@ class WavedashSDK extends EventTarget {
    * already running (e.g. from Convex's initial setAuth). Use this anywhere
    * you need to authenticate a request outside of the Convex client.
    */
-  async ensureGameplayJwt(): Promise<string> {
-    return this.getAuthToken();
+  async ensureGameplayJwt(forceRefresh: boolean = false): Promise<string> {
+    return this.getAuthToken(forceRefresh);
   }
 
   /**
