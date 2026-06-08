@@ -34,7 +34,13 @@ import { SwMessenger } from "./utils/swMessenger";
 // Create singleton instance for iframe messaging
 const iframeMessenger = new IFrameMessenger();
 
-import { IFRAME_MESSAGE_TYPE, SDKConfig, SDKUser, UrlParams } from "@wvdsh/api";
+import {
+  IFRAME_MESSAGE_TYPE,
+  SDKConfig,
+  SDKUser,
+  UrlParams,
+  SERVICE_WORKER_MESSAGE_TYPE
+} from "@wvdsh/api";
 import type {
   EngineInstance,
   Friend,
@@ -1344,9 +1350,7 @@ class WavedashSDK extends EventTarget {
    * not a security check (see {@link isEntitled_EXPERIMENTAL}). Useful
    * for access gating multiple items at once without a call per content ID.
    */
-  async getEntitlements_EXPERIMENTAL(): Promise<
-    WavedashResponse<string[]>
-  > {
+  async getEntitlements_EXPERIMENTAL(): Promise<WavedashResponse<string[]>> {
     return this.apiCall(this.paidContentManager, "getEntitlements", []);
   }
 
@@ -1537,7 +1541,7 @@ class WavedashSDK extends EventTarget {
         // Advance the in-memory cache unconditionally. Refreshes are serialized
         // (each awaits `previous`), so tokens resolve in start order
         this.gameplayJwt = token;
-        
+
         // Notify the parent (for /end-session) only from the latest refresh
         if (this.gameplayJwtPromise === promise) {
           iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
@@ -1583,14 +1587,14 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Respond to the service worker's `embed.creds-request` with the SDK's
+   * Respond to the service worker's creds request with the SDK's
    * current gameplay JWT. The SW asks when it wakes from termination with no
    * in-memory or IDB credentials (e.g. Safari ITP storage decay) — we're the
    * fastest live source. JWT only; sessionToken is owned by the SW + cookies.
    */
   private setupSwCredsListener(): void {
     this.swMessenger.addEventListener(
-      "embed.creds-request",
+      SERVICE_WORKER_MESSAGE_TYPE.EMBED_CREDS_REQUEST,
       async (_payload, reply) => {
         let jwt: string;
         try {
@@ -1600,7 +1604,7 @@ class WavedashSDK extends EventTarget {
           return;
         }
         reply({
-          type: "embed.creds-response",
+          type: SERVICE_WORKER_MESSAGE_TYPE.EMBED_CREDS_RESPONSE,
           payload: { gameplayJwt: jwt }
         });
       }

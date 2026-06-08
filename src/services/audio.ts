@@ -35,7 +35,7 @@ class WeakRefSet<T extends object> {
  * AudioManager
  *
  * Mutes & unmutes the game in response to MUTE_CHANGED iframe messages, without
- * the game needing to know anything about it.
+ * the game needing to handle it itself.
  *
  * Web Audio: subclass `AudioContext` so `ctx.destination` resolves to a master
  * GainNode that we control. The master gain wires to the real native destination,
@@ -43,11 +43,17 @@ class WeakRefSet<T extends object> {
  *
  * HTML Media (`<audio>`/`<video>`): override `HTMLMediaElement.prototype.muted`
  * to record the game's intended state, but write `true` to the underlying element
- * whenever the SDK is muted. Tracked elements come from three sources:
+ * whenever the SDK is muted. Tracked elements come from four sources:
  *  1. Pre-existing DOM media (`querySelectorAll`)
  *  2. `new Audio()` constructor shim (covers detached SFX)
  *  3. MutationObserver for any media added to the DOM later (covers innerHTML,
  *     framework rendering, createElement + append, etc.)
+ *  4. `HTMLMediaElement.prototype.play()` shim — the universal point where an
+ *     element starts producing audio. Catches anything driven purely via
+ *     `.play()`/`.volume` (never assigning `.muted`, never entering the DOM,
+ *     e.g. a PIXI/GDevelop intro video), force-muting it before playback begins
+ *     regardless of how it was created — the one path the DOM-based sources and
+ *     the `muted` setter all miss.
  */
 export class AudioManager extends WavedashManager {
   private _isMuted = false;
@@ -64,6 +70,7 @@ export class AudioManager extends WavedashManager {
   private originalWebKitAudioContext: typeof AudioContext | null = null;
   private originalAudio: typeof Audio | null = null;
   private originalMutedDescriptor: PropertyDescriptor | null = null;
+  private originalPlay: typeof HTMLMediaElement.prototype.play | null = null;
   private mutationObserver: MutationObserver | null = null;
 
   constructor(sdk: WavedashSDK) {
@@ -235,6 +242,20 @@ export class AudioManager extends WavedashManager {
         });
       })(this);
     }
+
+    // 5. `HTMLMediaElement.prototype.play()` — the universal point where a media
+    //    element starts producing audio. Tracking here force-mutes (when the SDK
+    //    is muted) before playback begins, catching off-DOM elements driven via
+    //    .play()/.volume that never assign .muted — the one path the DOM-based
+    //    sources and the muted setter all miss.
+    const originalPlay = HTMLMediaElement.prototype.play;
+    this.originalPlay = originalPlay;
+    ((manager) => {
+      HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+        manager.trackElement(this);
+        return originalPlay.call(this);
+      };
+    })(this);
   }
 
   private shimAudioContextClass(
@@ -292,6 +313,10 @@ export class AudioManager extends WavedashManager {
       if (this.originalAudio) {
         window.Audio = this.originalAudio;
       }
+    }
+
+    if (this.originalPlay) {
+      HTMLMediaElement.prototype.play = this.originalPlay;
     }
 
     if (this.originalMutedDescriptor) {
