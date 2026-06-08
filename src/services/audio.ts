@@ -35,7 +35,7 @@ class WeakRefSet<T extends object> {
  * AudioManager
  *
  * Mutes & unmutes the game in response to MUTE_CHANGED iframe messages, without
- * the game needing to know anything about it.
+ * the game needing to handle it itself.
  *
  * Web Audio: subclass `AudioContext` so `ctx.destination` resolves to a master
  * GainNode that we control. The master gain wires to the real native destination,
@@ -43,18 +43,17 @@ class WeakRefSet<T extends object> {
  *
  * HTML Media (`<audio>`/`<video>`): override `HTMLMediaElement.prototype.muted`
  * to record the game's intended state, but write `true` to the underlying element
- * whenever the SDK is muted. Tracked elements come from five sources:
+ * whenever the SDK is muted. Tracked elements come from four sources:
  *  1. Pre-existing DOM media (`querySelectorAll`)
  *  2. `new Audio()` constructor shim (covers detached SFX)
  *  3. MutationObserver for any media added to the DOM later (covers innerHTML,
  *     framework rendering, createElement + append, etc.)
- *  4. `document.createElement('audio'|'video')` shim — covers media created and
- *     kept OFF the DOM (e.g. a PIXI/GDevelop intro video), which the three DOM
- *     sources above never observe.
- *  5. `HTMLMediaElement.prototype.play()` shim — the universal point where an
+ *  4. `HTMLMediaElement.prototype.play()` shim — the universal point where an
  *     element starts producing audio. Catches anything driven purely via
- *     `.play()`/`.volume` (never assigning `.muted`, never entering the DOM),
- *     force-muting it before playback begins regardless of how it was created.
+ *     `.play()`/`.volume` (never assigning `.muted`, never entering the DOM,
+ *     e.g. a PIXI/GDevelop intro video), force-muting it before playback begins
+ *     regardless of how it was created — the one path the DOM-based sources and
+ *     the `muted` setter all miss.
  */
 export class AudioManager extends WavedashManager {
   private _isMuted = false;
@@ -71,7 +70,6 @@ export class AudioManager extends WavedashManager {
   private originalWebKitAudioContext: typeof AudioContext | null = null;
   private originalAudio: typeof Audio | null = null;
   private originalMutedDescriptor: PropertyDescriptor | null = null;
-  private originalCreateElement: typeof document.createElement | null = null;
   private originalPlay: typeof HTMLMediaElement.prototype.play | null = null;
   private mutationObserver: MutationObserver | null = null;
 
@@ -220,23 +218,6 @@ export class AudioManager extends WavedashManager {
         childList: true,
         subtree: true
       });
-
-      // 3c. `document.createElement('audio'|'video')` — covers media created and
-      //     kept OFF the DOM (e.g. a PIXI/GDevelop intro video driven via
-      //     .volume/.play()), which querySelectorAll and the MutationObserver
-      //     never see. Track at creation so the current/next mute state applies.
-      const originalCreateElement = document.createElement;
-      this.originalCreateElement = originalCreateElement;
-      ((manager) => {
-        document.createElement = function (
-          tagName: string,
-          options?: ElementCreationOptions
-        ) {
-          const el = originalCreateElement.call(document, tagName, options);
-          if (el instanceof HTMLMediaElement) manager.trackElement(el);
-          return el;
-        } as typeof document.createElement;
-      })(this);
     }
 
     // 4. Override HTMLMediaElement.prototype.muted so the game sees its own
@@ -332,10 +313,6 @@ export class AudioManager extends WavedashManager {
       if (this.originalAudio) {
         window.Audio = this.originalAudio;
       }
-    }
-
-    if (this.originalCreateElement && typeof document !== "undefined") {
-      document.createElement = this.originalCreateElement;
     }
 
     if (this.originalPlay) {
