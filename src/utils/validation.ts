@@ -58,7 +58,9 @@ export const vUint8Array: Validator<Uint8Array> = (value, path) => {
   return value;
 };
 
-export const vRecord: Validator<Record<string, string | number | boolean | null>> = (value, path) => {
+export const vRecord: Validator<
+  Record<string, string | number | boolean | null>
+> = (value, path) => {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
     throw new Error(
       `${path}: expected plain object, got ${describeValue(value)}`

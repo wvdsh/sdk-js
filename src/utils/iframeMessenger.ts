@@ -120,9 +120,7 @@ export class IFrameMessenger {
       const timeout = setTimeout(() => {
         this.pendingRequests.delete(requestId);
         reject(
-          new Error(
-            `${requestType} request timed out after ${timeoutMs}ms`
-          )
+          new Error(`${requestType} request timed out after ${timeoutMs}ms`)
         );
       }, timeoutMs);
 
