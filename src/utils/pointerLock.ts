@@ -7,9 +7,12 @@
  * Call the returned dispose fn to restore the native method.
  */
 
-const hasDom = typeof Element !== "undefined" && typeof document !== "undefined";
+const hasDom =
+  typeof Element !== "undefined" && typeof document !== "undefined";
 // Captured at module load, before anything could have replaced it.
-const nativeRequestPointerLock = hasDom ? Element.prototype.requestPointerLock : undefined;
+const nativeRequestPointerLock = hasDom
+  ? Element.prototype.requestPointerLock
+  : undefined;
 
 // Ref-counted so overlapping suspensions don't restore the native method early.
 let depth = 0;
@@ -30,6 +33,7 @@ export function suspendPointerLock(): () => void {
   return () => {
     if (disposed) return;
     disposed = true;
-    if (--depth === 0) Element.prototype.requestPointerLock = nativeRequestPointerLock;
+    if (--depth === 0)
+      Element.prototype.requestPointerLock = nativeRequestPointerLock;
   };
 }
