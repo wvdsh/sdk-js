@@ -39,6 +39,7 @@ import {
   SDKConfig,
   SDKUser,
   UrlParams,
+  PlayRouteCaller,
   SERVICE_WORKER_MESSAGE_TYPE
 } from "@wvdsh/api";
 import type {
@@ -1526,7 +1527,11 @@ class WavedashSDK extends EventTarget {
       if (previous) {
         await previous.catch(() => {});
       }
-      const response = await fetch("/auth/refresh", {
+      const refreshQuery = new URLSearchParams({
+        [UrlParams.Caller]: PlayRouteCaller.Wavedash
+      });
+      const refreshPath = `/auth/refresh?${refreshQuery.toString()}`;
+      const response = await fetch(refreshPath, {
         method: "POST",
         credentials: "same-origin"
       });
