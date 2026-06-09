@@ -1,6 +1,7 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
+import { suspendPointerLock } from "../utils/pointerLock";
 
 const PAYWALL_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -52,14 +53,20 @@ export class PaidContentManager extends WavedashManager {
     // for already-purchased content. Game flows can call triggerPaywall freely.
     if (await this.isEntitled(contentIdentifier)) return true;
 
-    // The SDK only knows the contentIdentifier — parent (mainsite) fetches the
-    // offer, displays the modal, and runs the purchase mutation. We just wait
-    // for the response.
-    const response = await this.sdk.iframeMessenger.requestFromParent(
-      IFRAME_MESSAGE_TYPE.TRIGGER_PAYWALL,
-      { contentIdentifier },
-      PAYWALL_TIMEOUT_MS
-    );
+    // Keep the cursor free while the modal is open (some games re-grab pointer
+    // lock every frame). Restored once the parent responds.
+    const restorePointerLock = suspendPointerLock();
+
+    let response;
+    try {
+      response = await this.sdk.iframeMessenger.requestFromParent(
+        IFRAME_MESSAGE_TYPE.TRIGGER_PAYWALL,
+        { contentIdentifier },
+        PAYWALL_TIMEOUT_MS
+      );
+    } finally {
+      restorePointerLock();
+    }
     if (!response.purchased) return false;
 
     // Force refresh JWT so the latest entitlements are reflected

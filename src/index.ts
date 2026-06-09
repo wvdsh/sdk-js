@@ -394,6 +394,10 @@ class WavedashSDK extends EventTarget {
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
     // Take focus when loading is complete
     this.overlayManager.takeFocus();
+
+    setTimeout(async () => {
+      await this.triggerPaywall_EXPERIMENTAL("full-version");
+    }, 2000);
   }
 
   get gameLoaded(): boolean {
