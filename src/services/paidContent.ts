@@ -1,6 +1,7 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
+import { suspendPointerLock } from "../utils/pointerLock";
 
 const PAYWALL_TIMEOUT_MS = 10 * 60 * 1000;
 
@@ -37,6 +38,9 @@ function readEntitlementsFromJwt(jwt: string): string[] {
 }
 
 export class PaidContentManager extends WavedashManager {
+  private paywallOpen = false;
+  private restorePointerLock: (() => void) | undefined;
+
   async isEntitled(contentId: string): Promise<boolean> {
     const jwt = await this.sdk.ensureGameplayJwt();
     return readEntitlementsFromJwt(jwt).includes(contentId);
@@ -52,18 +56,41 @@ export class PaidContentManager extends WavedashManager {
     // for already-purchased content. Game flows can call triggerPaywall freely.
     if (await this.isEntitled(contentIdentifier)) return true;
 
-    // The SDK only knows the contentIdentifier — parent (mainsite) fetches the
-    // offer, displays the modal, and runs the purchase mutation. We just wait
-    // for the response.
-    const response = await this.sdk.iframeMessenger.requestFromParent(
-      IFRAME_MESSAGE_TYPE.TRIGGER_PAYWALL,
-      { contentIdentifier },
-      PAYWALL_TIMEOUT_MS
-    );
+    // Don't let the game open a second paywall over an in-progress one.
+    if (this.paywallOpen) {
+      throw new Error('Paywall already in progress');
+    }
+    this.paywallOpen = true;
+
+    // Keep the cursor free while the modal is open
+    // Restored once the parent responds (or on destroy).
+    this.restorePointerLock = suspendPointerLock();
+
+    let response;
+    try {
+      response = await this.sdk.iframeMessenger.requestFromParent(
+        IFRAME_MESSAGE_TYPE.TRIGGER_PAYWALL,
+        { contentIdentifier },
+        PAYWALL_TIMEOUT_MS
+      );
+    } finally {
+      this.restorePointerLock?.();
+      this.restorePointerLock = undefined;
+      this.paywallOpen = false;
+    }
     if (!response.purchased) return false;
 
     // Force refresh JWT so the latest entitlements are reflected
     await this.sdk.ensureGameplayJwt(true);
     return true;
+  }
+
+  isPaywallOpen(): boolean {
+    return this.paywallOpen;
+  }
+
+  destroy(): void {
+    this.restorePointerLock?.();
+    this.restorePointerLock = undefined;
   }
 }

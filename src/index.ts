@@ -392,8 +392,6 @@ class WavedashSDK extends EventTarget {
     this.gameFinishedLoading = true;
     this.heartbeatManager.start();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
-    // Take focus when loading is complete
-    this.overlayManager.takeFocus();
   }
 
   get gameLoaded(): boolean {
