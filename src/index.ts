@@ -392,10 +392,6 @@ class WavedashSDK extends EventTarget {
     this.gameFinishedLoading = true;
     this.heartbeatManager.start();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
-
-    setTimeout(async () => {
-      await this.triggerPaywall_EXPERIMENTAL("full-version");
-    }, 2000);
   }
 
   get gameLoaded(): boolean {
