@@ -38,6 +38,9 @@ function readEntitlementsFromJwt(jwt: string): string[] {
 }
 
 export class PaidContentManager extends WavedashManager {
+  private paywallOpen = false;
+  private restorePointerLock: (() => void) | undefined;
+
   async isEntitled(contentId: string): Promise<boolean> {
     const jwt = await this.sdk.ensureGameplayJwt();
     return readEntitlementsFromJwt(jwt).includes(contentId);
@@ -53,9 +56,18 @@ export class PaidContentManager extends WavedashManager {
     // for already-purchased content. Game flows can call triggerPaywall freely.
     if (await this.isEntitled(contentIdentifier)) return true;
 
-    // Keep the cursor free while the modal is open (some games re-grab pointer
-    // lock every frame). Restored once the parent responds.
-    const restorePointerLock = suspendPointerLock();
+    // Don't let the game open a second paywall over an in-progress one.
+    if (this.paywallOpen) {
+      logger.warn(
+        `triggerPaywall(${contentIdentifier}) ignored: a paywall is already open`
+      );
+      return false;
+    }
+    this.paywallOpen = true;
+
+    // Keep the cursor free while the modal is open
+    // Restored once the parent responds (or on destroy).
+    this.restorePointerLock = suspendPointerLock();
 
     let response;
     try {
@@ -65,12 +77,19 @@ export class PaidContentManager extends WavedashManager {
         PAYWALL_TIMEOUT_MS
       );
     } finally {
-      restorePointerLock();
+      this.restorePointerLock?.();
+      this.restorePointerLock = undefined;
+      this.paywallOpen = false;
     }
     if (!response.purchased) return false;
 
     // Force refresh JWT so the latest entitlements are reflected
     await this.sdk.ensureGameplayJwt(true);
     return true;
+  }
+
+  destroy(): void {
+    this.restorePointerLock?.();
+    this.restorePointerLock = undefined;
   }
 }

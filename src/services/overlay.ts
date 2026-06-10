@@ -24,14 +24,13 @@ export class OverlayManager extends WavedashManager {
 
     this.sdk.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.TAKE_FOCUS,
-      () => takeFocus()
+      takeFocus
     );
 
-    /** @TODO uncomment once @wvdsh/api is published with latest IFRAME_MESSAGE_TYPE */
-    // this.sdk.iframeMessenger.addEventListener(
-    //   IFRAME_MESSAGE_TYPE.OVERLAY_CHANGED,
-    //   ({ isOpen }) => this.setOpen(isOpen)
-    // );
+    this.sdk.iframeMessenger.addEventListener(
+      IFRAME_MESSAGE_TYPE.OVERLAY_CHANGED,
+      ({ isOpen }) => this.setOpen(isOpen)
+    );
 
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", this.handleKeyDown);
@@ -60,4 +59,12 @@ export class OverlayManager extends WavedashManager {
       this.toggleOverlay();
     }
   };
+
+  destroy(): void {
+    this.restorePointerLock?.();
+    this.restorePointerLock = undefined;
+    if (typeof window !== "undefined") {
+      window.removeEventListener("keydown", this.handleKeyDown);
+    }
+  }
 }
