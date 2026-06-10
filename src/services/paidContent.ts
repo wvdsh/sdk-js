@@ -58,10 +58,7 @@ export class PaidContentManager extends WavedashManager {
 
     // Don't let the game open a second paywall over an in-progress one.
     if (this.paywallOpen) {
-      logger.warn(
-        `triggerPaywall(${contentIdentifier}) ignored: a paywall is already open`
-      );
-      return false;
+      throw new Error('Paywall already in progress');
     }
     this.paywallOpen = true;
 
@@ -86,6 +83,10 @@ export class PaidContentManager extends WavedashManager {
     // Force refresh JWT so the latest entitlements are reflected
     await this.sdk.ensureGameplayJwt(true);
     return true;
+  }
+
+  isPaywallOpen(): boolean {
+    return this.paywallOpen;
   }
 
   destroy(): void {
