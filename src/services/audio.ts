@@ -58,6 +58,72 @@ export class AudioManager extends WavedashManager {
     return this._volume;
   }
 
+  /**
+   * Build a MediaStream audio tap of everything the game plays, for gameplay
+   * capture (see ScreenCaptureManager). Returns the tap's audio tracks plus a
+   * `dispose()` that tears down the capture-only graph edges.
+   *
+   * Everything already funnels through the per-context master GainNodes each
+   * frame's shim owns, so capture is just: master gain → MediaStreamDestination.
+   * Multiple contexts (across frames too) are mixed into one destination on a
+   * "host" context, bridging the others across via MediaStreamSource nodes
+   * (Web Audio nodes can't connect across contexts directly).
+   *
+   * HTML media elements are rerouted into Web Audio first (see
+   * {@link AudioFrameShim.captureSources}). Because the recording rides the
+   * master gains, captured audio respects the user's volume/mute — matching
+   * what they actually hear.
+   */
+  createCaptureTap(): {
+    tracks: MediaStreamTrack[];
+    dispose: () => void;
+  } | null {
+    const sources = [...this.frames].flatMap((shim) => shim.captureSources());
+    const host = sources[sources.length - 1];
+    if (!host) return null;
+    const hostCtx = host.ctx;
+
+    // Autoplay policy may have left contexts suspended; a capture request
+    // implies a user gesture happened upstream, so nudge them awake.
+    for (const { ctx } of sources) {
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+      }
+    }
+
+    const captureDest = hostCtx.createMediaStreamDestination();
+    const cleanups: (() => void)[] = [];
+
+    for (const { ctx, gain } of sources) {
+      if (ctx === hostCtx) {
+        gain.connect(captureDest);
+        cleanups.push(() => gain.disconnect(captureDest));
+      } else {
+        const bridgeDest = ctx.createMediaStreamDestination();
+        gain.connect(bridgeDest);
+        const bridgeSrc = hostCtx.createMediaStreamSource(bridgeDest.stream);
+        bridgeSrc.connect(captureDest);
+        cleanups.push(() => {
+          gain.disconnect(bridgeDest);
+          bridgeSrc.disconnect(captureDest);
+        });
+      }
+    }
+
+    return {
+      tracks: captureDest.stream.getAudioTracks(),
+      dispose: () => {
+        for (const cleanup of cleanups) {
+          try {
+            cleanup();
+          } catch {
+            // Context may have been closed by the game mid-recording.
+          }
+        }
+      }
+    };
+  }
+
   private handleVolume = (data: { volume: number }): void => {
     if (!Number.isFinite(data.volume) || data.volume < 0 || data.volume > 1)
       return;
@@ -216,6 +282,12 @@ class AudioFrameShim {
   private webAudioElements = new WeakSet<HTMLMediaElement>();
   private originalVolumeDescriptor: PropertyDescriptor | null = null;
 
+  // Context we created to reroute media elements for capture when the frame
+  // had no Web Audio of its own. Held strongly: rerouted elements play through
+  // it for the rest of their lives, and reusing it across recordings avoids
+  // piling up contexts.
+  private captureContext: AudioContext | null = null;
+
   // Utterances + the game's intended volume.
   private intendedUtteranceVolume = new WeakMap<
     SpeechSynthesisUtterance,
@@ -281,6 +353,58 @@ class AudioFrameShim {
         );
       });
     }
+  }
+
+  /**
+   * Live (context, master gain) pairs for gameplay capture.
+   *
+   * Media elements not already in Web Audio are rerouted into one of this
+   * frame's contexts (creating one if the frame has none) via
+   * createMediaElementSource. That reroute is permanent for the life of the
+   * element (the Web Audio spec offers no undo), but it's transparent: output
+   * still flows master gain → real destination, and the shimmed
+   * createMediaElementSource marks it in `webAudioElements` so volume moves to
+   * the master gain instead of being applied twice. Cross-origin media without
+   * CORS headers will tap as silence — same limitation as any Web Audio capture.
+   */
+  captureSources(): { ctx: AudioContext; gain: GainNode }[] {
+    const sources: { ctx: AudioContext; gain: GainNode }[] = [];
+    this.contexts.forEach((ctx) => {
+      const gain = this.contextGains.get(ctx);
+      if (gain && ctx.state !== "closed") sources.push({ ctx, gain });
+    });
+
+    const pending: HTMLMediaElement[] = [];
+    this.elements.forEach((el) => {
+      if (!this.webAudioElements.has(el)) pending.push(el);
+    });
+    if (pending.length === 0) return sources;
+
+    let target = sources[sources.length - 1];
+    if (!target) {
+      if (!this.captureContext || this.captureContext.state === "closed") {
+        if (!this.win.AudioContext) return sources;
+        try {
+          // Routed through our shim, so it self-registers in `contexts`.
+          this.captureContext = new this.win.AudioContext();
+        } catch {
+          return sources;
+        }
+      }
+      const gain = this.contextGains.get(this.captureContext);
+      if (!gain) return sources;
+      target = { ctx: this.captureContext, gain };
+      sources.push(target);
+    }
+
+    for (const el of pending) {
+      try {
+        target.ctx.createMediaElementSource(el).connect(target.gain);
+      } catch {
+        // Element already claimed by another context, or CORS-restricted.
+      }
+    }
+    return sources;
   }
 
   /** Hand a discovered child iframe to the manager, remembering it for teardown. */
@@ -756,6 +880,7 @@ class AudioFrameShim {
     this.intendedMuted = new WeakMap();
     this.intendedVolume = new WeakMap();
     this.webAudioElements = new WeakSet();
+    this.captureContext = null;
     this.intendedUtteranceVolume = new WeakMap();
   }
 }

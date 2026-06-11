@@ -29,6 +29,7 @@ import { LobbyManager } from "./services/lobby";
 import type { WavedashManager } from "./services/manager";
 import { P2PManager } from "./services/p2p";
 import { PaidContentManager } from "./services/paidContent";
+import { ScreenCaptureManager } from "./services/screenCapture";
 import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
 import type {
@@ -160,6 +161,7 @@ class WavedashSDK extends EventTarget {
   p2pManager: P2PManager;
   fullscreenManager: FullscreenManager;
   audioManager: AudioManager;
+  screenCaptureManager: ScreenCaptureManager;
   paidContentManager: PaidContentManager;
   externalLinkManager: ExternalLinkManager;
   launchParamManager: LaunchParamManager;
@@ -199,6 +201,8 @@ class WavedashSDK extends EventTarget {
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
     this.audioManager = new AudioManager(this, sdkConfig.initialVolume);
+    // Depends on audioManager for the capture audio tap.
+    this.screenCaptureManager = new ScreenCaptureManager(this);
     this.paidContentManager = new PaidContentManager(this);
     this.externalLinkManager = new ExternalLinkManager(this);
 
@@ -219,6 +223,7 @@ class WavedashSDK extends EventTarget {
       this.gameEventManager,
       this.fullscreenManager,
       this.audioManager,
+      this.screenCaptureManager,
       this.paidContentManager,
       this.externalLinkManager
     ];
