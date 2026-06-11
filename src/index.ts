@@ -1633,12 +1633,15 @@ export function setupWavedashSDK(): WavedashSDK {
   const existing = window.Wavedash;
   if (existing) return existing;
 
-  const raw = new URLSearchParams(window.location.search).get(
-    UrlParams.SdkConfig
-  );
+  // `wavedash dev` inlines the config as a global instead of the query
+  // param, keeping the localhost URL clean.
+  const raw =
+    new URLSearchParams(window.location.search).get(UrlParams.SdkConfig) ??
+    (window as { __wavedashSdkConfig?: string }).__wavedashSdkConfig;
+
   if (!raw) {
     throw new Error(
-      `Wavedash SDK: missing ?${UrlParams.SdkConfig}= query param on the iframe URL.`
+      `Wavedash SDK: missing ?${UrlParams.SdkConfig}= query param (or __wavedashSdkConfig global) on the page.`
     );
   }
 
