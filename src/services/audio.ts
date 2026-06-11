@@ -54,6 +54,10 @@ class WeakRefSet<T extends object> {
  *     e.g. a PIXI/GDevelop intro video), force-muting it before playback begins
  *     regardless of how it was created — the one path the DOM-based sources and
  *     the `muted` setter all miss.
+ *
+ * Speech synthesis (`window.speechSynthesis`): bypasses both Web Audio and HTML
+ * media entirely, so it gets its own shim — `speak()` forces the utterance's
+ * native volume to 0 while muted.
  */
 export class AudioManager extends WavedashManager {
   private _isMuted = false;
@@ -65,12 +69,20 @@ export class AudioManager extends WavedashManager {
   private elements = new WeakRefSet<HTMLMediaElement>();
   private intendedMuted = new WeakMap<HTMLMediaElement, boolean>();
 
+  // Speech synthesis utterances + their game-intended volume
+  private intendedUtteranceVolume = new WeakMap<
+    SpeechSynthesisUtterance,
+    number
+  >();
+
   // Originals (restored on destroy)
   private originalAudioContext: typeof AudioContext | null = null;
   private originalWebKitAudioContext: typeof AudioContext | null = null;
   private originalAudio: typeof Audio | null = null;
   private originalMutedDescriptor: PropertyDescriptor | null = null;
   private originalPlay: typeof HTMLMediaElement.prototype.play | null = null;
+  private originalSpeak: typeof SpeechSynthesis.prototype.speak | null = null;
+  private originalUtteranceVolumeDescriptor: PropertyDescriptor | null = null;
   private mutationObserver: MutationObserver | null = null;
 
   constructor(sdk: WavedashSDK) {
@@ -256,6 +268,90 @@ export class AudioManager extends WavedashManager {
         return originalPlay.call(this);
       };
     })(this);
+
+    // 6. Speech synthesis — bypasses Web Audio and HTML media entirely.
+    this.shimSpeechSynthesis();
+  }
+
+  /**
+   * Shim `window.speechSynthesis` so speech respects the SDK mute state.
+   *
+   * Never swallows speak(): utterances have a lifecycle the game may sequence
+   * off (onstart/onend, synth.speaking/pending checks), so every call is
+   * delegated and silenced via volume instead. Volume is sampled at speak()
+   * time, so forcing the native value to 0 right before delegating silences
+   * anything spoken while muted; in-flight speech at the mute edge is
+   * deliberately left to finish (can't be softened mid-utterance, and
+   * cancel() would discard the pending queue).
+   */
+  private shimSpeechSynthesis(): void {
+    if (
+      !window.speechSynthesis ||
+      typeof SpeechSynthesisUtterance === "undefined"
+    ) {
+      return;
+    }
+
+    // `volume` descriptor: the game reads back its intended volume even
+    // while we've written 0 to the native slot (mirrors the `muted` shim).
+    // Game writes go through to the native slot too — speak() re-forces 0
+    // if still muted, so order doesn't matter.
+    this.originalUtteranceVolumeDescriptor =
+      Object.getOwnPropertyDescriptor(
+        SpeechSynthesisUtterance.prototype,
+        "volume"
+      ) ?? null;
+    const volDesc = this.originalUtteranceVolumeDescriptor;
+    if (volDesc?.get && volDesc?.set) {
+      ((manager) => {
+        Object.defineProperty(SpeechSynthesisUtterance.prototype, "volume", {
+          configurable: true,
+          get(this: SpeechSynthesisUtterance): number {
+            const intended = manager.intendedUtteranceVolume.get(this);
+            return intended !== undefined
+              ? intended
+              : (volDesc.get!.call(this) as number);
+          },
+          set(this: SpeechSynthesisUtterance, value: number) {
+            manager.intendedUtteranceVolume.set(this, value);
+            volDesc.set!.call(this, value);
+          }
+        });
+      })(this);
+    }
+
+    // speak() wrapper: force native volume to 0 while muted; restore the
+    // intended volume on unmuted speaks so a reused utterance object
+    // doesn't stay silent after an earlier muted playthrough.
+    const speechSynthesis = window.speechSynthesis;
+    const originalSpeak = speechSynthesis.speak;
+    this.originalSpeak = originalSpeak;
+    ((manager) => {
+      speechSynthesis.speak = function (utterance: SpeechSynthesisUtterance) {
+        if (manager._isMuted) {
+          if (!manager.intendedUtteranceVolume.has(utterance)) {
+            const current = volDesc?.get
+              ? (volDesc.get.call(utterance) as number)
+              : utterance.volume;
+            manager.intendedUtteranceVolume.set(utterance, current);
+          }
+          // Use the native setter where available — plain assignment would
+          // route through our descriptor shim and record 0 as intended.
+          if (volDesc?.set) volDesc.set.call(utterance, 0);
+          else utterance.volume = 0;
+        } else {
+          const intended = manager.intendedUtteranceVolume.get(utterance);
+          if (intended !== undefined) {
+            if (volDesc?.set) volDesc.set.call(utterance, intended);
+            else utterance.volume = intended;
+            // Native slot now equals intended, so the map entry is
+            // redundant — drop it; future game writes re-record.
+            manager.intendedUtteranceVolume.delete(utterance);
+          }
+        }
+        return originalSpeak.call(speechSynthesis, utterance);
+      };
+    })(this);
   }
 
   private shimAudioContextClass(
@@ -313,6 +409,20 @@ export class AudioManager extends WavedashManager {
       if (this.originalAudio) {
         window.Audio = this.originalAudio;
       }
+      if (this.originalSpeak && window.speechSynthesis) {
+        window.speechSynthesis.speak = this.originalSpeak;
+      }
+    }
+
+    if (
+      this.originalUtteranceVolumeDescriptor &&
+      typeof SpeechSynthesisUtterance !== "undefined"
+    ) {
+      Object.defineProperty(
+        SpeechSynthesisUtterance.prototype,
+        "volume",
+        this.originalUtteranceVolumeDescriptor
+      );
     }
 
     if (this.originalPlay) {
@@ -330,6 +440,7 @@ export class AudioManager extends WavedashManager {
     this.contexts.clear();
     this.elements.clear();
     this.intendedMuted = new WeakMap();
+    this.intendedUtteranceVolume = new WeakMap();
 
     super.destroy();
   }
