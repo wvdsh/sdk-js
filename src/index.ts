@@ -24,6 +24,7 @@ import type { WavedashManager } from "./services/manager";
 import { OverlayManager } from "./services/overlay";
 import { P2PManager } from "./services/p2p";
 import { PaidContentManager } from "./services/paidContent";
+import { ScreenCaptureManager } from "./services/screenCapture";
 import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
 import type { WavedashEventMap } from "./types";
@@ -131,6 +132,7 @@ class WavedashSDK extends EventTarget {
   fullscreenManager: FullscreenManager;
   overlayManager: OverlayManager;
   audioManager: AudioManager;
+  screenCaptureManager: ScreenCaptureManager;
   paidContentManager: PaidContentManager;
   private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
@@ -165,6 +167,8 @@ class WavedashSDK extends EventTarget {
     this.fullscreenManager = new FullscreenManager(this);
     this.overlayManager = new OverlayManager(this);
     this.audioManager = new AudioManager(this);
+    // Depends on audioManager for the capture audio tap.
+    this.screenCaptureManager = new ScreenCaptureManager(this);
     this.paidContentManager = new PaidContentManager(this);
 
     // Single source of truth for teardown — `destroy()` iterates this list.
@@ -183,6 +187,7 @@ class WavedashSDK extends EventTarget {
       this.fullscreenManager,
       this.overlayManager,
       this.audioManager,
+      this.screenCaptureManager,
       this.paidContentManager
     ];
 

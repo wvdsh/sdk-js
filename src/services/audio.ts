@@ -75,6 +75,11 @@ export class AudioManager extends WavedashManager {
     number
   >();
 
+  // Media elements already rerouted through Web Audio for capture. The
+  // reroute (createMediaElementSource) is permanent per element, so we must
+  // never attempt it twice — the second call throws InvalidStateError.
+  private capturedElements = new WeakSet<HTMLMediaElement>();
+
   // Originals (restored on destroy)
   private originalAudioContext: typeof AudioContext | null = null;
   private originalWebKitAudioContext: typeof AudioContext | null = null;
@@ -123,6 +128,108 @@ export class AudioManager extends WavedashManager {
       IFRAME_MESSAGE_TYPE.TOGGLE_MUTE
     );
     return response.success;
+  }
+
+  /**
+   * Build a MediaStream audio tap of everything the game plays, for gameplay
+   * capture (see ScreenCaptureManager). Returns the tap's audio tracks plus a
+   * `dispose()` that tears down the capture-only graph edges.
+   *
+   * Everything already funnels through the per-context master GainNodes this
+   * manager owns, so capture is just: master gain → MediaStreamDestination.
+   * Multiple contexts are mixed into one destination on a "host" context,
+   * bridging the others across via MediaStreamSource nodes (Web Audio nodes
+   * can't connect across contexts directly).
+   *
+   * HTML media elements are rerouted into the host context's master gain via
+   * createMediaElementSource. That reroute is permanent for the life of the
+   * element (the Web Audio spec offers no undo), but it's transparent: output
+   * still flows master gain → real destination, and both mute paths (native
+   * `muted` + master-gain ramp) keep working. Cross-origin media without CORS
+   * headers will tap as silence — same limitation as any Web Audio capture.
+   *
+   * Because the recording rides the master gains, captured audio respects the
+   * user's mute state — matching what they actually hear.
+   */
+  createCaptureTap(): {
+    tracks: MediaStreamTrack[];
+    dispose: () => void;
+  } | null {
+    if (typeof window === "undefined") return null;
+
+    // No game AudioContext yet? Create one (routed through our shim, so it
+    // self-registers in `contexts`) — but only if there are media elements
+    // worth tapping; otherwise there's simply no audio to capture.
+    if (this.contexts.size === 0) {
+      let hasMedia = false;
+      this.elements.forEach(() => {
+        hasMedia = true;
+      });
+      if (!hasMedia || !window.AudioContext) return null;
+      try {
+        void new window.AudioContext();
+      } catch {
+        return null;
+      }
+    }
+
+    const entries = [...this.contexts.entries()];
+    const hostEntry = entries[entries.length - 1];
+    if (!hostEntry) return null;
+    const [hostCtx, hostGain] = hostEntry;
+
+    // Autoplay policy may have left contexts suspended; a capture request
+    // implies a user gesture happened upstream, so nudge them awake.
+    for (const [ctx] of entries) {
+      if (ctx.state === "suspended") {
+        ctx.resume().catch(() => {});
+      }
+    }
+
+    const captureDest = hostCtx.createMediaStreamDestination();
+    const cleanups: (() => void)[] = [];
+
+    for (const [ctx, gain] of entries) {
+      if (ctx === hostCtx) {
+        gain.connect(captureDest);
+        cleanups.push(() => gain.disconnect(captureDest));
+      } else {
+        const bridgeDest = ctx.createMediaStreamDestination();
+        gain.connect(bridgeDest);
+        const bridgeSrc = hostCtx.createMediaStreamSource(bridgeDest.stream);
+        bridgeSrc.connect(captureDest);
+        cleanups.push(() => {
+          gain.disconnect(bridgeDest);
+          bridgeSrc.disconnect(captureDest);
+        });
+      }
+    }
+
+    // Reroute tracked HTML media into the host master gain so it lands in
+    // the capture mix (and stays audible through master → real destination).
+    this.elements.forEach((el) => {
+      if (this.capturedElements.has(el)) return;
+      try {
+        const src = hostCtx.createMediaElementSource(el);
+        src.connect(hostGain);
+        this.capturedElements.add(el);
+      } catch {
+        // Element already claimed by another context, or CORS-restricted.
+      }
+    });
+
+    return {
+      tracks: captureDest.stream.getAudioTracks(),
+      dispose: () => {
+        for (const cleanup of cleanups) {
+          try {
+            cleanup();
+          } catch {
+            // Context may have been closed by the game mid-recording.
+          }
+        }
+      }
+    };
   }
 
   private handleMute = (data: { isMuted: boolean }): void => {
