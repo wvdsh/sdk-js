@@ -1333,27 +1333,27 @@ class WavedashSDK extends EventTarget {
    * in-game UI.
    */
   async isEntitled(
-    contentId: string
+    contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
       this.paidContentManager,
       "isEntitled",
-      [["contentId", vString]],
-      contentId
+      [["contentIdentifier", vString]],
+      contentIdentifier
     );
   }
   // Kept for backwards compatibility
   async isEntitled_EXPERIMENTAL(
-    contentId: string
+    contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
-    return this.isEntitled(contentId);
+    return this.isEntitled(contentIdentifier);
   }
 
   /**
-   * Returns the full list of paid-content IDs the player owns for this game.
+   * Returns the full list of paid-content identifiers the player owns for this game.
    * Reads the `entitlements` claim from the gameplay JWT — this is a UX hint,
    * not a security check (see {@link isEntitled}). Useful
-   * for access gating multiple items at once without a call per content ID.
+   * for access gating multiple items at once without a call per content identifier.
    */
   async getEntitlements(): Promise<WavedashResponse<string[]>> {
     return this.apiCall(this.paidContentManager, "getEntitlements", []);

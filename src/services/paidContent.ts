@@ -41,9 +41,9 @@ export class PaidContentManager extends WavedashManager {
   private paywallOpen = false;
   private restorePointerLock: (() => void) | undefined;
 
-  async isEntitled(contentId: string): Promise<boolean> {
+  async isEntitled(contentIdentifier: string): Promise<boolean> {
     const jwt = await this.sdk.ensureGameplayJwt();
-    return readEntitlementsFromJwt(jwt).includes(contentId);
+    return readEntitlementsFromJwt(jwt).includes(contentIdentifier);
   }
 
   async getEntitlements(): Promise<string[]> {
