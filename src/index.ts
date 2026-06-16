@@ -1332,7 +1332,7 @@ class WavedashSDK extends EventTarget {
    * doesn't actually unlock anything. Pair with triggerPaywall() to drive
    * in-game UI.
    */
-  async isEntitled_EXPERIMENTAL(
+  async isEntitled(
     contentId: string
   ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
@@ -1342,15 +1342,25 @@ class WavedashSDK extends EventTarget {
       contentId
     );
   }
+  // Kept for backwards compatibility
+  async isEntitled_EXPERIMENTAL(
+    contentId: string
+  ): Promise<WavedashResponse<boolean>> {
+    return this.isEntitled(contentId);
+  }
 
   /**
    * Returns the full list of paid-content IDs the player owns for this game.
    * Reads the `entitlements` claim from the gameplay JWT — this is a UX hint,
-   * not a security check (see {@link isEntitled_EXPERIMENTAL}). Useful
+   * not a security check (see {@link isEntitled}). Useful
    * for access gating multiple items at once without a call per content ID.
    */
-  async getEntitlements_EXPERIMENTAL(): Promise<WavedashResponse<string[]>> {
+  async getEntitlements(): Promise<WavedashResponse<string[]>> {
     return this.apiCall(this.paidContentManager, "getEntitlements", []);
+  }
+  // Kept for backwards compatibility
+  async getEntitlements_EXPERIMENTAL(): Promise<WavedashResponse<string[]>> {
+    return this.getEntitlements();
   }
 
   /**
@@ -1361,7 +1371,7 @@ class WavedashSDK extends EventTarget {
    * subsequent resource fetch is authenticated with the new purchase, and isEntitled
    * will return true if the purchase was successful.
    */
-  async triggerPaywall_EXPERIMENTAL(
+  async triggerPaywall(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
     return this.apiCall(
@@ -1370,6 +1380,12 @@ class WavedashSDK extends EventTarget {
       [["contentIdentifier", vString]],
       contentIdentifier
     );
+  }
+  // Kept for backwards compatibility
+  async triggerPaywall_EXPERIMENTAL(
+    contentIdentifier: string
+  ): Promise<WavedashResponse<boolean>> {
+    return this.triggerPaywall(contentIdentifier);
   }
 
   // ==============================
