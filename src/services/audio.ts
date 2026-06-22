@@ -21,10 +21,12 @@ export class AudioManager extends WavedashManager {
   private frames = new Set<AudioFrameShim>();
 
   // Per-iframe state so we can re-shim across navigations/swaps and tear down
-  // the right frame when an iframe is removed or re-navigates.
+  // the right frame when an iframe is removed or re-navigates. Keyed on the
+  // Document (replaced on every navigation), not contentWindow (a stable
+  // WindowProxy that survives navigations and so can't reveal a realm change).
   private iframeBindings = new WeakMap<
     HTMLIFrameElement,
-    { win: Window; shim: AudioFrameShim }
+    { doc: Document; shim: AudioFrameShim }
   >();
   private iframeLoadHandlers = new Map<HTMLIFrameElement, () => void>();
   private boundIframes = new Set<HTMLIFrameElement>();
@@ -117,45 +119,55 @@ export class AudioManager extends WavedashManager {
       this.iframeLoadHandlers.delete(iframe);
     }
     this.boundIframes.delete(iframe);
-    const binding = this.iframeBindings.get(iframe);
-    if (binding) {
-      this.frames.delete(binding.shim);
-      binding.shim.uninstall();
-      this.iframeBindings.delete(iframe);
-    }
+    this.teardownFrame(iframe);
   }
 
   /**
-   * Install (or re-install) a shim for an iframe's current content window.
-   * No-ops while cross-origin or not yet navigated; replaces the previous shim
-   * when the iframe navigates to a fresh document.
+   * Install (or re-install) a shim for an iframe's current document. No-ops
+   * while not yet navigated or already shimmed; replaces the previous shim when
+   * the iframe navigates to a fresh document, and drops it when it goes
+   * cross-origin (we can no longer reach it).
    */
   private attachIframe(iframe: HTMLIFrameElement): void {
     let win: FrameWindow | null = null;
+    let doc: Document | null = null;
     try {
       const cw = iframe.contentWindow as FrameWindow | null;
       if (cw) {
-        void cw.document; // throws for cross-origin
+        // contentWindow is a stable WindowProxy across navigations, so the
+        // document — which is replaced each navigation — is what reveals a
+        // realm change. Reading it also throws for cross-origin frames.
+        doc = cw.document;
         win = cw;
       }
     } catch {
-      return; // cross-origin — nothing we can shim
+      // Went cross-origin: drop the shim for its previous document.
+      this.teardownFrame(iframe);
+      return;
     }
-    if (!win) return;
+    if (!win || !doc) return;
 
     const existing = this.iframeBindings.get(iframe);
     if (existing) {
-      if (existing.win === win) return; // already shimmed this document
-      // Navigated (about:blank → game, or demo → full): old globals are gone.
-      this.frames.delete(existing.shim);
-      existing.shim.uninstall();
-      this.iframeBindings.delete(iframe);
+      if (existing.doc === doc) return; // this document is already shimmed
+      // Navigated to a fresh document (about:blank → game, demo → full, …):
+      // the previous realm's globals are gone, so replace its shim.
+      this.teardownFrame(iframe);
     }
 
     const shim = new AudioFrameShim(this, win);
     this.frames.add(shim);
-    this.iframeBindings.set(iframe, { win, shim });
+    this.iframeBindings.set(iframe, { doc, shim });
     if (this._isMuted) shim.applyMute(true);
+  }
+
+  /** Remove and uninstall the shim bound to an iframe's (previous) document. */
+  private teardownFrame(iframe: HTMLIFrameElement): void {
+    const binding = this.iframeBindings.get(iframe);
+    if (!binding) return;
+    this.frames.delete(binding.shim);
+    binding.shim.uninstall();
+    this.iframeBindings.delete(iframe);
   }
 
   override destroy(): void {
@@ -215,6 +227,11 @@ class AudioFrameShim {
     number
   >();
 
+  // Child iframes discovered in this frame's document. Tracked so we can
+  // cascade-unbind them when this frame is torn down — their own removal events
+  // never fire when the containing document is discarded wholesale.
+  private boundChildren = new Set<HTMLIFrameElement>();
+
   // Originals, restored on uninstall.
   private originalAudioContext: typeof AudioContext | null = null;
   private originalWebKitAudioContext: typeof AudioContext | null = null;
@@ -250,6 +267,18 @@ class AudioFrameShim {
         setMutedNative.call(el, isMuted ? true : intended);
       });
     }
+  }
+
+  /** Hand a discovered child iframe to the manager, remembering it for teardown. */
+  private bindChild(iframe: HTMLIFrameElement): void {
+    this.boundChildren.add(iframe);
+    this.manager.bindIframe(iframe);
+  }
+
+  /** Stop tracking a child iframe that was removed from this document. */
+  private unbindChild(iframe: HTMLIFrameElement): void {
+    this.boundChildren.delete(iframe);
+    this.manager.unbindIframe(iframe);
   }
 
   /** Track a media element and silence it if currently muted. Idempotent. */
@@ -307,7 +336,7 @@ class AudioFrameShim {
         this.trackElement(el as HTMLMediaElement);
       });
       doc.querySelectorAll("iframe").forEach((el) => {
-        this.manager.bindIframe(el as HTMLIFrameElement);
+        this.bindChild(el as HTMLIFrameElement);
       });
 
       // Media and iframes added/removed later.
@@ -317,23 +346,23 @@ class AudioFrameShim {
             if (node instanceof HTMLMediaElementCtor) {
               this.trackElement(node as HTMLMediaElement);
             } else if (node instanceof HTMLIFrameElementCtor) {
-              this.manager.bindIframe(node as HTMLIFrameElement);
+              this.bindChild(node as HTMLIFrameElement);
             } else if (node instanceof HTMLElementCtor) {
               const el = node as HTMLElement;
               el.querySelectorAll("audio, video").forEach((m2) => {
                 this.trackElement(m2 as HTMLMediaElement);
               });
               el.querySelectorAll("iframe").forEach((f) => {
-                this.manager.bindIframe(f as HTMLIFrameElement);
+                this.bindChild(f as HTMLIFrameElement);
               });
             }
           });
           m.removedNodes.forEach((node) => {
             if (node instanceof HTMLIFrameElementCtor) {
-              this.manager.unbindIframe(node as HTMLIFrameElement);
+              this.unbindChild(node as HTMLIFrameElement);
             } else if (node instanceof HTMLElementCtor) {
               (node as HTMLElement).querySelectorAll("iframe").forEach((f) => {
-                this.manager.unbindIframe(f as HTMLIFrameElement);
+                this.unbindChild(f as HTMLIFrameElement);
               });
             }
           });
@@ -498,6 +527,12 @@ class AudioFrameShim {
     } catch {
       // best-effort
     }
+
+    // Cascade into child iframes: their containing document is going away, so
+    // their own removal events won't fire. unbindIframe recurses into their
+    // shims, unwinding the whole subtree.
+    this.boundChildren.forEach((child) => this.manager.unbindIframe(child));
+    this.boundChildren.clear();
 
     const restore = (fn: () => void): void => {
       try {
