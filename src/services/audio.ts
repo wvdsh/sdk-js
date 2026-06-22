@@ -141,11 +141,16 @@ export class AudioManager extends WavedashManager {
         win = cw;
       }
     } catch {
-      // Went cross-origin: drop the shim for its previous document.
+      // Cross-origin: leave win/doc null and fall through to teardown.
+    }
+
+    // Unreachable (detached from the DOM, not yet navigated, or cross-origin):
+    // drop any shim we held for this iframe's previous document so handleMute
+    // never iterates a dead context.
+    if (!win || !doc) {
       this.teardownFrame(iframe);
       return;
     }
-    if (!win || !doc) return;
 
     const existing = this.iframeBindings.get(iframe);
     if (existing) {
