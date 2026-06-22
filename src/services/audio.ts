@@ -5,89 +5,35 @@ import type { MuteChangedPayload } from "../types";
 import { WavedashManager } from "./manager";
 
 /**
- * Set of WeakRefs — lets us iterate tracked elements without preventing GC.
- * Stale entries are purged lazily during iteration.
- */
-class WeakRefSet<T extends object> {
-  private set = new Set<WeakRef<T>>();
-
-  add(value: T): void {
-    for (const ref of this.set) {
-      if (ref.deref() === value) return;
-    }
-    this.set.add(new WeakRef(value));
-  }
-
-  forEach(callback: (value: T) => void): void {
-    for (const ref of this.set) {
-      const v = ref.deref();
-      if (v === undefined) this.set.delete(ref);
-      else callback(v);
-    }
-  }
-
-  clear(): void {
-    this.set.clear();
-  }
-}
-
-/**
- * AudioManager
+ * Mutes & unmutes the game in response to MUTE_CHANGED iframe messages, with no
+ * game-side code required.
  *
- * Mutes & unmutes the game in response to MUTE_CHANGED iframe messages, without
- * the game needing to handle it itself.
+ * Globals like `AudioContext` are per-frame, so we shim the SDK's own window
+ * (where the game usually runs) plus any same-origin iframes the game adds.
  *
- * Web Audio: subclass `AudioContext` so `ctx.destination` resolves to a master
- * GainNode that we control. The master gain wires to the real native destination,
- * so `node.connect(ctx.destination)` and any other game code is unaffected.
- *
- * HTML Media (`<audio>`/`<video>`): override `HTMLMediaElement.prototype.muted`
- * to record the game's intended state, but write `true` to the underlying element
- * whenever the SDK is muted. Tracked elements come from four sources:
- *  1. Pre-existing DOM media (`querySelectorAll`)
- *  2. `new Audio()` constructor shim (covers detached SFX)
- *  3. MutationObserver for any media added to the DOM later (covers innerHTML,
- *     framework rendering, createElement + append, etc.)
- *  4. `HTMLMediaElement.prototype.play()` shim — the universal point where an
- *     element starts producing audio. Catches anything driven purely via
- *     `.play()`/`.volume` (never assigning `.muted`, never entering the DOM,
- *     e.g. a PIXI/GDevelop intro video), force-muting it before playback begins
- *     regardless of how it was created — the one path the DOM-based sources and
- *     the `muted` setter all miss.
- *
- * Speech synthesis (`window.speechSynthesis`): bypasses both Web Audio and HTML
- * media entirely, so it gets its own shim — `speak()` forces the utterance's
- * native volume to 0 while muted.
+ * Each frame's shimming lives in {@link AudioFrameShim}; this class owns the
+ * mute state and fans it out to every attached frame.
  */
 export class AudioManager extends WavedashManager {
   private _isMuted = false;
 
-  // Web Audio contexts and their master gain nodes
-  private contexts = new Map<AudioContext, GainNode>();
+  // One shim per frame we've attached to.
+  private frames = new Set<AudioFrameShim>();
 
-  // HTML media elements we know about + their game-intended muted state
-  private elements = new WeakRefSet<HTMLMediaElement>();
-  private intendedMuted = new WeakMap<HTMLMediaElement, boolean>();
-
-  // Speech synthesis utterances + their game-intended volume
-  private intendedUtteranceVolume = new WeakMap<
-    SpeechSynthesisUtterance,
-    number
+  // Per-iframe state so we can re-shim across navigations/swaps and tear down
+  // the right frame when an iframe is removed or re-navigates.
+  private iframeBindings = new WeakMap<
+    HTMLIFrameElement,
+    { win: Window; shim: AudioFrameShim }
   >();
-
-  // Originals (restored on destroy)
-  private originalAudioContext: typeof AudioContext | null = null;
-  private originalWebKitAudioContext: typeof AudioContext | null = null;
-  private originalAudio: typeof Audio | null = null;
-  private originalMutedDescriptor: PropertyDescriptor | null = null;
-  private originalPlay: typeof HTMLMediaElement.prototype.play | null = null;
-  private originalSpeak: typeof SpeechSynthesis.prototype.speak | null = null;
-  private originalUtteranceVolumeDescriptor: PropertyDescriptor | null = null;
-  private mutationObserver: MutationObserver | null = null;
+  private iframeLoadHandlers = new Map<HTMLIFrameElement, () => void>();
+  private boundIframes = new Set<HTMLIFrameElement>();
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
-    this.installShims();
+    if (typeof window !== "undefined") {
+      this.attachWindow(window);
+    }
     this.sdk.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.MUTE_CHANGED,
       this.handleMute
@@ -129,10 +75,167 @@ export class AudioManager extends WavedashManager {
     if (this._isMuted === data.isMuted) return;
     this._isMuted = data.isMuted;
 
-    // Web Audio: short ramp avoids audible pops on instant 0↔1 jumps.
-    // cancelScheduledValues clears any in-flight ramp from a recent toggle so
-    // we don't follow a stale target before reaching the new one.
-    const target = this._isMuted ? 0 : 1;
+    this.frames.forEach((shim) => shim.applyMute(this._isMuted));
+
+    // Notify game in case it needs to update in-game UI.
+    this.sdk.gameEventManager.notifyGame(WavedashEvents.MUTE_CHANGED, {
+      isMuted: this._isMuted
+    } satisfies MuteChangedPayload);
+  };
+
+  /** Shim a window we can reach. Same-origin only (cross-origin access throws). */
+  private attachWindow(win: Window): void {
+    try {
+      // Accessing `document` throws a SecurityError for cross-origin frames.
+      void win.document;
+    } catch {
+      return; // cross-origin — nothing we can shim
+    }
+    const shim = new AudioFrameShim(this, win as FrameWindow);
+    this.frames.add(shim);
+  }
+
+  /**
+   * Start tracking an iframe: attach now (already-loaded frames) and on every
+   * `load` (about:blank → game, and later src swaps). Idempotent.
+   */
+  bindIframe(iframe: HTMLIFrameElement): void {
+    if (!this.boundIframes.has(iframe)) {
+      this.boundIframes.add(iframe);
+      const onLoad = (): void => this.attachIframe(iframe);
+      this.iframeLoadHandlers.set(iframe, onLoad);
+      iframe.addEventListener("load", onLoad);
+    }
+    this.attachIframe(iframe);
+  }
+
+  /** Stop tracking an iframe and tear down its frame (iframe removed from DOM). */
+  unbindIframe(iframe: HTMLIFrameElement): void {
+    const handler = this.iframeLoadHandlers.get(iframe);
+    if (handler) {
+      iframe.removeEventListener("load", handler);
+      this.iframeLoadHandlers.delete(iframe);
+    }
+    this.boundIframes.delete(iframe);
+    const binding = this.iframeBindings.get(iframe);
+    if (binding) {
+      this.frames.delete(binding.shim);
+      binding.shim.uninstall();
+      this.iframeBindings.delete(iframe);
+    }
+  }
+
+  /**
+   * Install (or re-install) a shim for an iframe's current content window.
+   * No-ops while cross-origin or not yet navigated; replaces the previous shim
+   * when the iframe navigates to a fresh document.
+   */
+  private attachIframe(iframe: HTMLIFrameElement): void {
+    let win: FrameWindow | null = null;
+    try {
+      const cw = iframe.contentWindow as FrameWindow | null;
+      if (cw) {
+        void cw.document; // throws for cross-origin
+        win = cw;
+      }
+    } catch {
+      return; // cross-origin — nothing we can shim
+    }
+    if (!win) return;
+
+    const existing = this.iframeBindings.get(iframe);
+    if (existing) {
+      if (existing.win === win) return; // already shimmed this document
+      // Navigated (about:blank → game, or demo → full): old globals are gone.
+      this.frames.delete(existing.shim);
+      existing.shim.uninstall();
+      this.iframeBindings.delete(iframe);
+    }
+
+    const shim = new AudioFrameShim(this, win);
+    this.frames.add(shim);
+    this.iframeBindings.set(iframe, { win, shim });
+    if (this._isMuted) shim.applyMute(true);
+  }
+
+  override destroy(): void {
+    this.sdk.iframeMessenger.removeEventListener(
+      IFRAME_MESSAGE_TYPE.MUTE_CHANGED,
+      this.handleMute
+    );
+
+    this.boundIframes.forEach((iframe) => {
+      const handler = this.iframeLoadHandlers.get(iframe);
+      if (handler) iframe.removeEventListener("load", handler);
+    });
+    this.boundIframes.clear();
+    this.iframeLoadHandlers.clear();
+
+    this.frames.forEach((shim) => shim.uninstall());
+    this.frames.clear();
+
+    super.destroy();
+  }
+}
+
+/** A same-origin frame's window, with its globals typed. */
+type FrameWindow = Window & typeof globalThis;
+
+/**
+ * Installs the mute shims into one frame (window) and tracks the audio it
+ * produces. The mute state lives on the owning {@link AudioManager}; each shim
+ * reads `manager.isMuted()` and the manager pushes changes via {@link applyMute}.
+ *
+ * We shim three independent audio paths:
+ * - Web Audio: subclass `AudioContext` so `ctx.destination` is a master GainNode
+ *   we control (wired to the real destination, so game code is unaffected).
+ * - HTML media (`<audio>`/`<video>`): the `muted` setter records the game's
+ *   intended value but forces the element muted while the SDK is muted. Elements
+ *   are found via existing DOM, the `new Audio()` shim, a MutationObserver, and a
+ *   `play()` shim (the last catches off-DOM elements driven only by `.play()`).
+ * - Speech synthesis: `speak()` forces the utterance volume to 0 while muted.
+ *
+ * The MutationObserver also reports nested iframes to the manager so child frames
+ * get their own shim.
+ */
+class AudioFrameShim {
+  private manager: AudioManager;
+  readonly win: FrameWindow;
+  private doc: Document | null;
+
+  private contexts = new Map<AudioContext, GainNode>();
+
+  // Tracked media elements + the game's intended muted value (what it last set).
+  private elements = new WeakRefSet<HTMLMediaElement>();
+  private intendedMuted = new WeakMap<HTMLMediaElement, boolean>();
+
+  // Utterances + the game's intended volume.
+  private intendedUtteranceVolume = new WeakMap<
+    SpeechSynthesisUtterance,
+    number
+  >();
+
+  // Originals, restored on uninstall.
+  private originalAudioContext: typeof AudioContext | null = null;
+  private originalWebKitAudioContext: typeof AudioContext | null = null;
+  private originalAudio: typeof Audio | null = null;
+  private originalMutedDescriptor: PropertyDescriptor | null = null;
+  private originalPlay: typeof HTMLMediaElement.prototype.play | null = null;
+  private originalSpeak: typeof SpeechSynthesis.prototype.speak | null = null;
+  private originalUtteranceVolumeDescriptor: PropertyDescriptor | null = null;
+  private mutationObserver: MutationObserver | null = null;
+
+  constructor(manager: AudioManager, win: FrameWindow) {
+    this.manager = manager;
+    this.win = win;
+    this.doc = win.document ?? null;
+    this.installShims();
+  }
+
+  /** Push the current mute state onto everything this frame is tracking. */
+  applyMute(isMuted: boolean): void {
+    // Short ramp avoids pops; cancelScheduledValues drops any in-flight ramp.
+    const target = isMuted ? 0 : 1;
     this.contexts.forEach((gain, ctx) => {
       const now = ctx.currentTime;
       gain.gain.cancelScheduledValues(now);
@@ -140,213 +243,209 @@ export class AudioManager extends WavedashManager {
       gain.gain.linearRampToValueAtTime(target, now + 0.05);
     });
 
-    // HTML Media: force native muted=true while muted, restore intent on unmute
     const setMutedNative = this.originalMutedDescriptor?.set;
     if (setMutedNative) {
       this.elements.forEach((el) => {
         const intended = this.intendedMuted.get(el) ?? false;
-        setMutedNative.call(el, this._isMuted ? true : intended);
+        setMutedNative.call(el, isMuted ? true : intended);
       });
     }
+  }
 
-    // Notify game in case it needs to update in-game UI
-    this.sdk.gameEventManager.notifyGame(WavedashEvents.MUTE_CHANGED, {
-      isMuted: this._isMuted
-    } satisfies MuteChangedPayload);
-  };
-
-  /**
-   * Track a media element and (if SDK is currently muted) silence it.
-   * Idempotent — safe to call multiple times for the same element.
-   */
+  /** Track a media element and silence it if currently muted. Idempotent. */
   private trackElement(el: HTMLMediaElement): void {
     if (this.intendedMuted.has(el)) return;
     const getMuted = this.originalMutedDescriptor?.get;
     const setMuted = this.originalMutedDescriptor?.set;
-    const current = getMuted ? getMuted.call(el) : el.muted;
+    const current = getMuted ? (getMuted.call(el) as boolean) : el.muted;
     this.intendedMuted.set(el, current);
     this.elements.add(el);
-    if (this._isMuted && !current && setMuted) {
+    if (this.manager.isMuted() && !current && setMuted) {
       setMuted.call(el, true);
     }
   }
 
   private installShims(): void {
-    if (typeof window === "undefined") return;
+    const win = this.win;
+    const doc = this.doc;
 
-    // 1. AudioContext (+ webkit prefix): subclass to redirect destination
-    if (window.AudioContext) {
-      this.originalAudioContext = window.AudioContext;
-      window.AudioContext = this.shimAudioContextClass(window.AudioContext);
+    // AudioContext (+ webkit prefix): subclass to redirect destination.
+    if (win.AudioContext) {
+      this.originalAudioContext = win.AudioContext;
+      win.AudioContext = this.shimAudioContextClass(win.AudioContext);
     }
-    const win = window as unknown as Window & {
+    const w = win as FrameWindow & {
       webkitAudioContext?: typeof AudioContext;
     };
-    if (win.webkitAudioContext) {
-      this.originalWebKitAudioContext = win.webkitAudioContext;
-      win.webkitAudioContext = this.shimAudioContextClass(
-        win.webkitAudioContext
-      );
+    if (w.webkitAudioContext) {
+      this.originalWebKitAudioContext = w.webkitAudioContext;
+      w.webkitAudioContext = this.shimAudioContextClass(w.webkitAudioContext);
     }
 
-    // 2. `new Audio()` — common pattern for detached one-shot SFX that never
-    //    enters the DOM (so the MutationObserver below wouldn't catch it).
-    if (window.Audio) {
-      const OriginalAudio = window.Audio;
+    // `new Audio()`: catches detached SFX that never enter the DOM.
+    if (win.Audio) {
+      const OriginalAudio = win.Audio;
       this.originalAudio = OriginalAudio;
-      ((manager) => {
+      ((shim) => {
         const Shimmed = function (src?: string) {
           const audio = new OriginalAudio(src);
-          manager.trackElement(audio);
+          shim.trackElement(audio);
           return audio;
         };
         Shimmed.prototype = OriginalAudio.prototype;
-        window.Audio = Shimmed as unknown as typeof Audio;
+        win.Audio = Shimmed as unknown as typeof Audio;
       })(this);
     }
 
-    if (typeof document !== "undefined") {
-      // 3a. Pre-existing DOM media at SDK init.
-      document.querySelectorAll("audio, video").forEach((el) => {
+    if (doc) {
+      const HTMLMediaElementCtor = win.HTMLMediaElement;
+      const HTMLIFrameElementCtor = win.HTMLIFrameElement;
+      const HTMLElementCtor = win.HTMLElement;
+
+      // Existing media + iframes.
+      doc.querySelectorAll("audio, video").forEach((el) => {
         this.trackElement(el as HTMLMediaElement);
       });
+      doc.querySelectorAll("iframe").forEach((el) => {
+        this.manager.bindIframe(el as HTMLIFrameElement);
+      });
 
-      // 3b. MutationObserver picks up anything added to the DOM later —
-      //     covers innerHTML, framework rendering, createElement + append, etc.
-      this.mutationObserver = new MutationObserver((mutations) => {
+      // Media and iframes added/removed later.
+      this.mutationObserver = new win.MutationObserver((mutations) => {
         for (const m of mutations) {
           m.addedNodes.forEach((node) => {
-            if (node instanceof HTMLMediaElement) {
-              this.trackElement(node);
-            } else if (node instanceof HTMLElement) {
-              node.querySelectorAll("audio, video").forEach((el) => {
-                this.trackElement(el as HTMLMediaElement);
+            if (node instanceof HTMLMediaElementCtor) {
+              this.trackElement(node as HTMLMediaElement);
+            } else if (node instanceof HTMLIFrameElementCtor) {
+              this.manager.bindIframe(node as HTMLIFrameElement);
+            } else if (node instanceof HTMLElementCtor) {
+              const el = node as HTMLElement;
+              el.querySelectorAll("audio, video").forEach((m2) => {
+                this.trackElement(m2 as HTMLMediaElement);
+              });
+              el.querySelectorAll("iframe").forEach((f) => {
+                this.manager.bindIframe(f as HTMLIFrameElement);
+              });
+            }
+          });
+          m.removedNodes.forEach((node) => {
+            if (node instanceof HTMLIFrameElementCtor) {
+              this.manager.unbindIframe(node as HTMLIFrameElement);
+            } else if (node instanceof HTMLElementCtor) {
+              (node as HTMLElement).querySelectorAll("iframe").forEach((f) => {
+                this.manager.unbindIframe(f as HTMLIFrameElement);
               });
             }
           });
         }
       });
-      this.mutationObserver.observe(document.documentElement, {
+      this.mutationObserver.observe(doc.documentElement, {
         childList: true,
         subtree: true
       });
     }
 
-    // 4. Override HTMLMediaElement.prototype.muted so the game sees its own
-    //    intended value while we silently force the underlying element to true.
+    // `muted` setter: game reads back its intended value, element stays muted.
     this.originalMutedDescriptor =
-      Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "muted") ??
-      null;
+      Object.getOwnPropertyDescriptor(
+        win.HTMLMediaElement.prototype,
+        "muted"
+      ) ?? null;
     const original = this.originalMutedDescriptor;
     if (original?.get && original?.set) {
-      ((manager) => {
-        Object.defineProperty(HTMLMediaElement.prototype, "muted", {
+      ((shim) => {
+        Object.defineProperty(win.HTMLMediaElement.prototype, "muted", {
           configurable: true,
           get(this: HTMLMediaElement): boolean {
-            const intended = manager.intendedMuted.get(this);
+            const intended = shim.intendedMuted.get(this);
             return intended !== undefined ? intended : original.get!.call(this);
           },
           set(this: HTMLMediaElement, value: boolean) {
-            manager.intendedMuted.set(this, value);
-            manager.elements.add(this);
-            original.set!.call(this, manager._isMuted ? true : value);
+            shim.intendedMuted.set(this, value);
+            shim.elements.add(this);
+            original.set!.call(this, shim.manager.isMuted() ? true : value);
           }
         });
       })(this);
     }
 
-    // 5. `HTMLMediaElement.prototype.play()` — the universal point where a media
-    //    element starts producing audio. Tracking here force-mutes (when the SDK
-    //    is muted) before playback begins, catching off-DOM elements driven via
-    //    .play()/.volume that never assign .muted — the one path the DOM-based
-    //    sources and the muted setter all miss.
-    const originalPlay = HTMLMediaElement.prototype.play;
+    // `play()`: force-mute before playback for elements only driven via play().
+    const originalPlay = win.HTMLMediaElement.prototype.play;
     this.originalPlay = originalPlay;
-    ((manager) => {
-      HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
-        manager.trackElement(this);
+    ((shim) => {
+      win.HTMLMediaElement.prototype.play = function (this: HTMLMediaElement) {
+        shim.trackElement(this);
         return originalPlay.call(this);
       };
     })(this);
 
-    // 6. Speech synthesis — bypasses Web Audio and HTML media entirely.
     this.shimSpeechSynthesis();
   }
 
   /**
-   * Shim `window.speechSynthesis` so speech respects the SDK mute state.
-   *
-   * Never swallows speak(): utterances have a lifecycle the game may sequence
-   * off (onstart/onend, synth.speaking/pending checks), so every call is
-   * delegated and silenced via volume instead. Volume is sampled at speak()
-   * time, so forcing the native value to 0 right before delegating silences
-   * anything spoken while muted; in-flight speech at the mute edge is
-   * deliberately left to finish (can't be softened mid-utterance, and
-   * cancel() would discard the pending queue).
+   * Shim `speechSynthesis`. We never swallow `speak()` (games sequence off its
+   * lifecycle) — instead we sample volume at call time and force it to 0 while
+   * muted. Speech already in flight at the mute edge is left to finish.
    */
   private shimSpeechSynthesis(): void {
+    const win = this.win;
     if (
-      !window.speechSynthesis ||
-      typeof SpeechSynthesisUtterance === "undefined"
+      !win.speechSynthesis ||
+      typeof win.SpeechSynthesisUtterance === "undefined"
     ) {
       return;
     }
 
-    // `volume` descriptor: the game reads back its intended volume even
-    // while we've written 0 to the native slot (mirrors the `muted` shim).
-    // Game writes go through to the native slot too — speak() re-forces 0
-    // if still muted, so order doesn't matter.
+    // `volume` descriptor: game reads back its intended value (mirrors `muted`).
     this.originalUtteranceVolumeDescriptor =
       Object.getOwnPropertyDescriptor(
-        SpeechSynthesisUtterance.prototype,
+        win.SpeechSynthesisUtterance.prototype,
         "volume"
       ) ?? null;
     const volDesc = this.originalUtteranceVolumeDescriptor;
     if (volDesc?.get && volDesc?.set) {
-      ((manager) => {
-        Object.defineProperty(SpeechSynthesisUtterance.prototype, "volume", {
-          configurable: true,
-          get(this: SpeechSynthesisUtterance): number {
-            const intended = manager.intendedUtteranceVolume.get(this);
-            return intended !== undefined
-              ? intended
-              : (volDesc.get!.call(this) as number);
-          },
-          set(this: SpeechSynthesisUtterance, value: number) {
-            manager.intendedUtteranceVolume.set(this, value);
-            volDesc.set!.call(this, value);
+      ((shim) => {
+        Object.defineProperty(
+          win.SpeechSynthesisUtterance.prototype,
+          "volume",
+          {
+            configurable: true,
+            get(this: SpeechSynthesisUtterance): number {
+              const intended = shim.intendedUtteranceVolume.get(this);
+              return intended !== undefined
+                ? intended
+                : (volDesc.get!.call(this) as number);
+            },
+            set(this: SpeechSynthesisUtterance, value: number) {
+              shim.intendedUtteranceVolume.set(this, value);
+              volDesc.set!.call(this, value);
+            }
           }
-        });
+        );
       })(this);
     }
 
-    // speak() wrapper: force native volume to 0 while muted; restore the
-    // intended volume on unmuted speaks so a reused utterance object
-    // doesn't stay silent after an earlier muted playthrough.
-    const speechSynthesis = window.speechSynthesis;
+    const speechSynthesis = win.speechSynthesis;
     const originalSpeak = speechSynthesis.speak;
     this.originalSpeak = originalSpeak;
-    ((manager) => {
+    ((shim) => {
       speechSynthesis.speak = function (utterance: SpeechSynthesisUtterance) {
-        if (manager._isMuted) {
-          if (!manager.intendedUtteranceVolume.has(utterance)) {
+        if (shim.manager.isMuted()) {
+          if (!shim.intendedUtteranceVolume.has(utterance)) {
             const current = volDesc?.get
               ? (volDesc.get.call(utterance) as number)
               : utterance.volume;
-            manager.intendedUtteranceVolume.set(utterance, current);
+            shim.intendedUtteranceVolume.set(utterance, current);
           }
-          // Use the native setter where available — plain assignment would
-          // route through our descriptor shim and record 0 as intended.
+          // Native setter, so we don't record 0 as the intended volume.
           if (volDesc?.set) volDesc.set.call(utterance, 0);
           else utterance.volume = 0;
         } else {
-          const intended = manager.intendedUtteranceVolume.get(utterance);
+          const intended = shim.intendedUtteranceVolume.get(utterance);
           if (intended !== undefined) {
             if (volDesc?.set) volDesc.set.call(utterance, intended);
             else utterance.volume = intended;
-            // Native slot now equals intended, so the map entry is
-            // redundant — drop it; future game writes re-record.
-            manager.intendedUtteranceVolume.delete(utterance);
+            shim.intendedUtteranceVolume.delete(utterance);
           }
         }
         return originalSpeak.call(speechSynthesis, utterance);
@@ -357,91 +456,131 @@ export class AudioManager extends WavedashManager {
   private shimAudioContextClass(
     Original: typeof AudioContext
   ): typeof AudioContext {
-    return ((manager) =>
+    return ((shim) =>
       class extends Original {
         constructor(opts?: AudioContextOptions) {
           super(opts);
           const masterGain = this.createGain();
           masterGain.connect(this.destination);
           masterGain.gain.setValueAtTime(
-            manager._isMuted ? 0 : 1,
+            shim.manager.isMuted() ? 0 : 1,
             this.currentTime
           );
-          // Redirect ctx.destination → masterGain. Game code calling
-          // `node.connect(ctx.destination)` keeps working transparently.
+          // Redirect ctx.destination → masterGain; node.connect(destination) still works.
           Object.defineProperty(this, "destination", {
             configurable: true,
             get() {
               return masterGain;
             }
           });
-          manager.contexts.set(this, masterGain);
+          shim.contexts.set(this, masterGain);
         }
 
         close(): Promise<void> {
-          manager.contexts.delete(this);
+          shim.contexts.delete(this);
           return super.close();
         }
       })(this);
   }
 
-  override destroy(): void {
-    this.sdk.iframeMessenger.removeEventListener(
-      IFRAME_MESSAGE_TYPE.MUTE_CHANGED,
-      this.handleMute
-    );
+  /**
+   * Restore the globals we patched. Best-effort per statement: a frame reached
+   * through an iframe may have navigated away (globals gone) before teardown.
+   */
+  uninstall(): void {
+    const win = this.win;
 
-    if (this.mutationObserver) {
-      this.mutationObserver.disconnect();
-      this.mutationObserver = null;
+    try {
+      if (this.mutationObserver) {
+        this.mutationObserver.disconnect();
+        this.mutationObserver = null;
+      }
+    } catch {
+      // best-effort
     }
 
-    if (typeof window !== "undefined") {
-      if (this.originalAudioContext) {
-        window.AudioContext = this.originalAudioContext;
+    const restore = (fn: () => void): void => {
+      try {
+        fn();
+      } catch {
+        // best-effort
       }
-      const win = window as unknown as Window & {
+    };
+
+    restore(() => {
+      if (this.originalAudioContext)
+        win.AudioContext = this.originalAudioContext;
+    });
+    restore(() => {
+      const w = win as FrameWindow & {
         webkitAudioContext?: typeof AudioContext;
       };
-      if (this.originalWebKitAudioContext && win.webkitAudioContext) {
-        win.webkitAudioContext = this.originalWebKitAudioContext;
+      if (this.originalWebKitAudioContext && w.webkitAudioContext) {
+        w.webkitAudioContext = this.originalWebKitAudioContext;
       }
-      if (this.originalAudio) {
-        window.Audio = this.originalAudio;
+    });
+    restore(() => {
+      if (this.originalAudio) win.Audio = this.originalAudio;
+    });
+    restore(() => {
+      if (this.originalSpeak && win.speechSynthesis) {
+        win.speechSynthesis.speak = this.originalSpeak;
       }
-      if (this.originalSpeak && window.speechSynthesis) {
-        window.speechSynthesis.speak = this.originalSpeak;
+    });
+    restore(() => {
+      if (
+        this.originalUtteranceVolumeDescriptor &&
+        typeof win.SpeechSynthesisUtterance !== "undefined"
+      ) {
+        Object.defineProperty(
+          win.SpeechSynthesisUtterance.prototype,
+          "volume",
+          this.originalUtteranceVolumeDescriptor
+        );
       }
-    }
-
-    if (
-      this.originalUtteranceVolumeDescriptor &&
-      typeof SpeechSynthesisUtterance !== "undefined"
-    ) {
-      Object.defineProperty(
-        SpeechSynthesisUtterance.prototype,
-        "volume",
-        this.originalUtteranceVolumeDescriptor
-      );
-    }
-
-    if (this.originalPlay) {
-      HTMLMediaElement.prototype.play = this.originalPlay;
-    }
-
-    if (this.originalMutedDescriptor) {
-      Object.defineProperty(
-        HTMLMediaElement.prototype,
-        "muted",
-        this.originalMutedDescriptor
-      );
-    }
+    });
+    restore(() => {
+      if (this.originalPlay) {
+        win.HTMLMediaElement.prototype.play = this.originalPlay;
+      }
+    });
+    restore(() => {
+      if (this.originalMutedDescriptor) {
+        Object.defineProperty(
+          win.HTMLMediaElement.prototype,
+          "muted",
+          this.originalMutedDescriptor
+        );
+      }
+    });
 
     this.contexts.clear();
     this.elements.clear();
     this.intendedMuted = new WeakMap();
     this.intendedUtteranceVolume = new WeakMap();
+  }
+}
 
-    super.destroy();
+/** Set of WeakRefs that lets us iterate without pinning entries; stale refs are purged on iterate. */
+class WeakRefSet<T extends object> {
+  private set = new Set<WeakRef<T>>();
+
+  add(value: T): void {
+    for (const ref of this.set) {
+      if (ref.deref() === value) return;
+    }
+    this.set.add(new WeakRef(value));
+  }
+
+  forEach(callback: (value: T) => void): void {
+    for (const ref of this.set) {
+      const v = ref.deref();
+      if (v === undefined) this.set.delete(ref);
+      else callback(v);
+    }
+  }
+
+  clear(): void {
+    this.set.clear();
   }
 }
