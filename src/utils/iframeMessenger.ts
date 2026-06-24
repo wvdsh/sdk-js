@@ -7,6 +7,7 @@
 
 import { IFRAME_MESSAGE_TYPE, IFrameEventPayloadMap } from "@wvdsh/api";
 import { getParentOrigin } from "./parentOrigin";
+import { hasParentContext } from "./parentContext";
 
 const RESPONSE_TIMEOUT_MS = 15_000;
 
@@ -97,9 +98,12 @@ export class IFrameMessenger {
     requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE],
     data: Record<string, string | number | boolean>
   ): boolean {
-    const parentOrigin = getParentOrigin();
-    if (typeof window === "undefined" || !parentOrigin) return false;
-    window.parent.postMessage({ type: requestType, ...data }, parentOrigin);
+    // Parent-owned feature: no-op when running outside a Wavedash parent frame.
+    if (!hasParentContext()) return false;
+    window.parent.postMessage(
+      { type: requestType, ...data },
+      getParentOrigin()
+    );
     return true;
   }
 
@@ -109,11 +113,17 @@ export class IFrameMessenger {
     timeoutMs: number = RESPONSE_TIMEOUT_MS
   ): Promise<IFrameEventPayloadMap[T]> {
     return new Promise((resolve, reject) => {
-      const parentOrigin = getParentOrigin();
-      if (typeof window === "undefined" || !parentOrigin) {
-        reject(new Error("Parent origin not found"));
+      // Parent-owned request: reject fast (rather than waiting out the timeout)
+      // when running outside a Wavedash parent frame, since nobody can answer.
+      if (!hasParentContext()) {
+        reject(
+          new Error(
+            `${requestType} is unavailable: no Wavedash parent frame to handle the request`
+          )
+        );
         return;
       }
+      const parentOrigin = getParentOrigin();
 
       const requestId = `${requestType}_${++this.requestIdCounter}_${Date.now()}`;
 

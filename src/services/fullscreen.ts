@@ -2,6 +2,7 @@ import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type { FullscreenChangedPayload } from "../types";
+import { hasParentContext } from "../utils/parentContext";
 import { WavedashManager } from "./manager";
 
 /**
@@ -29,6 +30,10 @@ export class FullscreenManager extends WavedashManager {
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
+    // Fullscreen is owned by the parent. Outside a Wavedash parent frame there
+    // is no host to drive it, so we leave the page's native fullscreen alone
+    // and skip the compat shims that would otherwise reroute it to nowhere.
+    if (!hasParentContext()) return;
     this.sdk.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.FULLSCREEN_CHANGED,
       (data) => {
@@ -52,6 +57,7 @@ export class FullscreenManager extends WavedashManager {
    * (e.g. browser rejected for lack of user activation).
    */
   async requestFullscreen(fullscreen: boolean): Promise<boolean> {
+    if (!hasParentContext()) return false;
     const response = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.SET_FULLSCREEN,
       { fullscreen }
@@ -60,6 +66,7 @@ export class FullscreenManager extends WavedashManager {
   }
 
   async toggleFullscreen(): Promise<boolean> {
+    if (!hasParentContext()) return false;
     const response = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.TOGGLE_FULLSCREEN
     );
