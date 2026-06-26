@@ -1544,6 +1544,10 @@ class WavedashSDK extends EventTarget {
       const refreshQuery = new URLSearchParams({
         [UrlParams.Caller]: PlayRouteCaller.Wavedash
       });
+      // A forced refresh follows an event that just changed claims (e.g. a
+      // `wavedash dev` purchase), so tell the dev server to skip its cached JWT
+      // and re-mint. The prod play worker never caches, so it ignores this.
+      if (forceRefresh) refreshQuery.set("fresh", "1");
       const refreshPath = `/auth/refresh?${refreshQuery.toString()}`;
       const response = await fetch(refreshPath, {
         method: "POST",

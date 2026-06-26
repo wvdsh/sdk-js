@@ -2,6 +2,8 @@ import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type { FullscreenChangedPayload } from "../types";
+import { logger } from "../utils/logger";
+import { hasParentFrame } from "../utils/parentOrigin";
 import { WavedashManager } from "./manager";
 
 /**
@@ -29,6 +31,9 @@ export class FullscreenManager extends WavedashManager {
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
+    // Standalone: no host to mirror or ask, and top-level pages can fullscreen
+    // themselves — so leave the native API unshimmed.
+    if (!hasParentFrame()) return;
     this.sdk.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.FULLSCREEN_CHANGED,
       (data) => {
@@ -52,6 +57,12 @@ export class FullscreenManager extends WavedashManager {
    * (e.g. browser rejected for lack of user activation).
    */
   async requestFullscreen(fullscreen: boolean): Promise<boolean> {
+    if (!hasParentFrame()) {
+      logger.debug(
+        "requestFullscreen() is disabled outside a Wavedash parent frame (e.g. `wavedash dev`)"
+      );
+      return false;
+    }
     const response = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.SET_FULLSCREEN,
       { fullscreen }
@@ -60,6 +71,12 @@ export class FullscreenManager extends WavedashManager {
   }
 
   async toggleFullscreen(): Promise<boolean> {
+    if (!hasParentFrame()) {
+      logger.debug(
+        "toggleFullscreen() is disabled outside a Wavedash parent frame (e.g. `wavedash dev`)"
+      );
+      return false;
+    }
     const response = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.TOGGLE_FULLSCREEN
     );

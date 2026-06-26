@@ -17,6 +17,7 @@ import type { ConnectionState } from "convex/browser";
 import type { BackendConnectionPayload } from "../types";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
+import { hasParentFrame } from "../utils/parentOrigin";
 import type { WavedashSDK } from "../index";
 
 // Capture so we see input regardless of which descendant handles it; passive
@@ -81,13 +82,16 @@ export class HeartbeatManager extends WavedashManager {
       this.pollGamepads();
     }, this.GAMEPAD_POLL_INTERVAL_MS);
 
-    this.deviceFingerprintReady = this.sdk.iframeMessenger
-      .requestFromParent(IFRAME_MESSAGE_TYPE.GET_DEVICE_FINGERPRINT)
-      .then((fingerprint) => {
-        this.deviceFingerprint = fingerprint;
-      })
-      // Required catch handler so this.deviceFingerprintReady always resolves
-      .catch(() => {});
+    // No parent to ask in standalone — leave the fingerprint undefined.
+    this.deviceFingerprintReady = !hasParentFrame()
+      ? Promise.resolve()
+      : this.sdk.iframeMessenger
+          .requestFromParent(IFRAME_MESSAGE_TYPE.GET_DEVICE_FINGERPRINT)
+          .then((fingerprint) => {
+            this.deviceFingerprint = fingerprint;
+          })
+          // Keep deviceFingerprintReady resolvable on parent error.
+          .catch(() => {});
 
     // Don't .start() here, loadComplete() will trigger the first call to start()
   }

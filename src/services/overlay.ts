@@ -1,6 +1,7 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { type WavedashSDK } from "../index";
 import { takeFocus } from "../utils/focus";
+import { hasParentFrame } from "../utils/parentOrigin";
 import { suspendPointerLock } from "../utils/pointerLock";
 import { WavedashManager } from "./manager";
 
@@ -21,6 +22,10 @@ export class OverlayManager extends WavedashManager {
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
+
+    // No host owns an overlay in standalone — skip the listeners and the
+    // Shift+Tab hijack so native tab behavior stays intact.
+    if (!hasParentFrame()) return;
 
     this.sdk.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.TAKE_FOCUS,

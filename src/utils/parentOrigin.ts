@@ -14,3 +14,13 @@ export function setParentOrigin(origin: string): void {
 export function getParentOrigin(): string {
   return _parentOrigin;
 }
+
+/**
+ * False in standalone contexts like `wavedash dev`, where the game runs
+ * top-level and SDKConfig.parentOrigin is "". Parent-required calls gate on
+ * this so they fail fast or imitate locally instead of hanging on a reply that
+ * never arrives.
+ */
+export function hasParentFrame(): boolean {
+  return _parentOrigin !== "";
+}
