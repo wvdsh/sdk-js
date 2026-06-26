@@ -30,6 +30,7 @@ import type { WavedashSDK } from "../index";
 import { api, IFRAME_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
+import { hasParentFrame } from "../utils/parentOrigin";
 
 export class LobbyManager extends WavedashManager {
   // Track current lobby state
@@ -236,6 +237,13 @@ export class LobbyManager extends WavedashManager {
   async getLobbyInviteLink(copyToClipboard: boolean = false): Promise<string> {
     if (!this.lobbyId) {
       throw new Error("User is not in a lobby");
+    }
+    // The invite URL is minted by the host page; fail clearly rather than time
+    // out waiting on a reply that never comes.
+    if (!hasParentFrame()) {
+      throw new Error(
+        "Lobby invite links are not available outside a Wavedash parent frame (e.g. `wavedash dev`)"
+      );
     }
     const inviteLink = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.GET_LOBBY_INVITE_LINK,

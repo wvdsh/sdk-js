@@ -1,6 +1,8 @@
-import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
+import { api, IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
+import { showDevPaywall } from "../utils/devPaywall";
+import { hasParentFrame } from "../utils/parentOrigin";
 import { suspendPointerLock } from "../utils/pointerLock";
 
 const PAYWALL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -58,13 +60,34 @@ export class PaidContentManager extends WavedashManager {
 
     // Don't let the game open a second paywall over an in-progress one.
     if (this.paywallOpen) {
-      throw new Error('Paywall already in progress');
+      throw new Error("Paywall already in progress");
     }
     this.paywallOpen = true;
 
     // Keep the cursor free while the modal is open
     // Restored once the parent responds (or on destroy).
     this.restorePointerLock = suspendPointerLock();
+
+    // Standalone: imitate the host paywall in-page, then grant + refresh so the
+    // end state matches a real purchase (entitlement in the JWT, persisted).
+    if (!hasParentFrame()) {
+      let purchased: boolean;
+      try {
+        purchased = await showDevPaywall(contentIdentifier);
+      } finally {
+        this.restorePointerLock?.();
+        this.restorePointerLock = undefined;
+        this.paywallOpen = false;
+      }
+      if (!purchased) return false;
+      // Grant via the gameplay JWT (sandbox-gated server-side), then refresh so
+      // the new entitlement lands in the JWT `ents`.
+      await this.sdk.convexClient.mutation(api.sdk.paidContent.mockPurchase, {
+        contentIdentifier
+      });
+      await this.sdk.ensureGameplayJwt(true);
+      return true;
+    }
 
     let response;
     try {

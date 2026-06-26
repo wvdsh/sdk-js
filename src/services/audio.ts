@@ -2,6 +2,8 @@ import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { WavedashEvents } from "../events";
 import { type WavedashSDK } from "../index";
 import type { MuteChangedPayload } from "../types";
+import { logger } from "../utils/logger";
+import { hasParentFrame } from "../utils/parentOrigin";
 import { WavedashManager } from "./manager";
 
 /**
@@ -54,6 +56,12 @@ export class AudioManager extends WavedashManager {
    * MUTE_CHANGED broadcast, so `isMuted()` updates independently of this result.
    */
   async requestMute(muted: boolean): Promise<boolean> {
+    if (!hasParentFrame()) {
+      logger.debug(
+        "requestMute() is disabled outside a Wavedash parent frame (e.g. `wavedash dev`)"
+      );
+      return false;
+    }
     const response = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.SET_MUTE,
       { muted }
@@ -67,6 +75,12 @@ export class AudioManager extends WavedashManager {
    * host applied the change.
    */
   async toggleMute(): Promise<boolean> {
+    if (!hasParentFrame()) {
+      logger.debug(
+        "toggleMute() is disabled outside a Wavedash parent frame (e.g. `wavedash dev`)"
+      );
+      return false;
+    }
     const response = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.TOGGLE_MUTE
     );
