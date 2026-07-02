@@ -555,12 +555,29 @@ class AudioFrameShim {
             "channelCountMode",
             "channelInterpretation"
           ] as const) {
+            // Our accessor shadows the native one on this instance, so keep the
+            // prototype setter around to reach the gain's real property.
+            const nativeSet = Object.getOwnPropertyDescriptor(
+              shim.win.AudioNode.prototype,
+              prop
+            )?.set;
             Object.defineProperty(masterGain, prop, {
               configurable: true,
               get: () => realDestination[prop],
               set: (value) => {
+                // Destination first: it enforces native limits (throws past
+                // maxChannelCount) and is where the device config must land.
                 (realDestination as unknown as Record<string, unknown>)[prop] =
                   value;
+                // Mirror onto the gain so input mixing there (which natively
+                // would happen at the destination) follows the same layout —
+                // otherwise multiple direct connections get mixed with the
+                // gain's defaults before the game's config ever applies.
+                try {
+                  nativeSet?.call(masterGain, value);
+                } catch {
+                  // Out of range for a GainNode; the destination carries it.
+                }
               }
             });
           }
