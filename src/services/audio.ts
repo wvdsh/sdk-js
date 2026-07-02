@@ -537,10 +537,10 @@ class AudioFrameShim {
           const realDestination = this.destination;
           const masterGain = this.createGain();
           masterGain.connect(realDestination);
-          masterGain.gain.setValueAtTime(
-            shim.manager.isMuted() ? 0 : 1,
-            this.currentTime
-          );
+          // Direct assignment (not setValueAtTime) so the state applies
+          // immediately rather than on the next render quantum, and so no
+          // timeline event is left behind for applyMute's cancel to trip on.
+          masterGain.gain.value = shim.manager.isMuted() ? 0 : 1;
 
           // Games probe/configure these on ctx.destination (e.g. surround
           // detection via `destination.channelCount = destination.maxChannelCount`),
