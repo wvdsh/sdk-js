@@ -14,6 +14,7 @@ import type {
 } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
+import { getAvatarUrl } from "../utils/cdn";
 import { WavedashManager } from "./manager";
 
 export class LeaderboardManager extends WavedashManager {
@@ -66,7 +67,10 @@ export class LeaderboardManager extends WavedashManager {
           ...result.entry,
           userId: this.sdk.wavedashUser.id,
           username: this.sdk.wavedashUser.username,
-          userAvatarUrl: this.sdk.wavedashUser.avatarUrl
+          userAvatarUrl: getAvatarUrl(
+            this.sdk.wavedashUser.avatarUrl,
+            this.sdk.uploadsHost
+          )
         }
       : null;
 
@@ -88,8 +92,12 @@ export class LeaderboardManager extends WavedashManager {
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    // Cache raw r2Keys for getUserAvatarUrl(), then return absolute avatar URLs.
     this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
-    return result.entries;
+    return result.entries.map((entry) => ({
+      ...entry,
+      userAvatarUrl: getAvatarUrl(entry.userAvatarUrl, this.sdk.uploadsHost)
+    }));
   }
 
   async listLeaderboardEntries(
@@ -105,8 +113,12 @@ export class LeaderboardManager extends WavedashManager {
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
+    // Cache raw r2Keys for getUserAvatarUrl(), then return absolute avatar URLs.
     this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
-    return result.entries;
+    return result.entries.map((entry) => ({
+      ...entry,
+      userAvatarUrl: getAvatarUrl(entry.userAvatarUrl, this.sdk.uploadsHost)
+    }));
   }
 
   async uploadLeaderboardScore(
@@ -131,7 +143,10 @@ export class LeaderboardManager extends WavedashManager {
       // User info
       userId: this.sdk.wavedashUser.id,
       username: this.sdk.wavedashUser.username,
-      userAvatarUrl: this.sdk.wavedashUser.avatarUrl
+      userAvatarUrl: getAvatarUrl(
+        this.sdk.wavedashUser.avatarUrl,
+        this.sdk.uploadsHost
+      )
     };
   }
 

@@ -27,6 +27,7 @@ import { PaidContentManager } from "./services/paidContent";
 import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
 import type { WavedashEventMap } from "./types";
+import { getAvatarUrl } from "./utils/cdn";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { LOG_LEVEL, logger } from "./utils/logger";
 import { SwMessenger } from "./utils/swMessenger";
@@ -465,8 +466,15 @@ class WavedashSDK extends EventTarget {
   // User methods
   // ============
 
+  /**
+   * The current user. `avatarUrl` is an absolute URL ready for `<img src>` etc.;
+   * use `getUserAvatarUrl(userId, size)` for a sized/transformed avatar.
+   */
   getUser(): SDKUser {
-    return this.formatResponse(this.wavedashUser);
+    return this.formatResponse({
+      ...this.wavedashUser,
+      avatarUrl: getAvatarUrl(this.wavedashUser.avatarUrl, this.uploadsHost)
+    });
   }
 
   /**

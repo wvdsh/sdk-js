@@ -7,7 +7,7 @@
 import type { Friend, Id } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
-import { getCdnImageUrl } from "../utils/cdn";
+import { getAvatarUrl, getCdnImageUrl } from "../utils/cdn";
 import { AvatarSize } from "../constants";
 import { WavedashManager } from "./manager";
 
@@ -78,8 +78,13 @@ export class FriendsManager extends WavedashManager {
       api.sdk.friends.listFriends,
       {}
     );
+    // Cache the raw r2Keys first so getUserAvatarUrl() can still size them,
+    // then hand the game absolute avatar URLs.
     this.cacheUsers(friends);
-    return friends;
+    return friends.map((friend) => ({
+      ...friend,
+      avatarUrl: getAvatarUrl(friend.avatarUrl, this.sdk.uploadsHost)
+    }));
   }
 
   /**
