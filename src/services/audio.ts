@@ -234,7 +234,12 @@ class AudioFrameShim {
   readonly win: FrameWindow;
   private doc: Document | null;
 
-  private contexts = new Map<AudioContext, GainNode>();
+  // Weakly tracked so we never outlive the game's own references: pinning a
+  // context here would keep its OS audio stream mixing forever, and games that
+  // churn contexts would accumulate streams (a crackle source on weaker audio
+  // stacks, e.g. Firefox/Windows). The gain lives exactly as long as its context.
+  private contexts = new WeakRefSet<AudioContext>();
+  private contextGains = new WeakMap<AudioContext, GainNode>();
 
   // Tracked media elements + the game's intended muted value (what it last set).
   private elements = new WeakRefSet<HTMLMediaElement>();
@@ -270,13 +275,26 @@ class AudioFrameShim {
 
   /** Push the current mute state onto everything this frame is tracking. */
   applyMute(isMuted: boolean): void {
-    // Short ramp avoids pops; cancelScheduledValues drops any in-flight ramp.
+    // Short ramp avoids pops; any in-flight ramp is cancelled first.
     const target = isMuted ? 0 : 1;
-    this.contexts.forEach((gain, ctx) => {
+    this.contexts.forEach((ctx) => {
+      const gain = this.contextGains.get(ctx);
+      if (!gain) return; // context was closed
       const now = ctx.currentTime;
-      gain.gain.cancelScheduledValues(now);
-      gain.gain.setValueAtTime(gain.gain.value, now);
-      gain.gain.linearRampToValueAtTime(target, now + 0.05);
+      const param = gain.gain as AudioParam & {
+        cancelAndHoldAtTime?: (cancelTime: number) => AudioParam;
+      };
+      if (typeof param.cancelAndHoldAtTime === "function") {
+        param.cancelAndHoldAtTime(now);
+      } else {
+        // No cancelAndHoldAtTime (Firefox): read the value BEFORE cancelling —
+        // cancellation reverts the computed value to the pre-ramp anchor, so
+        // anchoring on a post-cancel read snaps the audio mid-toggle (a click).
+        const current = param.value;
+        param.cancelScheduledValues(now);
+        param.setValueAtTime(current, now);
+      }
+      param.linearRampToValueAtTime(target, now + 0.05);
     });
 
     const setMutedNative = this.originalMutedDescriptor?.set;
@@ -367,12 +385,18 @@ class AudioFrameShim {
             } else if (node instanceof HTMLIFrameElementCtor) {
               this.bindChild(node as HTMLIFrameElement);
             } else if (node instanceof HTMLElementCtor) {
+              // This callback runs on every DOM insertion, on the main thread —
+              // where ScriptProcessor-style game audio also runs — so keep the
+              // common case (childless nodes) traversal-free and do one subtree
+              // scan, not two.
               const el = node as HTMLElement;
-              el.querySelectorAll("audio, video").forEach((m2) => {
-                this.trackElement(m2 as HTMLMediaElement);
-              });
-              el.querySelectorAll("iframe").forEach((f) => {
-                this.bindChild(f as HTMLIFrameElement);
+              if (!el.firstElementChild) return;
+              el.querySelectorAll("audio, video, iframe").forEach((child) => {
+                if (child instanceof HTMLIFrameElementCtor) {
+                  this.bindChild(child as HTMLIFrameElement);
+                } else {
+                  this.trackElement(child as HTMLMediaElement);
+                }
               });
             }
           });
@@ -380,7 +404,9 @@ class AudioFrameShim {
             if (node instanceof HTMLIFrameElementCtor) {
               this.unbindChild(node as HTMLIFrameElement);
             } else if (node instanceof HTMLElementCtor) {
-              (node as HTMLElement).querySelectorAll("iframe").forEach((f) => {
+              const el = node as HTMLElement;
+              if (!el.firstElementChild) return;
+              el.querySelectorAll("iframe").forEach((f) => {
                 this.unbindChild(f as HTMLIFrameElement);
               });
             }
@@ -508,12 +534,54 @@ class AudioFrameShim {
       class extends Original {
         constructor(opts?: AudioContextOptions) {
           super(opts);
+          const realDestination = this.destination;
           const masterGain = this.createGain();
-          masterGain.connect(this.destination);
-          masterGain.gain.setValueAtTime(
-            shim.manager.isMuted() ? 0 : 1,
-            this.currentTime
-          );
+          masterGain.connect(realDestination);
+          // Direct assignment (not setValueAtTime) so the state applies
+          // immediately rather than on the next render quantum, and so no
+          // timeline event is left behind for applyMute's cancel to trip on.
+          masterGain.gain.value = shim.manager.isMuted() ? 0 : 1;
+
+          // Games probe/configure these on ctx.destination (e.g. surround
+          // detection via `destination.channelCount = destination.maxChannelCount`),
+          // so forward them to the real destination — a bare GainNode has no
+          // maxChannelCount, and channel config must land on the device output.
+          Object.defineProperty(masterGain, "maxChannelCount", {
+            configurable: true,
+            get: () => realDestination.maxChannelCount
+          });
+          for (const prop of [
+            "channelCount",
+            "channelCountMode",
+            "channelInterpretation"
+          ] as const) {
+            // Our accessor shadows the native one on this instance, so keep the
+            // prototype setter around to reach the gain's real property.
+            const nativeSet = Object.getOwnPropertyDescriptor(
+              shim.win.AudioNode.prototype,
+              prop
+            )?.set;
+            Object.defineProperty(masterGain, prop, {
+              configurable: true,
+              get: () => realDestination[prop],
+              set: (value) => {
+                // Destination first: it enforces native limits (throws past
+                // maxChannelCount) and is where the device config must land.
+                (realDestination as unknown as Record<string, unknown>)[prop] =
+                  value;
+                // Mirror onto the gain so input mixing there (which natively
+                // would happen at the destination) follows the same layout —
+                // otherwise multiple direct connections get mixed with the
+                // gain's defaults before the game's config ever applies.
+                try {
+                  nativeSet?.call(masterGain, value);
+                } catch {
+                  // Out of range for a GainNode; the destination carries it.
+                }
+              }
+            });
+          }
+
           // Redirect ctx.destination → masterGain; node.connect(destination) still works.
           Object.defineProperty(this, "destination", {
             configurable: true,
@@ -521,11 +589,12 @@ class AudioFrameShim {
               return masterGain;
             }
           });
-          shim.contexts.set(this, masterGain);
+          shim.contexts.add(this);
+          shim.contextGains.set(this, masterGain);
         }
 
         close(): Promise<void> {
-          shim.contexts.delete(this);
+          shim.contextGains.delete(this);
           return super.close();
         }
       })(this);
@@ -609,6 +678,7 @@ class AudioFrameShim {
     });
 
     this.contexts.clear();
+    this.contextGains = new WeakMap();
     this.elements.clear();
     this.intendedMuted = new WeakMap();
     this.intendedUtteranceVolume = new WeakMap();
