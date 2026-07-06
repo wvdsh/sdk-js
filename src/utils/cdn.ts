@@ -1,3 +1,21 @@
+import { AvatarSize } from "../constants";
+
+/** Single builder for avatar URLs so every avatar is served cdn-cgi resized. */
+export function getAvatarUrl(
+  r2KeyOrUrl: string | undefined,
+  host: string,
+  size: number = AvatarSize.MEDIUM
+): string | undefined {
+  if (!r2KeyOrUrl) return undefined;
+  return getCdnImageUrl(r2KeyOrUrl, host, {
+    width: size,
+    height: size,
+    fit: "cover",
+    quality: "high",
+    sharpen: 1
+  });
+}
+
 export function getCdnImageUrl(
   r2Key: string,
   host: string,

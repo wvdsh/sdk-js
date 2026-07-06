@@ -29,6 +29,7 @@ import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
 import { api, IFRAME_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
+import { getAvatarUrl } from "../utils/cdn";
 import { logger } from "../utils/logger";
 import { hasParentFrame } from "../utils/parentOrigin";
 
@@ -107,7 +108,10 @@ export class LobbyManager extends WavedashManager {
       logger.error("Must be a member of the lobby to access user list");
       return [];
     }
-    return this.lobbyUsers;
+    return this.lobbyUsers.map((user) => ({
+      ...user,
+      userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk.uploadsHost)
+    }));
   }
 
   getHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
@@ -522,6 +526,10 @@ export class LobbyManager extends WavedashManager {
           WavedashEvents.LOBBY_USERS_UPDATED,
           {
             ...user,
+            userAvatarUrl: getAvatarUrl(
+              user.userAvatarUrl,
+              this.sdk.uploadsHost
+            ),
             changeType: LobbyUserChangeType.JOINED
           } satisfies LobbyUsersUpdatedPayload
         );
@@ -542,6 +550,10 @@ export class LobbyManager extends WavedashManager {
           WavedashEvents.LOBBY_USERS_UPDATED,
           {
             ...user,
+            userAvatarUrl: getAvatarUrl(
+              user.userAvatarUrl,
+              this.sdk.uploadsHost
+            ),
             isHost: false,
             changeType: LobbyUserChangeType.LEFT
           } satisfies LobbyUsersUpdatedPayload
