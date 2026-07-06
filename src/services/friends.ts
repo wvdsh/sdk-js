@@ -7,7 +7,7 @@
 import type { Friend, Id } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
-import { getAvatarUrl, getCdnImageUrl } from "../utils/cdn";
+import { getAvatarUrl } from "../utils/cdn";
 import { AvatarSize } from "../constants";
 import { WavedashManager } from "./manager";
 
@@ -42,13 +42,7 @@ export class FriendsManager extends WavedashManager {
     if (!user?.avatarR2Key) {
       return null;
     }
-    return getCdnImageUrl(user.avatarR2Key, this.sdk.uploadsHost, {
-      width: size,
-      height: size,
-      fit: "cover",
-      quality: "high",
-      sharpen: 1
-    });
+    return getAvatarUrl(user.avatarR2Key, this.sdk.uploadsHost, size) ?? null;
   }
 
   /**

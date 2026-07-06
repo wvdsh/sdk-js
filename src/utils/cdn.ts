@@ -1,18 +1,25 @@
+import { AvatarSize } from "../constants";
+
 /**
- * Absolute URL for an avatar stored as an r2Key, so it's directly usable in
- * `<img src>`, canvas/WebGL textures, or fetch. Values that are already absolute
- * URLs pass through unchanged. Unlike `getCdnImageUrl` this applies no resizing —
- * use `getUserAvatarUrl(userId, size)` when you want a sized/transformed avatar.
+ * Absolute, CDN-resized avatar URL for an r2Key. Single source of truth for
+ * building avatar URLs: both `getUserAvatarUrl(userId, size)` and the
+ * `avatarUrl`/`userAvatarUrl` fields on returned user objects go through here, so
+ * every avatar is served resized via `cdn-cgi`. Values that are already absolute
+ * URLs pass through unchanged; an empty value returns `undefined`.
  */
 export function getAvatarUrl(
   r2KeyOrUrl: string | undefined,
-  host: string
+  host: string,
+  size: number = AvatarSize.MEDIUM
 ): string | undefined {
   if (!r2KeyOrUrl) return undefined;
-  if (r2KeyOrUrl.startsWith("http://") || r2KeyOrUrl.startsWith("https://")) {
-    return r2KeyOrUrl;
-  }
-  return `https://${host}/${r2KeyOrUrl}`;
+  return getCdnImageUrl(r2KeyOrUrl, host, {
+    width: size,
+    height: size,
+    fit: "cover",
+    quality: "high",
+    sharpen: 1
+  });
 }
 
 export function getCdnImageUrl(
