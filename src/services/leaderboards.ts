@@ -92,7 +92,7 @@ export class LeaderboardManager extends WavedashManager {
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
-    // Cache raw r2Keys for getUserAvatarUrl(), then return absolute avatar URLs.
+    // Cache raw keys before URL-ifying so getUserAvatarUrl() can still size them.
     this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
     return result.entries.map((entry) => ({
       ...entry,
@@ -113,7 +113,7 @@ export class LeaderboardManager extends WavedashManager {
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
     }
-    // Cache raw r2Keys for getUserAvatarUrl(), then return absolute avatar URLs.
+    // Cache raw keys before URL-ifying so getUserAvatarUrl() can still size them.
     this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
     return result.entries.map((entry) => ({
       ...entry,

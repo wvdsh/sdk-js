@@ -72,8 +72,7 @@ export class FriendsManager extends WavedashManager {
       api.sdk.friends.listFriends,
       {}
     );
-    // Cache the raw r2Keys first so getUserAvatarUrl() can still size them,
-    // then hand the game absolute avatar URLs.
+    // Cache raw keys before URL-ifying so getUserAvatarUrl() can still size them.
     this.cacheUsers(friends);
     return friends.map((friend) => ({
       ...friend,

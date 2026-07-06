@@ -1,12 +1,6 @@
 import { AvatarSize } from "../constants";
 
-/**
- * Absolute, CDN-resized avatar URL for an r2Key. Single source of truth for
- * building avatar URLs: both `getUserAvatarUrl(userId, size)` and the
- * `avatarUrl`/`userAvatarUrl` fields on returned user objects go through here, so
- * every avatar is served resized via `cdn-cgi`. Values that are already absolute
- * URLs pass through unchanged; an empty value returns `undefined`.
- */
+/** Single builder for avatar URLs so every avatar is served cdn-cgi resized. */
 export function getAvatarUrl(
   r2KeyOrUrl: string | undefined,
   host: string,

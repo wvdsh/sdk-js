@@ -466,10 +466,6 @@ class WavedashSDK extends EventTarget {
   // User methods
   // ============
 
-  /**
-   * The current user. `avatarUrl` is an absolute URL ready for `<img src>` etc.;
-   * use `getUserAvatarUrl(userId, size)` for a sized/transformed avatar.
-   */
   getUser(): SDKUser {
     return this.formatResponse({
       ...this.wavedashUser,
