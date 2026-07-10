@@ -347,6 +347,23 @@ export class FileSystemManager extends WavedashManager {
     return `${origin}/${this.toRemoteKey(localPath)}`;
   }
 
+  /**
+   * Signed upload URLs on the UGC worker origin require the gameplay JWT.
+   * Legacy raw-R2 presigned URLs must NOT get an Authorization header — R2
+   * rejects presigned requests that also carry header auth (400).
+   */
+  private async uploadAuthHeaders(
+    uploadUrl: string
+  ): Promise<Record<string, string>> {
+    if (
+      new URL(uploadUrl).origin !==
+      new URL(this.getRemoteStorageOrigin()).origin
+    ) {
+      return {};
+    }
+    return { Authorization: `Bearer ${await this.sdk.ensureGameplayJwt()}` };
+  }
+
   private async uploadFromIndexedDb(
     presignedUploadUrl: string,
     indexedDBKey: string
@@ -359,8 +376,8 @@ export class FileSystemManager extends WavedashManager {
       }
       const response = await fetch(presignedUploadUrl, {
         method: "PUT",
+        headers: await this.uploadAuthHeaders(presignedUploadUrl),
         body: blob
-        // credentials not needed for presigned upload URL
       });
       return response.ok;
     } catch (error) {
@@ -385,8 +402,8 @@ export class FileSystemManager extends WavedashManager {
       const blob = new Blob([data], { type: "application/octet-stream" });
       const response = await fetch(presignedUploadUrl, {
         method: "PUT",
+        headers: await this.uploadAuthHeaders(presignedUploadUrl),
         body: blob
-        // credentials not needed for presigned upload URL
       });
       return response.ok;
     } catch (error) {
