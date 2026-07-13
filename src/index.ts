@@ -121,7 +121,7 @@ class WavedashSDK extends EventTarget {
 
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
-  gameCloudId: string;
+  gameCloudId: SDKConfig["gameCloudId"];
   fileSystemManager: FileSystemManager;
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";

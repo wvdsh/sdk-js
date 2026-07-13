@@ -11,11 +11,7 @@ import type { WavedashSDK } from "../index";
 import * as indexedDBUtils from "../utils/indexedDB";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
-import { api } from "@wvdsh/api";
-
-// Name of the remote R2 folder that stores user files
-// TODO: Should storage folder be configurable?
-const REMOTE_STORAGE_FOLDER = "userfs";
+import { api, UgcStorage } from "@wvdsh/api";
 
 // Stable path used as the remote key prefix, replacing the per-build Unity persistentDataPath
 const WAVEDASH_PERSISTENT_DATA_PATH = "/idbfs/wavedash";
@@ -43,7 +39,7 @@ export class FileSystemManager extends WavedashManager {
     const relative = normalized.startsWith("/")
       ? normalized.slice(1)
       : normalized;
-    return `${this.sdk.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.sdk.wavedashUser.id}/${relative}`;
+    return `${UgcStorage.userfsPrefix(this.sdk.gameCloudId, this.sdk.wavedashUser.id)}${relative}`;
   }
 
   /**
@@ -51,7 +47,10 @@ export class FileSystemManager extends WavedashManager {
    * the engine expects. Inverse of toRemoteKey.
    */
   private toLocalPath(r2Key: string): string {
-    const prefix = `${this.sdk.gameCloudId}/${REMOTE_STORAGE_FOLDER}/${this.sdk.wavedashUser.id}/`;
+    const prefix = UgcStorage.userfsPrefix(
+      this.sdk.gameCloudId,
+      this.sdk.wavedashUser.id
+    );
     const stripped = r2Key.startsWith(prefix)
       ? "/" + r2Key.slice(prefix.length)
       : r2Key;
@@ -344,7 +343,9 @@ export class FileSystemManager extends WavedashManager {
 
   private getRemoteStorageUrl(localPath: string): string {
     const origin = this.getRemoteStorageOrigin();
-    return `${origin}/${this.toRemoteKey(localPath)}`;
+    // encodeKeyPath matches how Convex encodes signed upload URLs, so reads
+    // and writes address the same object even for keys with reserved chars
+    return `${origin}/${UgcStorage.encodeKeyPath(this.toRemoteKey(localPath))}`;
   }
 
   /**
@@ -364,6 +365,33 @@ export class FileSystemManager extends WavedashManager {
     return { Authorization: `Bearer ${await this.sdk.ensureGameplayJwt()}` };
   }
 
+  // Fetch spec caps summed in-flight keepalive bodies at 64 KiB (shared per
+  // page); 60 KiB leaves headroom for concurrent saves. Soft threshold only —
+  // uploadBlob retries without keepalive if the quota rejects the fetch.
+  private static readonly KEEPALIVE_MAX_BYTES = 60 * 1024;
+
+  /**
+   * PUT a blob to its signed upload URL. Small bodies use `keepalive` so the
+   * upload survives the page unloading mid-save; if the shared keepalive
+   * quota is exhausted (fetch throws immediately), retry as a normal request.
+   */
+  private async uploadBlob(uploadUrl: string, blob: Blob): Promise<Response> {
+    const headers = await this.uploadAuthHeaders(uploadUrl);
+    if (blob.size <= FileSystemManager.KEEPALIVE_MAX_BYTES) {
+      try {
+        return await fetch(uploadUrl, {
+          method: "PUT",
+          headers,
+          body: blob,
+          keepalive: true
+        });
+      } catch {
+        // Keepalive quota exceeded or transient failure — retry without it
+      }
+    }
+    return await fetch(uploadUrl, { method: "PUT", headers, body: blob });
+  }
+
   private async uploadFromIndexedDb(
     presignedUploadUrl: string,
     indexedDBKey: string
@@ -374,11 +402,7 @@ export class FileSystemManager extends WavedashManager {
         logger.error(`File not found in IndexedDB: ${indexedDBKey}`);
         return false;
       }
-      const response = await fetch(presignedUploadUrl, {
-        method: "PUT",
-        headers: await this.uploadAuthHeaders(presignedUploadUrl),
-        body: blob
-      });
+      const response = await this.uploadBlob(presignedUploadUrl, blob);
       return response.ok;
     } catch (error) {
       logger.error(`Error uploading from IndexedDB: ${error}`);
@@ -400,11 +424,7 @@ export class FileSystemManager extends WavedashManager {
       ) as Uint8Array<ArrayBuffer>;
       // Convert to Blob for Safari compatibility
       const blob = new Blob([data], { type: "application/octet-stream" });
-      const response = await fetch(presignedUploadUrl, {
-        method: "PUT",
-        headers: await this.uploadAuthHeaders(presignedUploadUrl),
-        body: blob
-      });
+      const response = await this.uploadBlob(presignedUploadUrl, blob);
       return response.ok;
     } catch (error) {
       const msg = error instanceof Error ? error.message : String(error);
