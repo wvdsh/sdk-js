@@ -235,21 +235,83 @@ export class FileSystemManager extends WavedashManager {
   // Internal Methods (used by other services like UGC)
   // ================
 
-  // Helper to upload a local file to a presigned URL
+  // R2 rejects concurrent writes to the same object key (error 10058), so
+  // uploads run one at a time per key. Each key holds at most one queued
+  // request, and newer calls overwrite its args — the file is read when the
+  // PUT runs, so it carries the latest content (last-write-wins, the
+  // semantics a save file wants). Bursts of autosaves settle to at most one
+  // in-flight + one queued upload per key.
+  private queuedUploads = new Map<
+    string,
+    {
+      url: string;
+      filePath: string;
+      promise: Promise<boolean>;
+      resolve: (ok: boolean) => void;
+    }
+  >();
+  private drainingUploadKeys = new Set<string>();
+
+  // Queue a local file for upload to its presigned URL; resolves with the
+  // outcome of the PUT that carried this request's content
   async upload(presignedUploadUrl: string, filePath: string): Promise<boolean> {
+    const key = new URL(presignedUploadUrl).pathname;
+
+    const queued = this.queuedUploads.get(key);
+    if (queued) {
+      // Coalesce: the queued PUT will upload the newest request instead
+      queued.url = presignedUploadUrl;
+      queued.filePath = filePath;
+      return queued.promise;
+    }
+
+    let resolve!: (ok: boolean) => void;
+    const promise = new Promise<boolean>((r) => (resolve = r));
+    this.queuedUploads.set(key, {
+      url: presignedUploadUrl,
+      filePath,
+      promise,
+      resolve
+    });
+    void this.drainUploads(key);
+    return promise;
+  }
+
+  // Work through a key's queue one PUT at a time (no-op if already draining)
+  private async drainUploads(key: string): Promise<void> {
+    if (this.drainingUploadKeys.has(key)) return;
+    this.drainingUploadKeys.add(key);
+    try {
+      let entry;
+      while ((entry = this.queuedUploads.get(key))) {
+        this.queuedUploads.delete(key);
+        entry.resolve(
+          await this.putLocalFile(entry.url, entry.filePath).catch((err) => {
+            logger.error(`Upload failed for ${key}: ${err}`);
+            return false;
+          })
+        );
+      }
+    } finally {
+      this.drainingUploadKeys.delete(key);
+    }
+  }
+
+  // One PUT of one local file to its presigned URL
+  private async putLocalFile(
+    presignedUploadUrl: string,
+    filePath: string
+  ): Promise<boolean> {
     logger.debug(`Uploading ${filePath} to: ${presignedUploadUrl}`);
     if (this.sdk.engineInstance && !this.sdk.engineInstance.FS) {
       logger.error("Engine instance is missing the Emscripten FS API");
       return false;
     }
-    let success = false;
 
     if (this.sdk.engineInstance) {
-      success = await this.uploadFromFS(presignedUploadUrl, filePath);
-    } else {
-      success = await this.uploadFromIndexedDb(presignedUploadUrl, filePath);
+      return await this.uploadFromFS(presignedUploadUrl, filePath);
     }
-    return success;
+    return await this.uploadFromIndexedDb(presignedUploadUrl, filePath);
   }
 
   // Helper to download a file from a URL and save locally.
