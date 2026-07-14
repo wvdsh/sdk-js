@@ -410,27 +410,11 @@ export class FileSystemManager extends WavedashManager {
     return `${origin}/${UgcStorage.encodeKeyPath(this.toRemoteKey(localPath))}`;
   }
 
-  /**
-   * Signed upload URLs on the UGC worker origin require the gameplay JWT.
-   * Legacy raw-R2 presigned URLs must NOT get an Authorization header — R2
-   * rejects presigned requests that also carry header auth (400).
-   */
-  private async uploadAuthHeaders(
-    uploadUrl: string
-  ): Promise<Record<string, string>> {
-    if (
-      new URL(uploadUrl).origin !==
-      new URL(this.getRemoteStorageOrigin()).origin
-    ) {
-      return {};
-    }
-    return { Authorization: `Bearer ${await this.sdk.ensureGameplayJwt()}` };
-  }
-
   // Fetch spec caps summed in-flight keepalive bodies at 64 KiB (shared per
   // page); 60 KiB leaves headroom for concurrent saves. Soft threshold only —
   // uploadBlob retries without keepalive if the quota rejects the fetch.
   private static readonly KEEPALIVE_MAX_BYTES = 60 * 1024;
+  private static readonly UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 
   /**
    * PUT a blob to its signed upload URL. Small bodies use `keepalive` so the
@@ -438,20 +422,35 @@ export class FileSystemManager extends WavedashManager {
    * quota is exhausted (fetch throws immediately), retry as a normal request.
    */
   private async uploadBlob(uploadUrl: string, blob: Blob): Promise<Response> {
-    const headers = await this.uploadAuthHeaders(uploadUrl);
+    const jwt = await this.sdk.ensureGameplayJwt();
+    const headers = {
+      Authorization: `Bearer ${jwt}`
+    };
+    const uploadSignal = () =>
+      AbortSignal.timeout(FileSystemManager.UPLOAD_TIMEOUT_MS);
     if (blob.size <= FileSystemManager.KEEPALIVE_MAX_BYTES) {
       try {
         return await fetch(uploadUrl, {
           method: "PUT",
           headers,
           body: blob,
-          keepalive: true
+          keepalive: true,
+          signal: uploadSignal()
         });
-      } catch {
+      } catch (error) {
+        // A timed-out PUT shouldn't get a second full timeout window
+        if ((error as DOMException)?.name === "TimeoutError") {
+          throw error;
+        }
         // Keepalive quota exceeded or transient failure — retry without it
       }
     }
-    return await fetch(uploadUrl, { method: "PUT", headers, body: blob });
+    return await fetch(uploadUrl, {
+      method: "PUT",
+      headers,
+      body: blob,
+      signal: uploadSignal()
+    });
   }
 
   private async uploadFromIndexedDb(
