@@ -426,8 +426,12 @@ export class FileSystemManager extends WavedashManager {
     const headers = {
       Authorization: `Bearer ${jwt}`
     };
+    // Older browsers/WebViews lack AbortSignal.timeout; they get an
+    // unbounded upload rather than an instant failure
     const uploadSignal = () =>
-      AbortSignal.timeout(FileSystemManager.UPLOAD_TIMEOUT_MS);
+      typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(FileSystemManager.UPLOAD_TIMEOUT_MS)
+        : undefined;
     if (blob.size <= FileSystemManager.KEEPALIVE_MAX_BYTES) {
       try {
         return await fetch(uploadUrl, {
