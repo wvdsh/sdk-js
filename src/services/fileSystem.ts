@@ -250,7 +250,7 @@ export class FileSystemManager extends WavedashManager {
       resolve: (ok: boolean) => void;
     }
   >();
-  private drainingUploadKeys = new Set<string>();
+  private activeUploads = new Set<string>();
 
   // Queue a local file for upload to its presigned URL; resolves with the
   // outcome of the PUT that carried this request's content
@@ -279,8 +279,8 @@ export class FileSystemManager extends WavedashManager {
 
   // Work through a key's queue one PUT at a time (no-op if already draining)
   private async drainUploads(key: string): Promise<void> {
-    if (this.drainingUploadKeys.has(key)) return;
-    this.drainingUploadKeys.add(key);
+    if (this.activeUploads.has(key)) return;
+    this.activeUploads.add(key);
     try {
       let entry;
       while ((entry = this.queuedUploads.get(key))) {
@@ -293,7 +293,7 @@ export class FileSystemManager extends WavedashManager {
         );
       }
     } finally {
-      this.drainingUploadKeys.delete(key);
+      this.activeUploads.delete(key);
     }
   }
 
