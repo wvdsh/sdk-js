@@ -235,21 +235,83 @@ export class FileSystemManager extends WavedashManager {
   // Internal Methods (used by other services like UGC)
   // ================
 
-  // Helper to upload a local file to a presigned URL
+  // R2 rejects concurrent writes to the same object key (error 10058), so
+  // uploads run one at a time per key. Each key holds at most one queued
+  // request, and newer calls overwrite its args — the file is read when the
+  // PUT runs, so it carries the latest content (last-write-wins, the
+  // semantics a save file wants). Bursts of autosaves settle to at most one
+  // in-flight + one queued upload per key.
+  private queuedUploads = new Map<
+    string,
+    {
+      url: string;
+      filePath: string;
+      promise: Promise<boolean>;
+      resolve: (ok: boolean) => void;
+    }
+  >();
+  private activeUploads = new Set<string>();
+
+  // Queue a local file for upload to its presigned URL; resolves with the
+  // outcome of the PUT that carried this request's content
   async upload(presignedUploadUrl: string, filePath: string): Promise<boolean> {
+    const key = new URL(presignedUploadUrl).pathname;
+
+    const queued = this.queuedUploads.get(key);
+    if (queued) {
+      // Coalesce: the queued PUT will upload the newest request instead
+      queued.url = presignedUploadUrl;
+      queued.filePath = filePath;
+      return queued.promise;
+    }
+
+    let resolve!: (ok: boolean) => void;
+    const promise = new Promise<boolean>((r) => (resolve = r));
+    this.queuedUploads.set(key, {
+      url: presignedUploadUrl,
+      filePath,
+      promise,
+      resolve
+    });
+    void this.drainUploads(key);
+    return promise;
+  }
+
+  // Work through a key's queue one PUT at a time (no-op if already draining)
+  private async drainUploads(key: string): Promise<void> {
+    if (this.activeUploads.has(key)) return;
+    this.activeUploads.add(key);
+    try {
+      let entry;
+      while ((entry = this.queuedUploads.get(key))) {
+        this.queuedUploads.delete(key);
+        entry.resolve(
+          await this.putLocalFile(entry.url, entry.filePath).catch((err) => {
+            logger.error(`Upload failed for ${key}: ${err}`);
+            return false;
+          })
+        );
+      }
+    } finally {
+      this.activeUploads.delete(key);
+    }
+  }
+
+  // One PUT of one local file to its presigned URL
+  private async putLocalFile(
+    presignedUploadUrl: string,
+    filePath: string
+  ): Promise<boolean> {
     logger.debug(`Uploading ${filePath} to: ${presignedUploadUrl}`);
     if (this.sdk.engineInstance && !this.sdk.engineInstance.FS) {
       logger.error("Engine instance is missing the Emscripten FS API");
       return false;
     }
-    let success = false;
 
     if (this.sdk.engineInstance) {
-      success = await this.uploadFromFS(presignedUploadUrl, filePath);
-    } else {
-      success = await this.uploadFromIndexedDb(presignedUploadUrl, filePath);
+      return await this.uploadFromFS(presignedUploadUrl, filePath);
     }
-    return success;
+    return await this.uploadFromIndexedDb(presignedUploadUrl, filePath);
   }
 
   // Helper to download a file from a URL and save locally.
@@ -348,27 +410,11 @@ export class FileSystemManager extends WavedashManager {
     return `${origin}/${UgcStorage.encodeKeyPath(this.toRemoteKey(localPath))}`;
   }
 
-  /**
-   * Signed upload URLs on the UGC worker origin require the gameplay JWT.
-   * Legacy raw-R2 presigned URLs must NOT get an Authorization header — R2
-   * rejects presigned requests that also carry header auth (400).
-   */
-  private async uploadAuthHeaders(
-    uploadUrl: string
-  ): Promise<Record<string, string>> {
-    if (
-      new URL(uploadUrl).origin !==
-      new URL(this.getRemoteStorageOrigin()).origin
-    ) {
-      return {};
-    }
-    return { Authorization: `Bearer ${await this.sdk.ensureGameplayJwt()}` };
-  }
-
   // Fetch spec caps summed in-flight keepalive bodies at 64 KiB (shared per
   // page); 60 KiB leaves headroom for concurrent saves. Soft threshold only —
   // uploadBlob retries without keepalive if the quota rejects the fetch.
   private static readonly KEEPALIVE_MAX_BYTES = 60 * 1024;
+  private static readonly UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 
   /**
    * PUT a blob to its signed upload URL. Small bodies use `keepalive` so the
@@ -376,20 +422,39 @@ export class FileSystemManager extends WavedashManager {
    * quota is exhausted (fetch throws immediately), retry as a normal request.
    */
   private async uploadBlob(uploadUrl: string, blob: Blob): Promise<Response> {
-    const headers = await this.uploadAuthHeaders(uploadUrl);
+    const jwt = await this.sdk.ensureGameplayJwt();
+    const headers = {
+      Authorization: `Bearer ${jwt}`
+    };
+    // Older browsers/WebViews lack AbortSignal.timeout; they get an
+    // unbounded upload rather than an instant failure
+    const uploadSignal = () =>
+      typeof AbortSignal.timeout === "function"
+        ? AbortSignal.timeout(FileSystemManager.UPLOAD_TIMEOUT_MS)
+        : undefined;
     if (blob.size <= FileSystemManager.KEEPALIVE_MAX_BYTES) {
       try {
         return await fetch(uploadUrl, {
           method: "PUT",
           headers,
           body: blob,
-          keepalive: true
+          keepalive: true,
+          signal: uploadSignal()
         });
-      } catch {
+      } catch (error) {
+        // A timed-out PUT shouldn't get a second full timeout window
+        if ((error as DOMException)?.name === "TimeoutError") {
+          throw error;
+        }
         // Keepalive quota exceeded or transient failure — retry without it
       }
     }
-    return await fetch(uploadUrl, { method: "PUT", headers, body: blob });
+    return await fetch(uploadUrl, {
+      method: "PUT",
+      headers,
+      body: blob,
+      signal: uploadSignal()
+    });
   }
 
   private async uploadFromIndexedDb(
