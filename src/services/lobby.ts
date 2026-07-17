@@ -209,6 +209,7 @@ export class LobbyManager extends WavedashManager {
       api.sdk.gameLobby.getLobby,
       { lobbyId }
     );
+    this.cachedLobbies[lobbyId] = lobby;
     return lobby;
   }
 
