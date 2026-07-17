@@ -1199,6 +1199,15 @@ class WavedashSDK extends EventTarget {
     );
   }
 
+  async getLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<Lobby>> {
+    return this.apiCall(
+      this.lobbyManager,
+      "getLobby",
+      [["lobbyId", vId("lobbies")]],
+      lobbyId
+    );
+  }
+
   getLobbyUsers(lobbyId: Id<"lobbies">): LobbyUser[] {
     return this.apiCallSync(
       this.lobbyManager,

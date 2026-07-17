@@ -204,6 +204,14 @@ export class LobbyManager extends WavedashManager {
     return filteredLobbies;
   }
 
+  async getLobby(lobbyId: Id<"lobbies">): Promise<Lobby> {
+    const lobby = await this.sdk.convexClient.query(
+      api.sdk.gameLobby.getLobby,
+      { lobbyId }
+    );
+    return lobby;
+  }
+
   sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
     const args = { lobbyId, message };
     if (message.length === 0) {
