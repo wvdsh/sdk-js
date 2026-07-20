@@ -2,7 +2,6 @@ import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { type WavedashSDK } from "../index";
 import { takeFocus } from "../utils/focus";
 import { hasParentFrame } from "../utils/parentOrigin";
-import { suspendPointerLock } from "../utils/pointerLock";
 import { WavedashManager } from "./manager";
 
 /**
@@ -13,13 +12,12 @@ import { WavedashManager } from "./manager";
  *   (the host owns the overlay, so we postMessage up).
  * - When the parent closes the overlay it sends TAKE_FOCUS, which hands
  *   keyboard focus back to the game (see `takeFocus`).
- * - While the overlay is open we suspend pointer lock (the host broadcasts
- *   OVERLAY_CHANGED) so a game can't hold/re-grab the cursor behind it.
+ *
+ * While the overlay is open the host also broadcasts INPUT_BLOCKED_CHANGED,
+ * which suspends pointer lock and focus stealing (see InputBlockManager) —
+ * so a game can't hold/re-grab the cursor or focus behind the overlay.
  */
 export class OverlayManager extends WavedashManager {
-  // Restores native pointer lock; set while the overlay is open.
-  private restorePointerLock: (() => void) | undefined;
-
   constructor(sdk: WavedashSDK) {
     super(sdk);
 
@@ -32,22 +30,8 @@ export class OverlayManager extends WavedashManager {
       takeFocus
     );
 
-    this.sdk.iframeMessenger.addEventListener(
-      IFRAME_MESSAGE_TYPE.OVERLAY_CHANGED,
-      ({ isOpen }) => this.setOpen(isOpen)
-    );
-
     if (typeof window !== "undefined") {
       window.addEventListener("keydown", this.handleKeyDown);
-    }
-  }
-
-  private setOpen(open: boolean): void {
-    if (open) {
-      this.restorePointerLock ??= suspendPointerLock();
-    } else {
-      this.restorePointerLock?.();
-      this.restorePointerLock = undefined;
     }
   }
 
@@ -66,8 +50,6 @@ export class OverlayManager extends WavedashManager {
   };
 
   destroy(): void {
-    this.restorePointerLock?.();
-    this.restorePointerLock = undefined;
     if (typeof window !== "undefined") {
       window.removeEventListener("keydown", this.handleKeyDown);
     }
