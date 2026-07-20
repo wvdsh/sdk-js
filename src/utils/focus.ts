@@ -9,12 +9,12 @@ export function takeFocus(): void {
 
   const gameFocusTargets = document.getElementsByClassName("game-focus-target");
   if (gameFocusTargets.length > 0) {
-    (gameFocusTargets[0] as HTMLElement).focus();
+    (gameFocusTargets[0] as HTMLElement).focus({ preventScroll: true });
     return;
   }
 
   const focusableElement = document.querySelector(
     "canvas, input, button, [tabindex]:not([tabindex='-1'])"
   ) as HTMLElement | null;
-  focusableElement?.focus();
+  focusableElement?.focus({ preventScroll: true});
 }
