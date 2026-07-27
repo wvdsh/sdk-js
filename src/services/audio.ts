@@ -628,6 +628,24 @@ class AudioFrameShim {
     this.boundChildren.forEach((child) => this.manager.unbindIframe(child));
     this.boundChildren.clear();
 
+    // `win` is a WindowProxy, so after a same-origin navigation it resolves
+    // against the replacement document's realm — globals we never patched.
+    // Restoring (or canceling speech) there would stomp the fresh page, e.g.
+    // cancel utterances the new document queued during startup. Only unwind
+    // globals while the realm is still the one we shimmed; a realm that's
+    // gone (navigated or cross-origin, where reading `document` throws) has
+    // nothing of ours left to restore.
+    let sameRealm = false;
+    try {
+      sameRealm = win.document === this.doc;
+    } catch {
+      // cross-origin now — not our realm
+    }
+    if (!sameRealm) {
+      this.clearTracking();
+      return;
+    }
+
     const restore = (fn: () => void): void => {
       try {
         fn();
@@ -695,6 +713,10 @@ class AudioFrameShim {
       }
     });
 
+    this.clearTracking();
+  }
+
+  private clearTracking(): void {
     this.contexts.clear();
     this.contextGains = new WeakMap();
     this.elements.clear();
