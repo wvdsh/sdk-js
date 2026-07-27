@@ -49,6 +49,11 @@ export class WavedashLogger implements Logger {
       console.error(`[WavedashJS] ${message}`, ...args);
     }
   }
+
+  // Always logs to console
+  log(message: string, ...args: unknown[]): void {
+    console.log(`[WavedashJS] ${message}`, ...args);
+  }
 }
 
 export const logger = new WavedashLogger();
