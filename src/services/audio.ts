@@ -265,6 +265,7 @@ class AudioFrameShim {
   private originalSpeak: typeof SpeechSynthesis.prototype.speak | null = null;
   private originalUtteranceVolumeDescriptor: PropertyDescriptor | null = null;
   private mutationObserver: MutationObserver | null = null;
+  private pageHideHandler: (() => void) | null = null;
 
   constructor(manager: AudioManager, win: FrameWindow) {
     this.manager = manager;
@@ -463,12 +464,17 @@ class AudioFrameShim {
    */
   private shimSpeechSynthesis(): void {
     const win = this.win;
-    if (
-      !win.speechSynthesis ||
-      typeof win.SpeechSynthesisUtterance === "undefined"
-    ) {
-      return;
-    }
+    if (!win.speechSynthesis) return;
+
+    // The speech engine lives in the browser process and outlives this frame's
+    // document, so a full-page navigation (where destroy() never runs) leaves
+    // queued utterances talking over the next page. pagehide fires on this
+    // window even when it's an iframe whose parent navigates away — cancel
+    // there as the last chance to drain the queue.
+    this.pageHideHandler = (): void => win.speechSynthesis.cancel();
+    win.addEventListener("pagehide", this.pageHideHandler);
+
+    if (typeof win.SpeechSynthesisUtterance === "undefined") return;
 
     // `volume` descriptor: game reads back its intended value (mirrors `muted`).
     this.originalUtteranceVolumeDescriptor =
@@ -622,6 +628,24 @@ class AudioFrameShim {
     this.boundChildren.forEach((child) => this.manager.unbindIframe(child));
     this.boundChildren.clear();
 
+    // `win` is a WindowProxy, so after a same-origin navigation it resolves
+    // against the replacement document's realm — globals we never patched.
+    // Restoring (or canceling speech) there would stomp the fresh page, e.g.
+    // cancel utterances the new document queued during startup. Only unwind
+    // globals while the realm is still the one we shimmed; a realm that's
+    // gone (navigated or cross-origin, where reading `document` throws) has
+    // nothing of ours left to restore.
+    let sameRealm = false;
+    try {
+      sameRealm = win.document === this.doc;
+    } catch {
+      // cross-origin now — not our realm
+    }
+    if (!sameRealm) {
+      this.clearTracking();
+      return;
+    }
+
     const restore = (fn: () => void): void => {
       try {
         fn();
@@ -651,6 +675,18 @@ class AudioFrameShim {
       }
     });
     restore(() => {
+      if (this.pageHideHandler) {
+        win.removeEventListener("pagehide", this.pageHideHandler);
+        this.pageHideHandler = null;
+      }
+    });
+    restore(() => {
+      // The speech engine is a browser-wide service, so queued utterances keep
+      // speaking after this frame's document is gone. Cancel via this realm's
+      // speechSynthesis, which drains the shared queue.
+      win.speechSynthesis?.cancel();
+    });
+    restore(() => {
       if (
         this.originalUtteranceVolumeDescriptor &&
         typeof win.SpeechSynthesisUtterance !== "undefined"
@@ -677,6 +713,10 @@ class AudioFrameShim {
       }
     });
 
+    this.clearTracking();
+  }
+
+  private clearTracking(): void {
     this.contexts.clear();
     this.contextGains = new WeakMap();
     this.elements.clear();

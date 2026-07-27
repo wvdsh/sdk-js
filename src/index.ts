@@ -98,6 +98,7 @@ class WavedashSDK extends EventTarget {
   private launchParams: GameLaunchParams;
   private destroyed: boolean = false;
   private gameFinishedLoading: boolean = false;
+  private gameStartedLoading: boolean = false;
 
   // Expose constants for easy access `Wavedash.LobbyVisibility.PUBLIC` etc.
   Events = WavedashEvents;
@@ -381,6 +382,10 @@ class WavedashSDK extends EventTarget {
       [["progress", vNumber]],
       [progress]
     );
+    if (!this.gameStartedLoading) {
+      this.gameStartedLoading = true;
+      logger.log("loadStarted");
+    }
     this.clearSetupWarning();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE, {
       progress
@@ -391,6 +396,7 @@ class WavedashSDK extends EventTarget {
     this.clearSetupWarning();
     if (this.gameFinishedLoading) return;
     this.gameFinishedLoading = true;
+    logger.log("loadComplete");
     this.heartbeatManager.start();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOADING_COMPLETE, {});
   }
