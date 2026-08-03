@@ -90,12 +90,16 @@ export class ExternalLinkManager extends WavedashManager {
       const anchor = origin?.closest?.("a[href]");
       if (!(anchor instanceof HTMLAnchorElement)) return;
       // Only new-tab links. A target-less/_self anchor navigates the iframe
-      // itself, which the sandbox permits — leave those alone.
-      if (anchor.target.toLowerCase() !== "_blank") return;
+      // itself, which the sandbox permits — leave those alone. `<base target>`
+      // supplies the effective target for target-less anchors.
+      const target = (
+        anchor.target ||
+        document.querySelector("base[target]")?.getAttribute("target") ||
+        ""
+      ).toLowerCase();
+      if (target !== "_blank") return;
       const resolved = this.resolveHttpUrl(anchor.href);
-      if (!resolved || new URL(resolved).origin === window.location.origin) {
-        return;
-      }
+      if (!resolved) return;
       event.preventDefault();
       void this.copyLink(resolved);
     };
