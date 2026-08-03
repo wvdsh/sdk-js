@@ -79,8 +79,19 @@ export class ExternalLinkManager extends WavedashManager {
     window.open = this.patchedOpen;
 
     this.clickHandler = (event: MouseEvent) => {
-      const anchor = (event.target as Element | null)?.closest?.("a[href]");
+      // Bubble phase + this check so a game cancelling its own link (disabled
+      // state, confirmation dialog) wins, matching native anchor behaviour.
+      if (event.defaultPrevented) return;
+      // composedPath: clicks inside a shadow root retarget `event.target` to
+      // the shadow host, hiding the real anchor.
+      const origin = (event.composedPath?.()[0] ?? event.target) as
+        | Element
+        | null;
+      const anchor = origin?.closest?.("a[href]");
       if (!(anchor instanceof HTMLAnchorElement)) return;
+      // Only new-tab links. A target-less/_self anchor navigates the iframe
+      // itself, which the sandbox permits — leave those alone.
+      if (anchor.target.toLowerCase() !== "_blank") return;
       const resolved = this.resolveHttpUrl(anchor.href);
       if (!resolved || new URL(resolved).origin === window.location.origin) {
         return;
@@ -88,7 +99,7 @@ export class ExternalLinkManager extends WavedashManager {
       event.preventDefault();
       void this.copyLink(resolved);
     };
-    document.addEventListener("click", this.clickHandler, true);
+    document.addEventListener("click", this.clickHandler);
   }
 
   override destroy(): void {
@@ -97,7 +108,7 @@ export class ExternalLinkManager extends WavedashManager {
       window.open = this.nativeOpen;
     }
     if (this.clickHandler) {
-      document.removeEventListener("click", this.clickHandler, true);
+      document.removeEventListener("click", this.clickHandler);
     }
     this.nativeOpen = null;
     this.patchedOpen = null;
