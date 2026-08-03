@@ -7,19 +7,14 @@ import { WavedashManager } from "./manager";
 /**
  * ExternalLinkManager
  *
- * The game iframe's sandbox has no `allow-popups` — and `allow-popups` can't
- * be scoped to a domain anyway — so `window.open` inside the iframe is dead.
- * Games ask the parent instead, which opens the link only if its domain is on
- * the allowlist.
+ * The game iframe's sandbox has no `allow-popups`, so `window.open` inside the
+ * iframe is dead. Rather than navigate the player away mid-session, Wavedash
+ * copies the link to their clipboard and the host shows an in-game toast.
  *
  * The compat shims below are convenience, not security: game code shares this
  * realm and can unpatch them, but bypassing them just gets a popup the sandbox
- * blocks. The parent is the only enforcement point.
- *
- * User activation: the click happens in the iframe, User Activation v2
- * propagates transient activation to ancestor frames, and the parent's
- * message handler runs inside the ~5s window — so the parent's `window.open`
- * isn't treated as an unsolicited popup.
+ * blocks — and a game can already reach the clipboard directly, since the
+ * iframe is granted `clipboard-write`.
  */
 export class ExternalLinkManager extends WavedashManager {
   // Originals, restored on destroy.
@@ -35,24 +30,32 @@ export class ExternalLinkManager extends WavedashManager {
   }
 
   /**
-   * Ask the host to open `url` in a new tab. Resolves `false` if the domain
-   * isn't allowlisted. Must run inside a user gesture handler.
+   * Copy `url` to the player's clipboard and have the host show an in-game
+   * toast. Resolves `false` if the clipboard write failed. Must run inside a
+   * user gesture handler.
+   *
+   * The write happens here rather than in the host because
+   * `navigator.clipboard` only honours user activation raised in the calling
+   * frame — activation propagated up from this iframe doesn't count out there.
+   * The iframe is granted `clipboard-write` for exactly this.
    */
-  async openUrl(url: string): Promise<boolean> {
-    if (!hasParentFrame()) {
-      window.open(url, "_blank", "noopener,noreferrer");
-      return true;
+  async copyLink(url: string): Promise<boolean> {
+    const resolved = this.resolveHttpUrl(url);
+    if (!resolved) {
+      logger.warn(`copyLink("${url}") ignored — not an http(s) URL`);
+      return false;
     }
-    const response = await this.sdk.iframeMessenger.requestFromParent(
-      IFRAME_MESSAGE_TYPE.OPEN_URL,
-      { url }
-    );
-    if (!response.opened) {
-      logger.warn(
-        `openUrl("${url}") was blocked — the domain is not on the Wavedash allowlist`
-      );
+    try {
+      await navigator.clipboard.writeText(resolved);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(`copyLink("${resolved}") failed to write the clipboard: ${message}`);
+      return false;
     }
-    return response.opened;
+    this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LINK_COPIED, {
+      url: resolved
+    });
+    return true;
   }
 
   private installCompatShims(): void {
@@ -63,7 +66,7 @@ export class ExternalLinkManager extends WavedashManager {
     this.patchedOpen = (url, target, features) => {
       const resolved = this.resolveHttpUrl(url);
       if (!resolved) return nativeOpen(url, target, features);
-      void this.openUrl(resolved);
+      void this.copyLink(resolved);
       // Matches what the sandbox already hands back for a blocked popup, so
       // games that null-check the handle keep working.
       return null;
@@ -78,7 +81,7 @@ export class ExternalLinkManager extends WavedashManager {
         return;
       }
       event.preventDefault();
-      void this.openUrl(resolved);
+      void this.copyLink(resolved);
     };
     document.addEventListener("click", this.clickHandler, true);
   }

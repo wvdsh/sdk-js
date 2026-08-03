@@ -448,13 +448,14 @@ class WavedashSDK extends EventTarget {
   // ==============
 
   /**
-   * Ask the host page to open a URL in a new tab. Only https links on
-   * Wavedash's allowlist are opened; anything else resolves `false`. Must be
-   * called inside a user gesture handler (click / keydown / pointerdown).
+   * Hand an external URL to the player: it's copied to their clipboard and
+   * Wavedash shows an in-game toast, rather than navigating them out of the
+   * game. Must be called inside a user gesture handler (click / keydown /
+   * pointerdown).
    */
-  async openUrl(url: string): Promise<boolean> {
-    validateArgs("openUrl", [["url", vString]], [url]);
-    return this.externalLinkManager.openUrl(url);
+  async copyLink(url: string): Promise<boolean> {
+    validateArgs("copyLink", [["url", vString]], [url]);
+    return this.externalLinkManager.copyLink(url);
   }
 
   // =====
