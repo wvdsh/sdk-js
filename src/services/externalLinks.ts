@@ -65,7 +65,12 @@ export class ExternalLinkManager extends WavedashManager {
     this.nativeOpen = nativeOpen;
     this.patchedOpen = (url, target, features) => {
       const resolved = this.resolveHttpUrl(url);
-      if (!resolved) return nativeOpen(url, target, features);
+      // `_self`/`_parent`/`_top` navigate an existing frame rather than open
+      // one — the sandbox permits that, so leave those on the native path.
+      const navigatesInPlace =
+        typeof target === "string" &&
+        ["_self", "_parent", "_top"].includes(target.toLowerCase());
+      if (!resolved || navigatesInPlace) return nativeOpen(url, target, features);
       void this.copyLink(resolved);
       // Matches what the sandbox already hands back for a blocked popup, so
       // games that null-check the handle keep working.
