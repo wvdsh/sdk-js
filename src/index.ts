@@ -13,6 +13,7 @@ import {
 } from "./constants";
 import { WavedashEvents } from "./events";
 import { AudioManager } from "./services/audio";
+import { ExternalLinkManager } from "./services/externalLinks";
 import { FileSystemManager } from "./services/fileSystem";
 import { FriendsManager } from "./services/friends";
 import { FullscreenManager } from "./services/fullscreen";
@@ -134,6 +135,7 @@ class WavedashSDK extends EventTarget {
   overlayManager: OverlayManager;
   audioManager: AudioManager;
   paidContentManager: PaidContentManager;
+  externalLinkManager: ExternalLinkManager;
   private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
@@ -168,6 +170,7 @@ class WavedashSDK extends EventTarget {
     this.overlayManager = new OverlayManager(this);
     this.audioManager = new AudioManager(this);
     this.paidContentManager = new PaidContentManager(this);
+    this.externalLinkManager = new ExternalLinkManager(this);
 
     // Single source of truth for teardown — `destroy()` iterates this list.
     // Order matches construction so destroys happen in dependency order
@@ -185,7 +188,8 @@ class WavedashSDK extends EventTarget {
       this.fullscreenManager,
       this.overlayManager,
       this.audioManager,
-      this.paidContentManager
+      this.paidContentManager,
+      this.externalLinkManager
     ];
 
     // Cache current user for avatar lookups
@@ -437,6 +441,21 @@ class WavedashSDK extends EventTarget {
    */
   async toggleFullscreen(): Promise<boolean> {
     return this.fullscreenManager.toggleFullscreen();
+  }
+
+  // ==============
+  // External Links
+  // ==============
+
+  /**
+   * Hand an external URL to the player: it's copied to their clipboard and
+   * Wavedash shows an in-game toast, rather than navigating them out of the
+   * game. Must be called inside a user gesture handler (click / keydown /
+   * pointerdown).
+   */
+  async copyLink(url: string): Promise<boolean> {
+    validateArgs("copyLink", [["url", vString]], [url]);
+    return this.externalLinkManager.copyLink(url);
   }
 
   // =====
