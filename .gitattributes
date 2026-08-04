@@ -1,0 +1,26 @@
+# Enforce LF line endings across the team, regardless of each dev's local git config.
+# Text files are auto-detected and normalized to LF in the repo and on checkout.
+* text=auto eol=lf
+
+# Common binary types — never apply line-ending conversion.
+*.png    binary
+*.jpg    binary
+*.jpeg   binary
+*.gif    binary
+*.ico    binary
+*.webp   binary
+*.pdf    binary
+*.zip    binary
+*.gz     binary
+*.tar    binary
+*.7z     binary
+*.mp3    binary
+*.wav    binary
+*.ogg    binary
+*.mp4    binary
+*.mov    binary
+*.woff   binary
+*.woff2  binary
+*.ttf    binary
+*.otf    binary
+*.eot    binary
