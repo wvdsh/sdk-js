@@ -51,6 +51,7 @@ import type {
   Leaderboard,
   LeaderboardDisplayType,
   LeaderboardEntries,
+  LeaderboardEntryMetadata,
   LeaderboardSortOrder,
   ListUGCItemsArgs,
   Lobby,
@@ -79,6 +80,7 @@ import {
   vOptional,
   vRecord,
   vString,
+  vStringOrNumberRecord,
   vUint8Array,
   vUnion
 } from "./utils/validation";
@@ -657,7 +659,8 @@ class WavedashSDK extends EventTarget {
     leaderboardId: Id<"leaderboards">,
     score: number,
     keepBest: boolean,
-    ugcId?: Id<"userGeneratedContent">
+    ugcId?: Id<"userGeneratedContent">,
+    metadata?: LeaderboardEntryMetadata
   ): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
     return this.apiCall(
       this.leaderboardManager,
@@ -666,12 +669,14 @@ class WavedashSDK extends EventTarget {
         ["leaderboardId", vId("leaderboards")],
         ["score", vNumber],
         ["keepBest", vBoolean],
-        ["ugcId", vOptional(vId("userGeneratedContent"))]
+        ["ugcId", vOptional(vId("userGeneratedContent"))],
+        ["metadata", vOptional(vStringOrNumberRecord)]
       ],
       leaderboardId,
       score,
       keepBest,
-      ugcId
+      ugcId,
+      metadata
     );
   }
 

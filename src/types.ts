@@ -82,6 +82,9 @@ export type UpsertedLeaderboardEntry = FunctionReturnType<
   submittedScore: number;
   submittedRank: number;
 };
+export type LeaderboardEntryMetadata = NonNullable<
+  FunctionArgs<typeof api.sdk.leaderboards.upsertLeaderboardEntry>["metadata"]
+>;
 
 // Type helper to get event values as a union type
 export type WavedashEvent =

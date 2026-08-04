@@ -76,6 +76,24 @@ export const vRecord: Validator<
   return value as Record<string, string | number | boolean | null>;
 };
 
+export const vStringOrNumberRecord: Validator<
+  Record<string, string | number>
+> = (value, path) => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    throw new Error(
+      `${path}: expected plain object, got ${describeValue(value)}`
+    );
+  }
+  for (const [key, val] of Object.entries(value)) {
+    if (typeof val !== "string" && typeof val !== "number") {
+      throw new Error(
+        `${path}: expected only string or number values, but key "${key}" is ${describeValue(val)}`
+      );
+    }
+  }
+  return value as Record<string, string | number>;
+};
+
 /**
  * Validate a Convex document ID string.
  * Format check only (31-37 char lowercase base32); the actual table binding
