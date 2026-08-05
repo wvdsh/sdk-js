@@ -659,9 +659,24 @@ class WavedashSDK extends EventTarget {
     leaderboardId: Id<"leaderboards">,
     score: number,
     keepBest: boolean,
-    ugcId?: Id<"userGeneratedContent">,
-    metadata?: LeaderboardEntryMetadata
+    ugcId?: Id<"userGeneratedContent"> | null,
+    metadata?: LeaderboardEntryMetadata | null
   ): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
+    if (typeof metadata === "string") {
+      const raw = metadata;
+      try {
+        metadata = JSON.parse(raw);
+      } catch (error) {
+        const message = `uploadLeaderboardScore: invalid JSON: ${raw}`;
+        logger.error(message, error);
+        return this.formatResponse({
+          success: false,
+          data: null,
+          message
+        });
+      }
+    }
+
     return this.apiCall(
       this.leaderboardManager,
       "uploadLeaderboardScore",
@@ -675,8 +690,8 @@ class WavedashSDK extends EventTarget {
       leaderboardId,
       score,
       keepBest,
-      ugcId,
-      metadata
+      ugcId ?? undefined,
+      metadata ?? undefined
     );
   }
 
