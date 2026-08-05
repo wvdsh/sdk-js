@@ -659,8 +659,8 @@ class WavedashSDK extends EventTarget {
     leaderboardId: Id<"leaderboards">,
     score: number,
     keepBest: boolean,
-    ugcId?: Id<"userGeneratedContent"> | null,
-    metadata?: LeaderboardEntryMetadata | null
+    ugcId?: Id<"userGeneratedContent">,
+    metadata?: LeaderboardEntryMetadata
   ): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
     if (typeof metadata === "string") {
       const raw = metadata;
