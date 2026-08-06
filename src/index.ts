@@ -42,7 +42,8 @@ import {
   SDKUser,
   UrlParams,
   PlayRouteCaller,
-  SERVICE_WORKER_MESSAGE_TYPE
+  SERVICE_WORKER_MESSAGE_TYPE,
+  LOBBY_DEFAULTS
 } from "@wvdsh/api";
 import type {
   EngineInstance,
@@ -734,7 +735,7 @@ class WavedashSDK extends EventTarget {
       title,
       description,
       visibility,
-      filePath
+      filePath ?? undefined
     );
   }
 
@@ -1193,7 +1194,7 @@ class WavedashSDK extends EventTarget {
         ["maxPlayers", vOptional(vNumber)]
       ],
       visibility,
-      maxPlayers
+      maxPlayers ?? LOBBY_DEFAULTS.MAX_PLAYERS
     );
   }
 
