@@ -319,6 +319,8 @@ export class HeartbeatManager extends WavedashManager {
           WavedashEvents.BACKEND_CONNECTED,
           connection
         );
+        // Reestablish heartbeat
+        this.start();
       } else if (!this.isConnected && wasConnected) {
         // First tick of disconnection - notify reconnecting
         this.disconnectedAt = Date.now();
