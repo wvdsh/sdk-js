@@ -292,15 +292,13 @@ export class LobbyManager extends WavedashManager {
     // Cache initial lobby users for avatar lookups
     this.sdk.friendsManager.cacheUsers(response.users);
 
-    // Error handler for subscription failures (e.g., kicked from lobby)
+    // Error handler for subscription failures (e.g., kicked from lobby).
     const onLobbySubscriptionError = (error: Error) => {
       logger.error(`Lobby subscription error: ${error.message}`);
-      // Check if this is a "not a member" error indicating we were kicked
       if (error.message.includes("not a member")) {
         this.handleLobbyKicked(LobbyKickedReason.KICKED);
-      } else {
-        this.handleLobbyKicked(LobbyKickedReason.ERROR);
       }
+      // Other errors could just be transient, keep the lobby membership alive until we actually receive a "not a member" error.
     };
 
     // Subscribe to lobby messages
@@ -360,9 +358,9 @@ export class LobbyManager extends WavedashManager {
   }
 
   /**
-   * Handle being kicked or removed from a lobby (subscription error)
-   * This is called when a subscription fails with "User is not a member of this lobby"
-   * Multiple subscriptions may error at once, so we guard against emitting multiple events
+   * Handle being kicked or removed from a lobby.
+   * Called when a subscription fails with "User is not a member of this lobby".
+   * Multiple subscriptions may error at once, so we guard against emitting multiple events.
    */
   private handleLobbyKicked(
     reason: (typeof LobbyKickedReason)[keyof typeof LobbyKickedReason] = LobbyKickedReason.KICKED
