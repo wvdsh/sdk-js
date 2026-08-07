@@ -734,7 +734,7 @@ class WavedashSDK extends EventTarget {
       title,
       description,
       visibility,
-      filePath
+      filePath ?? undefined
     );
   }
 
@@ -1193,7 +1193,7 @@ class WavedashSDK extends EventTarget {
         ["maxPlayers", vOptional(vNumber)]
       ],
       visibility,
-      maxPlayers
+      maxPlayers ?? undefined
     );
   }
 
