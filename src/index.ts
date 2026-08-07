@@ -52,6 +52,7 @@ import type {
   Leaderboard,
   LeaderboardDisplayType,
   LeaderboardEntries,
+  LeaderboardEntryMetadata,
   LeaderboardSortOrder,
   ListUGCItemsArgs,
   Lobby,
@@ -80,6 +81,7 @@ import {
   vOptional,
   vRecord,
   vString,
+  vStringOrNumberRecord,
   vUint8Array,
   vUnion
 } from "./utils/validation";
@@ -682,8 +684,24 @@ class WavedashSDK extends EventTarget {
     leaderboardId: Id<"leaderboards">,
     score: number,
     keepBest: boolean,
-    ugcId?: Id<"userGeneratedContent">
+    ugcId?: Id<"userGeneratedContent">,
+    metadata?: LeaderboardEntryMetadata
   ): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
+    if (typeof metadata === "string") {
+      const raw = metadata;
+      try {
+        metadata = JSON.parse(raw);
+      } catch (error) {
+        const message = `uploadLeaderboardScore: invalid JSON: ${raw}`;
+        logger.error(message, error);
+        return this.formatResponse({
+          success: false,
+          data: null,
+          message
+        });
+      }
+    }
+
     return this.apiCall(
       this.leaderboardManager,
       "uploadLeaderboardScore",
@@ -691,12 +709,14 @@ class WavedashSDK extends EventTarget {
         ["leaderboardId", vId("leaderboards")],
         ["score", vNumber],
         ["keepBest", vBoolean],
-        ["ugcId", vOptional(vId("userGeneratedContent"))]
+        ["ugcId", vOptional(vId("userGeneratedContent"))],
+        ["metadata", vOptional(vStringOrNumberRecord)]
       ],
       leaderboardId,
       score,
       keepBest,
-      ugcId
+      ugcId ?? undefined,
+      metadata ?? undefined
     );
   }
 

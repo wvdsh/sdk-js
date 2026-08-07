@@ -10,6 +10,7 @@ import type {
   LeaderboardDisplayType,
   Leaderboard,
   LeaderboardEntries,
+  LeaderboardEntryMetadata,
   UpsertedLeaderboardEntry
 } from "../types";
 import type { WavedashSDK } from "../index";
@@ -125,11 +126,12 @@ export class LeaderboardManager extends WavedashManager {
     leaderboardId: Id<"leaderboards">,
     score: number,
     keepBest: boolean,
-    ugcId?: Id<"userGeneratedContent">
+    ugcId?: Id<"userGeneratedContent">,
+    metadata?: LeaderboardEntryMetadata
   ): Promise<UpsertedLeaderboardEntry> {
     const result = await this.sdk.convexClient.mutation(
       api.sdk.leaderboards.upsertLeaderboardEntry,
-      { leaderboardId, score, keepBest, ugcId }
+      { leaderboardId, score, keepBest, ugcId, metadata }
     );
     if (result && result.totalEntries) {
       this.updateCachedTotalEntries(leaderboardId, result.totalEntries);
