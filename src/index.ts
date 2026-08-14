@@ -56,6 +56,8 @@ import type {
   LeaderboardSortOrder,
   ListUGCItemsArgs,
   Lobby,
+  LobbyDataUpdate,
+  LobbyDataValue,
   LobbyUser,
   LobbyVisibility,
   P2PMessage,
@@ -75,13 +77,13 @@ import {
   vBoolean,
   vEnum,
   vId,
+  vMetadataRecord,
   vNull,
   vNumber,
   vObject,
   vOptional,
   vRecord,
   vString,
-  vStringOrNumberRecord,
   vUint8Array,
   vUnion
 } from "./utils/validation";
@@ -710,7 +712,7 @@ class WavedashSDK extends EventTarget {
         ["score", vNumber],
         ["keepBest", vBoolean],
         ["ugcId", vOptional(vId("userGeneratedContent"))],
-        ["metadata", vOptional(vStringOrNumberRecord)]
+        ["metadata", vOptional(vMetadataRecord)]
       ],
       leaderboardId,
       score,
@@ -1280,7 +1282,7 @@ class WavedashSDK extends EventTarget {
     );
   }
 
-  getLobbyData(lobbyId: Id<"lobbies">, key: string): string | number | null {
+  getLobbyData(lobbyId: Id<"lobbies">, key: string): LobbyDataValue | null {
     return this.apiCallSync(
       this.lobbyManager,
       "getLobbyData",
@@ -1296,7 +1298,7 @@ class WavedashSDK extends EventTarget {
   setLobbyData(
     lobbyId: Id<"lobbies">,
     key: string,
-    value: string | number | null
+    value: LobbyDataUpdate
   ): boolean {
     return this.apiCallSync(
       this.lobbyManager,
@@ -1304,7 +1306,7 @@ class WavedashSDK extends EventTarget {
       [
         ["lobbyId", vId("lobbies")],
         ["key", vString],
-        ["value", vUnion<string | number | null>(vString, vNumber, vNull)]
+        ["value", vUnion<LobbyDataUpdate>(vString, vNumber, vBoolean, vNull)]
       ],
       lobbyId,
       key,

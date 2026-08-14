@@ -12,6 +12,8 @@ import type {
   LobbyUser,
   LobbyMessage,
   LobbyInvite,
+  LobbyDataValue,
+  LobbyDataUpdate,
   LobbyJoinedPayload,
   LobbyKickedPayload,
   LobbyUsersUpdatedPayload,
@@ -42,7 +44,7 @@ export class LobbyManager extends WavedashManager {
   private lobbyUsers: LobbyUser[] = [];
   private lobbyHostId: Id<"users"> | null = null;
   private lobbyMetadata: Record<string, unknown> = {};
-  private pendingMetadataUpdates: Record<string, string | number | null> = {};
+  private pendingMetadataUpdates: Record<string, LobbyDataUpdate> = {};
   private recentMessageIds: Id<"lobbyMessages">[] = [];
   private maybeBeingDeletedLobbyIds: Set<Id<"lobbies">> = new Set();
   private resetMaybeBeingDeletedLobbyIdTimeouts: Map<Id<"lobbies">, number> =
@@ -122,15 +124,15 @@ export class LobbyManager extends WavedashManager {
     return this.lobbyHostId;
   }
 
-  getLobbyData(lobbyId: Id<"lobbies">, key: string): string | number | null {
+  getLobbyData(lobbyId: Id<"lobbies">, key: string): LobbyDataValue | null {
     if (this.lobbyId === lobbyId) {
-      return (this.lobbyMetadata[key] as string | number) ?? null;
+      return (this.lobbyMetadata[key] as LobbyDataValue) ?? null;
     }
     if (!this.cachedLobbies[lobbyId]) {
       return null;
     }
     return (
-      (this.cachedLobbies[lobbyId].metadata[key] as string | number) ?? null
+      (this.cachedLobbies[lobbyId].metadata[key] as LobbyDataValue) ?? null
     );
   }
 
@@ -141,7 +143,7 @@ export class LobbyManager extends WavedashManager {
   setLobbyData(
     lobbyId: Id<"lobbies">,
     key: string,
-    value: string | number | null
+    value: LobbyDataUpdate
   ): boolean {
     if (this.lobbyId !== lobbyId || this.lobbyHostId !== this.sdk.getUserId()) {
       return false;

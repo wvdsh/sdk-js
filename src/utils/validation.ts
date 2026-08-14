@@ -11,7 +11,7 @@
  * used purely for error messages (e.g. `"createLobby.visibility"`).
  */
 
-import type { Id } from "../types";
+import type { Id, LeaderboardEntryMetadata } from "../types";
 
 export type Validator<T = unknown> = (value: unknown, path: string) => T;
 
@@ -76,23 +76,9 @@ export const vRecord: Validator<
   return value as Record<string, string | number | boolean | null>;
 };
 
-export const vStringOrNumberRecord: Validator<
-  Record<string, string | number>
-> = (value, path) => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new Error(
-      `${path}: expected plain object, got ${describeValue(value)}`
-    );
-  }
-  for (const [key, val] of Object.entries(value)) {
-    if (typeof val !== "string" && typeof val !== "number") {
-      throw new Error(
-        `${path}: expected only string or number values, but key "${key}" is ${describeValue(val)}`
-      );
-    }
-  }
-  return value as Record<string, string | number>;
-};
+export const vMetadataRecord: Validator<LeaderboardEntryMetadata> = vRecordOf(
+  vUnion<LeaderboardEntryMetadata[string]>(vString, vNumber, vBoolean)
+);
 
 /**
  * Validate a Convex document ID string.
@@ -152,6 +138,23 @@ export function vUnion<T>(...variants: Validator<T>[]): Validator<T> {
       }
     }
     throw new Error(`${path}: no variant matched, got ${describeValue(value)}`);
+  };
+}
+
+/** Validates a flat record whose values all satisfy `inner`. */
+export function vRecordOf<T>(
+  inner: Validator<T>
+): Validator<Record<string, T>> {
+  return (value, path) => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      throw new Error(
+        `${path}: expected plain object, got ${describeValue(value)}`
+      );
+    }
+    for (const [key, val] of Object.entries(value)) {
+      inner(val, `${path}.${key}`);
+    }
+    return value as Record<string, T>;
   };
 }
 
