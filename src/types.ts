@@ -66,6 +66,21 @@ export type LobbyJoinResponse = FunctionReturnType<
 export type LobbyInvite = FunctionReturnType<
   typeof api.sdk.gameLobby.getLobbyInvites
 >[0];
+
+/** A value stored in lobby metadata. */
+export type LobbyDataValue = FunctionReturnType<
+  typeof api.sdk.gameLobby.getLobbyMetadata
+>[string];
+
+/**
+ * A value accepted by `setLobbyData`, where `null` deletes the key rather than
+ * storing a value — so `false` and "unset" stay distinguishable. Distinct from
+ * the `null` `getLobbyData` returns, which just means the key isn't set.
+ */
+export type LobbyDataUpdate = FunctionArgs<
+  typeof api.sdk.gameLobby.setLobbyMetadata
+>["updates"][string];
+
 export type Friend = FunctionReturnType<typeof api.sdk.friends.listFriends>[0];
 export type Leaderboard = FunctionReturnType<
   typeof api.sdk.leaderboards.getLeaderboard
