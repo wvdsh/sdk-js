@@ -169,7 +169,7 @@ export interface LobbyJoinedPayload {
   lobbyId: Id<"lobbies">;
   hostId: Id<"users">;
   users: LobbyUser[];
-  metadata: Record<string, unknown>;
+  metadata: Record<string, string | number | boolean>;
 }
 
 export type LobbyKickedReason =
@@ -190,7 +190,7 @@ export interface LobbyUsersUpdatedPayload extends LobbyUser {
 }
 
 /** Payload for LobbyDataUpdated event - the full lobby metadata */
-export type LobbyDataUpdatedPayload = Record<string, unknown>;
+export type LobbyDataUpdatedPayload = Record<string, string | number | boolean>;
 
 /** Payload for LobbyMessage event - a message received in the lobby */
 export type LobbyMessagePayload = LobbyMessage;
