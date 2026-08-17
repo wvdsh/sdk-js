@@ -315,7 +315,7 @@ export class LobbyManager extends WavedashManager {
     this.unsubscribeLobbyData = this.sdk.convexClient.onUpdate(
       api.sdk.gameLobby.getLobbyMetadata,
       { lobbyId: response.lobbyId },
-      (lobbyMetadata: Record<string, unknown>) => {
+      (lobbyMetadata: LobbyDataUpdatedPayload) => {
         this.lobbyMetadata = lobbyMetadata;
         this.sdk.gameEventManager.notifyGame(
           WavedashEvents.LOBBY_DATA_UPDATED,
