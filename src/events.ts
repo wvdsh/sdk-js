@@ -36,7 +36,10 @@ export const WavedashEvents = {
   FULLSCREEN_CHANGED: "FullscreenChanged", // fullscreen state changed
 
   // Audio events
-  MUTE_CHANGED: "MuteChanged" // mute state changed
+  MUTE_CHANGED: "MuteChanged", // mute state changed
+
+  // Paid content events
+  ENTITLEMENTS_GRANTED: "EntitlementsGranted" // player was granted paid content (in-game paywall, game page, gift, another tab)
 
   // TODO: Future events to implement
   // P2P_CONNECTION_REQUESTED: 'P2PConnectionRequested', // for now we always connect all lobby members
