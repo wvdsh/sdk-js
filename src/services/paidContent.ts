@@ -1,4 +1,7 @@
 import { api, IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
+import type { WavedashSDK } from "../index";
+import { WavedashEvents } from "../events";
+import type { EntitlementsGrantedPayload } from "../types";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
 import { showDevPaywall } from "../utils/devPaywall";
@@ -43,6 +46,39 @@ export class PaidContentManager extends WavedashManager {
   private paywallOpen = false;
   private restorePointerLock: (() => void) | undefined;
 
+  constructor(sdk: WavedashSDK) {
+    super(sdk);
+    this.sdk.iframeMessenger.addEventListener(
+      IFRAME_MESSAGE_TYPE.ENTITLEMENTS_GRANTED,
+      this.handleEntitlementsGranted
+    );
+  }
+
+  /**
+   * Host broadcast: the player was granted paid content, from any source (the
+   * game's own paywall, the game page purchase list, a gift redemption, or a
+   * purchase in another tab). Refresh the gameplay JWT first so the new
+   * entitlement is already reflected (isEntitled(), paid-asset requests) by
+   * the time the game receives the event.
+   */
+  private handleEntitlementsGranted = (data: {
+    contentIdentifiers: string[];
+  }): void => {
+    void (async () => {
+      try {
+        await this.sdk.ensureGameplayJwt(true);
+      } catch (err) {
+        logger.error("Failed to refresh gameplay JWT after purchase", err);
+      }
+      this.sdk.gameEventManager.notifyGame(
+        WavedashEvents.ENTITLEMENTS_GRANTED,
+        {
+          contentIdentifiers: data.contentIdentifiers
+        } satisfies EntitlementsGrantedPayload
+      );
+    })();
+  };
+
   async isEntitled(contentIdentifier: string): Promise<boolean> {
     const jwt = await this.sdk.ensureGameplayJwt();
     return readEntitlementsFromJwt(jwt).includes(contentIdentifier);
@@ -81,11 +117,19 @@ export class PaidContentManager extends WavedashManager {
       }
       if (!purchased) return false;
       // Grant via the gameplay JWT (sandbox-gated server-side), then refresh so
-      // the new entitlement lands in the JWT `ents`.
+      // the new entitlement lands in the JWT `ents`. There's no host to
+      // broadcast EntitlementsGranted here, so emit it ourselves — games that
+      // unlock in the event handler behave the same in `wavedash dev`.
       await this.sdk.convexClient.mutation(api.sdk.paidContent.mockPurchase, {
         contentIdentifier
       });
       await this.sdk.ensureGameplayJwt(true);
+      this.sdk.gameEventManager.notifyGame(
+        WavedashEvents.ENTITLEMENTS_GRANTED,
+        {
+          contentIdentifiers: [contentIdentifier]
+        } satisfies EntitlementsGrantedPayload
+      );
       return true;
     }
 
@@ -113,6 +157,10 @@ export class PaidContentManager extends WavedashManager {
   }
 
   destroy(): void {
+    this.sdk.iframeMessenger.removeEventListener(
+      IFRAME_MESSAGE_TYPE.ENTITLEMENTS_GRANTED,
+      this.handleEntitlementsGranted
+    );
     this.restorePointerLock?.();
     this.restorePointerLock = undefined;
   }

@@ -285,6 +285,19 @@ export interface MuteChangedPayload {
   isMuted: boolean;
 }
 
+// --- Paid Content Events ---
+
+/**
+ * Payload for EntitlementsGranted event - emitted when the player is granted
+ * paid content, regardless of source (in-game paywall, game page purchase,
+ * gift redemption, purchase from another tab). A list so one checkout can
+ * grant multiple contents (bundles). The gameplay JWT is refreshed before
+ * this event fires, so `isEntitled()` is already true for every entry.
+ */
+export interface EntitlementsGrantedPayload {
+  contentIdentifiers: string[];
+}
+
 // =============================================================================
 // Event map: links each event name to its payload type so addEventListener,
 // removeEventListener, on, and off can infer the right CustomEvent / payload.
@@ -308,6 +321,7 @@ export type WavedashEventMap = {
   [WavedashEvents.BACKEND_RECONNECTING]: BackendConnectionPayload;
   [WavedashEvents.FULLSCREEN_CHANGED]: FullscreenChangedPayload;
   [WavedashEvents.MUTE_CHANGED]: MuteChangedPayload;
+  [WavedashEvents.ENTITLEMENTS_GRANTED]: EntitlementsGrantedPayload;
 };
 
 // =============================================================================
