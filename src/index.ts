@@ -1708,6 +1708,48 @@ declare global {
 export * from "./types";
 export type { WavedashSDK };
 
+/**
+ * `SDKConfig.environment` lands in @wvdsh/api after 0.1.60. Read it off a
+ * widened type until this package bumps, so the SDK behaves sanely against both
+ * the current and the next published contract.
+ */
+type SDKConfigWithEnvironment = SDKConfig & { environment?: string };
+
+/**
+ * Mirrors `GAME_CLOUD_ENVIRONMENT.PRODUCTION` in the mainsite repo
+ * (src/convex/constants/appConstants.ts). It travels in SDKConfig, so it is
+ * part of this package's wire contract, but appConstants is not published in
+ * @wvdsh/api and cannot be imported here.
+ */
+const PRODUCTION_ENVIRONMENT = "PRODUCTION";
+
+/**
+ * Install the SDK on `window` under `key`.
+ *
+ * When `hidden`, the property is defined non-enumerably, which keeps it out of
+ * `Object.keys(window)`, `for...in`, object spreads and the expanded `window`
+ * in a console log — so a player idly reading the global object does not trip
+ * over the score-writing API. Named access is untouched, which is all any
+ * engine bridge uses (`window.Wavedash[method]`), and a browser will still
+ * autocomplete the name for anyone who already knows it. This is friction
+ * against idle discovery, not a security boundary.
+ */
+function exposeSdkGlobal(key: string, sdk: WavedashSDK, hidden: boolean): void {
+  if (!hidden) {
+    (window as unknown as Record<string, WavedashSDK>)[key] = sdk;
+    return;
+  }
+
+  Object.defineProperty(window, key, {
+    value: sdk,
+    enumerable: false,
+    // Writable and configurable so the property stays as replaceable as the
+    // plain assignment it stands in for.
+    writable: true,
+    configurable: true
+  });
+}
+
 // Type-safe initialization helper (idempotent — safe to call more than once).
 export function setupWavedashSDK(): WavedashSDK {
   const existing = window.Wavedash;
@@ -1715,9 +1757,12 @@ export function setupWavedashSDK(): WavedashSDK {
 
   // `wavedash dev` inlines the config as a global instead of the query
   // param, keeping the localhost URL clean.
-  const raw =
-    new URLSearchParams(window.location.search).get(UrlParams.SdkConfig) ??
-    (window as { __wavedashSdkConfig?: string }).__wavedashSdkConfig;
+  const queryConfig = new URLSearchParams(window.location.search).get(
+    UrlParams.SdkConfig
+  );
+  const inlineConfig = (window as { __wavedashSdkConfig?: string })
+    .__wavedashSdkConfig;
+  const raw = queryConfig ?? inlineConfig;
 
   if (!raw) {
     throw new Error(
@@ -1740,10 +1785,23 @@ export function setupWavedashSDK(): WavedashSDK {
   setParentOrigin(sdkConfig.parentOrigin);
 
   const sdk = new WavedashSDK(sdkConfig);
-  window.Wavedash = sdk;
 
-  // Kept for backwards compatibility
-  (window as unknown as { WavedashJS: WavedashSDK }).WavedashJS = sdk;
+  // Developers poke at the SDK from the console while building a game; players
+  // on a live game have no use for it, and a curious one finds the global
+  // before anything else. So sandbox, `wavedash dev`, and any config predating
+  // the `environment` field keep the fully enumerable global — only a
+  // production cloud gets the hidden one.
+  const isLocalDevConfig = queryConfig === null && inlineConfig !== undefined;
+  const hideGlobals =
+    !isLocalDevConfig &&
+    (sdkConfig as SDKConfigWithEnvironment).environment ===
+      PRODUCTION_ENVIRONMENT;
+
+  exposeSdkGlobal("Wavedash", sdk, hideGlobals);
+
+  // Kept for backwards compatibility — the Go, Ebiten and Love2D docs tell
+  // developers to call `window.WavedashJS` directly.
+  exposeSdkGlobal("WavedashJS", sdk, hideGlobals);
 
   return sdk;
 }
