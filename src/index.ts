@@ -38,6 +38,7 @@ const iframeMessenger = new IFrameMessenger();
 
 import {
   IFRAME_MESSAGE_TYPE,
+  LAUNCH_PARAM_PREFIX,
   SDKConfig,
   SDKUser,
   UrlParams,
@@ -1710,13 +1711,10 @@ declare global {
 export * from "./types";
 export type { WavedashSDK };
 
-const LAUNCH_PARAM_PREFIX = "wvdsh_";
-
 /**
- * Standalone (`wavedash dev`), the game is the top-level document, so its own
- * URL is the one the player opened — read the launch params straight off it,
- * the way the mainsite reads them per navigation in prod. SDKConfig cannot
- * carry them here: it is minted once at sign-in and reused for the session.
+ * SDKConfig cannot carry these standalone: it is minted once at sign-in and
+ * reused all session, while launch params change per navigation. The game is
+ * the top-level document there, so its own URL is the one the player opened.
  */
 function launchParamsFromUrl(): GameLaunchParams {
   const params: GameLaunchParams = {};

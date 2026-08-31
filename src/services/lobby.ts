@@ -29,13 +29,18 @@ import {
 } from "../constants";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
-import { api, IFRAME_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
+import {
+  api,
+  IFRAME_MESSAGE_TYPE,
+  LAUNCH_PARAM_PREFIX,
+  SDKUser
+} from "@wvdsh/api";
 import { WavedashManager } from "./manager";
 import { getAvatarUrl } from "../utils/cdn";
 import { logger } from "../utils/logger";
 import { hasParentFrame } from "../utils/parentOrigin";
 
-const LOBBY_LAUNCH_PARAM = "wvdsh_lobby";
+const LOBBY_LAUNCH_PARAM = `${LAUNCH_PARAM_PREFIX}lobby`;
 
 export class LobbyManager extends WavedashManager {
   // Track current lobby state
