@@ -35,8 +35,7 @@ import { getAvatarUrl } from "../utils/cdn";
 import { logger } from "../utils/logger";
 import { hasParentFrame } from "../utils/parentOrigin";
 
-const LAUNCH_PARAM_PREFIX = "wvdsh_";
-const LOBBY_LAUNCH_PARAM = `${LAUNCH_PARAM_PREFIX}lobby`;
+const LOBBY_LAUNCH_PARAM = "wvdsh_lobby";
 
 export class LobbyManager extends WavedashManager {
   // Track current lobby state
@@ -258,7 +257,7 @@ export class LobbyManager extends WavedashManager {
       throw new Error("User is not in a lobby");
     }
     if (!hasParentFrame()) {
-      const link = this.standaloneInviteLink(this.lobbyId);
+      const link = window.location.href;
       if (copyToClipboard) {
         await this.sdk.externalLinkManager.copyLink(link);
       }
@@ -278,39 +277,15 @@ export class LobbyManager extends WavedashManager {
   // Private Methods
   // ================
 
-  private standaloneLobbyUrl(lobbyId: Id<"lobbies"> | null): URL {
+  private syncStandaloneLobbyParam(lobbyId: Id<"lobbies"> | null): void {
+    if (hasParentFrame() || typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (lobbyId) {
       url.searchParams.set(LOBBY_LAUNCH_PARAM, lobbyId);
     } else {
       url.searchParams.delete(LOBBY_LAUNCH_PARAM);
     }
-    return url;
-  }
-
-  /**
-   * Prod's host strips every `wvdsh_` param from its URL on mount before
-   * writing the lobby back, so its invite link carries the lobby alone. Match
-   * that, or a link minted here would hand the invitee launch params the same
-   * link would not carry in prod.
-   */
-  private standaloneInviteLink(lobbyId: Id<"lobbies">): string {
-    const url = this.standaloneLobbyUrl(lobbyId);
-    for (const key of [...url.searchParams.keys()]) {
-      if (key !== LOBBY_LAUNCH_PARAM && key.startsWith(LAUNCH_PARAM_PREFIX)) {
-        url.searchParams.delete(key);
-      }
-    }
-    return url.toString();
-  }
-
-  private syncStandaloneLobbyParam(lobbyId: Id<"lobbies"> | null): void {
-    if (hasParentFrame() || typeof window === "undefined") return;
-    window.history.replaceState(
-      window.history.state,
-      "",
-      this.standaloneLobbyUrl(lobbyId).toString()
-    );
+    window.history.replaceState(window.history.state, "", url.toString());
   }
 
   /**
