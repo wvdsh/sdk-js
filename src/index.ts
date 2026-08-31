@@ -70,7 +70,7 @@ import type {
   WavedashConfig,
   WavedashResponse
 } from "./types";
-import { setParentOrigin } from "./utils/parentOrigin";
+import { hasParentFrame, setParentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
   validateArgs,
@@ -208,7 +208,9 @@ class WavedashSDK extends EventTarget {
     this.setupSessionEndListeners();
     this.setupSwCredsListener();
 
-    this.launchParams = sdkConfig.launchParams ?? {};
+    this.launchParams = hasParentFrame()
+      ? (sdkConfig.launchParams ?? {})
+      : launchParamsFromUrl();
 
     this.setupWarningTimeout = setTimeout(() => {
       this.setupWarningTimeout = null;
@@ -1708,6 +1710,24 @@ declare global {
 export * from "./types";
 export type { WavedashSDK };
 
+const LAUNCH_PARAM_PREFIX = "wvdsh_";
+
+/**
+ * Standalone (`wavedash dev`), the game is the top-level document, so its own
+ * URL is the one the player opened — read the launch params straight off it,
+ * the way the mainsite reads them per navigation in prod. SDKConfig cannot
+ * carry them here: it is minted once at sign-in and reused for the session.
+ */
+function launchParamsFromUrl(): GameLaunchParams {
+  const params: GameLaunchParams = {};
+  new URLSearchParams(window.location.search).forEach((value, key) => {
+    if (key.startsWith(LAUNCH_PARAM_PREFIX)) {
+      params[key.slice(LAUNCH_PARAM_PREFIX.length)] = value;
+    }
+  });
+  return params;
+}
+
 // Type-safe initialization helper (idempotent — safe to call more than once).
 export function setupWavedashSDK(): WavedashSDK {
   const existing = window.Wavedash;
@@ -1735,8 +1755,9 @@ export function setupWavedashSDK(): WavedashSDK {
     );
   }
 
-  // set before constructing the SDK so any postMessage handlers wired in the constructor
-  // see the right value.
+  // set before constructing the SDK so the constructor sees the right value:
+  // any postMessage handlers wired there, and whether launch params come from
+  // the config or the page URL.
   setParentOrigin(sdkConfig.parentOrigin);
 
   const sdk = new WavedashSDK(sdkConfig);
