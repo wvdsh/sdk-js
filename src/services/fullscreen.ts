@@ -9,9 +9,8 @@ import { WavedashManager } from "./manager";
 /**
  * FullscreenManager
  *
- * Wavedash owns the fullscreen target (a wrapper DIV on the host page that
- * contains both the game iframe and our overlay UI). The SDK inside the iframe
- * therefore can't call `requestFullscreen` directly — it asks the parent to
+ * Wavedash owns the fullscreen target on the host page. The SDK inside the
+ * iframe therefore can't call `requestFullscreen` directly — it asks the parent to
  * do it via postMessage, and the parent broadcasts state changes back through
  * FULLSCREEN_CHANGED so we can keep a local mirror of `isFullscreen`.
  *
