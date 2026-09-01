@@ -6,6 +6,11 @@ import { logger } from "../utils/logger";
 import { hasParentFrame } from "../utils/parentOrigin";
 import { WavedashManager } from "./manager";
 
+// Match Chromium's escape hatch when a page has captured Escape with the
+// Keyboard Lock API. This also provides the same safety behavior in browsers
+// that fail to exit a parent-owned fullscreen element while focus is in an iframe.
+const ESCAPE_HOLD_DURATION_MS = 2_000;
+
 /**
  * FullscreenManager
  *
@@ -27,6 +32,7 @@ import { WavedashManager } from "./manager";
 export class FullscreenManager extends WavedashManager {
   private _isFullscreen = false;
   private listeners = new Set<(isFullscreen: boolean) => void>();
+  private escapeHoldTimer: number | undefined;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -44,6 +50,7 @@ export class FullscreenManager extends WavedashManager {
       }
     );
     this.installCompatShims();
+    this.installEscapeHold();
   }
 
   isFullscreen(): boolean {
@@ -89,10 +96,51 @@ export class FullscreenManager extends WavedashManager {
   }
 
   private setState(isFullscreen: boolean): void {
+    if (!isFullscreen) this.cancelEscapeHold();
     if (this._isFullscreen === isFullscreen) return;
     this._isFullscreen = isFullscreen;
     for (const listener of this.listeners) listener(isFullscreen);
   }
+
+  private installEscapeHold(): void {
+    if (typeof window === "undefined") return;
+
+    // Capture before the game sees the event. Games can still handle short
+    // Escape presses normally because this listener never consumes the event.
+    window.addEventListener("keydown", this.handleEscapeKeyDown, true);
+    window.addEventListener("keyup", this.handleEscapeKeyUp, true);
+    window.addEventListener("blur", this.cancelEscapeHold);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
+  }
+
+  private handleEscapeKeyDown = (event: KeyboardEvent): void => {
+    if (
+      event.key !== "Escape" ||
+      !this._isFullscreen ||
+      this.escapeHoldTimer !== undefined
+    ) {
+      return;
+    }
+
+    this.escapeHoldTimer = window.setTimeout(() => {
+      this.escapeHoldTimer = undefined;
+      if (this._isFullscreen) void this.requestFullscreen(false);
+    }, ESCAPE_HOLD_DURATION_MS);
+  };
+
+  private handleEscapeKeyUp = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") this.cancelEscapeHold();
+  };
+
+  private handleVisibilityChange = (): void => {
+    if (document.hidden) this.cancelEscapeHold();
+  };
+
+  private cancelEscapeHold = (): void => {
+    if (this.escapeHoldTimer === undefined) return;
+    window.clearTimeout(this.escapeHoldTimer);
+    this.escapeHoldTimer = undefined;
+  };
 
   private installCompatShims(): void {
     if (typeof document === "undefined") return;
@@ -148,5 +196,18 @@ export class FullscreenManager extends WavedashManager {
     this.subscribe(() => {
       document.dispatchEvent(new Event("fullscreenchange", { bubbles: true }));
     });
+  }
+
+  override destroy(): void {
+    this.cancelEscapeHold();
+    window.removeEventListener("keydown", this.handleEscapeKeyDown, true);
+    window.removeEventListener("keyup", this.handleEscapeKeyUp, true);
+    window.removeEventListener("blur", this.cancelEscapeHold);
+    document.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange
+    );
+    this.listeners.clear();
+    super.destroy();
   }
 }
