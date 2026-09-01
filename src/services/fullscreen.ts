@@ -7,8 +7,7 @@ import { hasParentFrame } from "../utils/parentOrigin";
 import { WavedashManager } from "./manager";
 
 // Match Chromium's escape hatch when a page has captured Escape with the
-// Keyboard Lock API. This also provides the same safety behavior in browsers
-// that fail to exit a parent-owned fullscreen element while focus is in an iframe.
+// Keyboard Lock API.
 const ESCAPE_HOLD_DURATION_MS = 2_000;
 
 /**
