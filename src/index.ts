@@ -22,13 +22,13 @@ import { HeartbeatManager } from "./services/heartbeat";
 import { LeaderboardManager } from "./services/leaderboards";
 import { LobbyManager } from "./services/lobby";
 import type { WavedashManager } from "./services/manager";
-import { OverlayManager } from "./services/overlay";
 import { P2PManager } from "./services/p2p";
 import { PaidContentManager } from "./services/paidContent";
 import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
 import type { WavedashEventMap } from "./types";
 import { getAvatarUrl } from "./utils/cdn";
+import { takeFocus } from "./utils/focus";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { LOG_LEVEL, logger } from "./utils/logger";
 import { SwMessenger } from "./utils/swMessenger";
@@ -136,7 +136,6 @@ class WavedashSDK extends EventTarget {
   swMessenger: SwMessenger;
   p2pManager: P2PManager;
   fullscreenManager: FullscreenManager;
-  overlayManager: OverlayManager;
   audioManager: AudioManager;
   paidContentManager: PaidContentManager;
   externalLinkManager: ExternalLinkManager;
@@ -171,7 +170,6 @@ class WavedashSDK extends EventTarget {
     this.friendsManager = new FriendsManager(this);
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
-    this.overlayManager = new OverlayManager(this);
     this.audioManager = new AudioManager(this);
     this.paidContentManager = new PaidContentManager(this);
     this.externalLinkManager = new ExternalLinkManager(this);
@@ -190,7 +188,6 @@ class WavedashSDK extends EventTarget {
       this.friendsManager,
       this.gameEventManager,
       this.fullscreenManager,
-      this.overlayManager,
       this.audioManager,
       this.paidContentManager,
       this.externalLinkManager
@@ -207,6 +204,10 @@ class WavedashSDK extends EventTarget {
 
     this.setupSessionEndListeners();
     this.setupSwCredsListener();
+    this.iframeMessenger.addEventListener(
+      IFRAME_MESSAGE_TYPE.TAKE_FOCUS,
+      takeFocus
+    );
 
     this.launchParams = sdkConfig.launchParams ?? {};
 
@@ -413,18 +414,13 @@ class WavedashSDK extends EventTarget {
     return this.gameFinishedLoading;
   }
 
-  toggleOverlay(): void {
-    this.overlayManager.toggleOverlay();
-  }
-
   // ==========
   // Fullscreen
   // ==========
 
   /**
    * Whether the game is currently presented in fullscreen. Mirrored from the
-   * Wavedash host page, which owns the real fullscreen target so our overlay
-   * UI stays on top of the game.
+   * Wavedash host page, which owns the real fullscreen target.
    */
   isFullscreen(): boolean {
     return this.fullscreenManager.isFullscreen();
@@ -1484,6 +1480,14 @@ class WavedashSDK extends EventTarget {
       [["data", vRecord]],
       data
     );
+  }
+
+  // =====================
+  // Deprecated no-op APIs
+  // =====================
+
+  toggleOverlay(): void {
+    console.warn("Wavedash.toggleOverlay() is deprecated and is now a no-op");
   }
 
   // ================
