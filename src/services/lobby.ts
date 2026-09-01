@@ -194,7 +194,6 @@ export class LobbyManager extends WavedashManager {
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
       lobbyId
     });
-    this.syncStandaloneLobbyParam(null);
     return lobbyId;
   }
 
@@ -282,7 +281,8 @@ export class LobbyManager extends WavedashManager {
   // Private Methods
   // ================
 
-  private syncStandaloneLobbyParam(lobbyId: Id<"lobbies"> | null): void {
+  private setLobbyId(lobbyId: Id<"lobbies"> | null): void {
+    this.lobbyId = lobbyId;
     if (hasParentFrame() || typeof window === "undefined") return;
     const url = new URL(window.location.href);
     if (lobbyId) {
@@ -305,7 +305,7 @@ export class LobbyManager extends WavedashManager {
     this.cleanupLobbyState();
 
     // Initialize local state from response
-    this.lobbyId = response.lobbyId;
+    this.setLobbyId(response.lobbyId);
     this.lobbyHostId = response.hostId;
     this.lobbyUsers = response.users;
     this.lobbyMetadata = response.metadata;
@@ -367,7 +367,6 @@ export class LobbyManager extends WavedashManager {
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_JOINED, {
       lobbyId: response.lobbyId
     });
-    this.syncStandaloneLobbyParam(response.lobbyId);
 
     this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_JOINED, {
       lobbyId: response.lobbyId,
@@ -396,7 +395,6 @@ export class LobbyManager extends WavedashManager {
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
       lobbyId
     });
-    this.syncStandaloneLobbyParam(null);
 
     // Emit LOBBY_KICKED event
     this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_KICKED, {
@@ -414,7 +412,7 @@ export class LobbyManager extends WavedashManager {
     const currentLobbyId = this.lobbyId;
 
     // Set lobbyId to null immediately to guard against multiple calls (e.g., from concurrent subscription errors)
-    this.lobbyId = null;
+    this.setLobbyId(null);
 
     this.throttledSetMetadata.cancel();
     this.pendingMetadataUpdates = {};
