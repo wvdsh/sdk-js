@@ -32,7 +32,6 @@ export class FullscreenManager extends WavedashManager {
   private _isFullscreen = false;
   private listeners = new Set<(isFullscreen: boolean) => void>();
   private escapeHoldTimer: number | undefined;
-  private escapeKeyHeld = false;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -116,21 +115,15 @@ export class FullscreenManager extends WavedashManager {
   private handleEscapeKeyDown = (event: KeyboardEvent): void => {
     if (
       event.key !== "Escape" ||
-      event.repeat ||
       !this._isFullscreen ||
-      this.escapeKeyHeld
+      this.escapeHoldTimer !== undefined
     ) {
       return;
     }
 
-    this.escapeKeyHeld = true;
     this.escapeHoldTimer = window.setTimeout(() => {
       this.escapeHoldTimer = undefined;
-      if (this._isFullscreen) {
-        void this.requestFullscreen(false).catch((error: unknown) => {
-          logger.warn("Escape-hold fullscreen exit failed", error);
-        });
-      }
+      if (this._isFullscreen) void this.requestFullscreen(false);
     }, ESCAPE_HOLD_DURATION_MS);
   };
 
@@ -143,7 +136,6 @@ export class FullscreenManager extends WavedashManager {
   };
 
   private cancelEscapeHold = (): void => {
-    this.escapeKeyHeld = false;
     if (this.escapeHoldTimer === undefined) return;
     window.clearTimeout(this.escapeHoldTimer);
     this.escapeHoldTimer = undefined;
