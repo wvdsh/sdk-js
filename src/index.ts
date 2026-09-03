@@ -19,6 +19,7 @@ import { FriendsManager } from "./services/friends";
 import { FullscreenManager } from "./services/fullscreen";
 import { GameEventManager } from "./services/gameEvents";
 import { HeartbeatManager } from "./services/heartbeat";
+import { LaunchParamManager } from "./services/launchParams";
 import { LeaderboardManager } from "./services/leaderboards";
 import { LobbyManager } from "./services/lobby";
 import type { WavedashManager } from "./services/manager";
@@ -38,7 +39,6 @@ const iframeMessenger = new IFrameMessenger();
 
 import {
   IFRAME_MESSAGE_TYPE,
-  LAUNCH_PARAM_PREFIX,
   SDKConfig,
   SDKUser,
   UrlParams,
@@ -71,7 +71,7 @@ import type {
   WavedashConfig,
   WavedashResponse
 } from "./types";
-import { hasParentFrame, setParentOrigin } from "./utils/parentOrigin";
+import { setParentOrigin } from "./utils/parentOrigin";
 import {
   type ArgSpec,
   validateArgs,
@@ -101,7 +101,6 @@ class WavedashSDK extends EventTarget {
   get eventsReady(): boolean {
     return this._eventsReady;
   }
-  private launchParams: GameLaunchParams;
   private destroyed: boolean = false;
   private gameFinishedLoading: boolean = false;
   private gameStartedLoading: boolean = false;
@@ -141,6 +140,7 @@ class WavedashSDK extends EventTarget {
   audioManager: AudioManager;
   paidContentManager: PaidContentManager;
   externalLinkManager: ExternalLinkManager;
+  launchParamManager: LaunchParamManager;
   private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
@@ -162,6 +162,11 @@ class WavedashSDK extends EventTarget {
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
     this.swMessenger = new SwMessenger();
+    // Before the other managers: lobby syncs its id through this one.
+    this.launchParamManager = new LaunchParamManager(
+      this,
+      sdkConfig.launchParams
+    );
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
@@ -181,6 +186,7 @@ class WavedashSDK extends EventTarget {
     // Order matches construction so destroys happen in dependency order
     // (e.g. lobby's destroy may want p2p, but lobby is created after p2p).
     this.managers = [
+      this.launchParamManager,
       this.p2pManager,
       this.lobbyManager,
       this.statsManager,
@@ -208,10 +214,6 @@ class WavedashSDK extends EventTarget {
 
     this.setupSessionEndListeners();
     this.setupSwCredsListener();
-
-    this.launchParams = hasParentFrame()
-      ? (sdkConfig.launchParams ?? {})
-      : launchParamsFromUrl();
 
     this.setupWarningTimeout = setTimeout(() => {
       this.setupWarningTimeout = null;
@@ -549,7 +551,7 @@ class WavedashSDK extends EventTarget {
    * @returns Dictionary of the URL query params that were present when the game was launched
    */
   getLaunchParams(): GameLaunchParams {
-    return this.formatResponse(this.launchParams);
+    return this.formatResponse(this.launchParamManager.get());
   }
 
   // ============
@@ -1711,21 +1713,6 @@ declare global {
 export * from "./types";
 export type { WavedashSDK };
 
-/**
- * SDKConfig cannot carry these standalone: it is minted once at sign-in and
- * reused all session, while launch params change per navigation. The game is
- * the top-level document there, so its own URL is the one the player opened.
- */
-function launchParamsFromUrl(): GameLaunchParams {
-  const params: GameLaunchParams = {};
-  new URLSearchParams(window.location.search).forEach((value, key) => {
-    if (key.startsWith(LAUNCH_PARAM_PREFIX)) {
-      params[key.slice(LAUNCH_PARAM_PREFIX.length)] = value;
-    }
-  });
-  return params;
-}
-
 // Type-safe initialization helper (idempotent — safe to call more than once).
 export function setupWavedashSDK(): WavedashSDK {
   const existing = window.Wavedash;
@@ -1753,9 +1740,8 @@ export function setupWavedashSDK(): WavedashSDK {
     );
   }
 
-  // set before constructing the SDK so the constructor sees the right value:
-  // any postMessage handlers wired there, and whether launch params come from
-  // the config or the page URL.
+  // set before constructing the SDK so any postMessage handlers wired in the constructor
+  // see the right value.
   setParentOrigin(sdkConfig.parentOrigin);
 
   const sdk = new WavedashSDK(sdkConfig);
