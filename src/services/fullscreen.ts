@@ -6,12 +6,15 @@ import { logger } from "../utils/logger";
 import { hasParentFrame } from "../utils/parentOrigin";
 import { WavedashManager } from "./manager";
 
+// Match Chromium's escape hatch when a page has captured Escape with the
+// Keyboard Lock API.
+const ESCAPE_HOLD_DURATION_MS = 2_000;
+
 /**
  * FullscreenManager
  *
- * Wavedash owns the fullscreen target (a wrapper DIV on the host page that
- * contains both the game iframe and our overlay UI). The SDK inside the iframe
- * therefore can't call `requestFullscreen` directly — it asks the parent to
+ * Wavedash owns the fullscreen target on the host page. The SDK inside the
+ * iframe therefore can't call `requestFullscreen` directly — it asks the parent to
  * do it via postMessage, and the parent broadcasts state changes back through
  * FULLSCREEN_CHANGED so we can keep a local mirror of `isFullscreen`.
  *
@@ -28,6 +31,11 @@ import { WavedashManager } from "./manager";
 export class FullscreenManager extends WavedashManager {
   private _isFullscreen = false;
   private listeners = new Set<(isFullscreen: boolean) => void>();
+  private escapeHoldTimer: number | undefined;
+  // True from a real Escape keydown until the matching keyup (or until we
+  // lose the ability to observe it — blur, hidden tab, fullscreen exit).
+  // One physical press arms the hold at most once, even after the timer fires.
+  private escapeKeyHeld = false;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -45,6 +53,7 @@ export class FullscreenManager extends WavedashManager {
       }
     );
     this.installCompatShims();
+    this.installEscapeHold();
   }
 
   isFullscreen(): boolean {
@@ -90,10 +99,67 @@ export class FullscreenManager extends WavedashManager {
   }
 
   private setState(isFullscreen: boolean): void {
+    if (!isFullscreen) this.cancelEscapeHold();
     if (this._isFullscreen === isFullscreen) return;
     this._isFullscreen = isFullscreen;
     for (const listener of this.listeners) listener(isFullscreen);
   }
+
+  private installEscapeHold(): void {
+    if (typeof window === "undefined") return;
+
+    // Capture before the game sees the event. Games can still handle short
+    // Escape presses normally because this listener never consumes the event.
+    window.addEventListener("keydown", this.handleEscapeKeyDown, true);
+    window.addEventListener("keyup", this.handleEscapeKeyUp, true);
+    // Once the iframe loses focus or the tab is hidden we can no longer see
+    // the keyup, so drop the hold rather than risk exiting on a stale press.
+    // We deliberately do NOT re-arm on focus/visible: the user must press
+    // Escape again, matching Chromium's native hold-to-exit behaviour.
+    window.addEventListener("blur", this.cancelEscapeHold);
+    document.addEventListener("visibilitychange", this.handleVisibilityChange);
+  }
+
+  private handleEscapeKeyDown = (event: KeyboardEvent): void => {
+    if (
+      event.key !== "Escape" ||
+      // Only a real key press should arm the hold. Games that synthesize
+      // Escape keydowns (on-screen back buttons, input shims) rarely pair
+      // them with a keyup, which would otherwise exit fullscreen 2s later.
+      !event.isTrusted ||
+      // OS auto-repeat must not arm (Escape already held when we entered
+      // fullscreen) or re-arm (after the timer fired) the hold.
+      event.repeat ||
+      this.escapeKeyHeld ||
+      !this._isFullscreen
+    ) {
+      return;
+    }
+
+    this.escapeKeyHeld = true;
+    this.escapeHoldTimer = window.setTimeout(() => {
+      this.escapeHoldTimer = undefined;
+      if (!this._isFullscreen) return;
+      this.requestFullscreen(false).catch((error: unknown) => {
+        logger.warn("Escape-hold fullscreen exit failed", error);
+      });
+    }, ESCAPE_HOLD_DURATION_MS);
+  };
+
+  private handleEscapeKeyUp = (event: KeyboardEvent): void => {
+    if (event.key === "Escape") this.cancelEscapeHold();
+  };
+
+  private handleVisibilityChange = (): void => {
+    if (document.hidden) this.cancelEscapeHold();
+  };
+
+  private cancelEscapeHold = (): void => {
+    this.escapeKeyHeld = false;
+    if (this.escapeHoldTimer === undefined) return;
+    window.clearTimeout(this.escapeHoldTimer);
+    this.escapeHoldTimer = undefined;
+  };
 
   private installCompatShims(): void {
     if (typeof document === "undefined") return;
@@ -149,5 +215,18 @@ export class FullscreenManager extends WavedashManager {
     this.subscribe(() => {
       document.dispatchEvent(new Event("fullscreenchange", { bubbles: true }));
     });
+  }
+
+  override destroy(): void {
+    this.cancelEscapeHold();
+    window.removeEventListener("keydown", this.handleEscapeKeyDown, true);
+    window.removeEventListener("keyup", this.handleEscapeKeyUp, true);
+    window.removeEventListener("blur", this.cancelEscapeHold);
+    document.removeEventListener(
+      "visibilitychange",
+      this.handleVisibilityChange
+    );
+    this.listeners.clear();
+    super.destroy();
   }
 }
