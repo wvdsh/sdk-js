@@ -1708,109 +1708,31 @@ declare global {
 export * from "./types";
 export type { WavedashSDK };
 
-/**
- * `SDKConfig.environment` lands in @wvdsh/api after 0.1.60. Read it off a
- * widened type until this package bumps, so the SDK behaves sanely against both
- * the current and the next published contract.
- */
-type SDKConfigWithEnvironment = SDKConfig & { environment?: string };
-
-/**
- * Mirrors `GAME_CLOUD_ENVIRONMENT.PRODUCTION` in the mainsite repo
- * (src/convex/constants/appConstants.ts). It travels in SDKConfig, so it is
- * part of this package's wire contract, but appConstants is not published in
- * @wvdsh/api and cannot be imported here.
- */
-const PRODUCTION_ENVIRONMENT = "PRODUCTION";
-
-/**
- * Wrap the SDK in a facade that answers every documented call but describes
- * none of itself.
- *
- * DevTools builds its completion list from `Object.getOwnPropertyNames()` on
- * the object plus a walk up the prototype chain. Enumerability plays no part —
- * which is why a merely non-enumerable property still autocompletes, and why
- * hiding the SDK's shape needs traps rather than a property descriptor.
- * Starving `ownKeys`, `getOwnPropertyDescriptor` and `getPrototypeOf` leaves
- * `Wavedash.` with nothing to suggest, while `get` still resolves
- * `Wavedash.uploadLeaderboardScore` for anyone who names it.
- *
- * Methods come back bound to the real instance, so `this` never sees the
- * facade: behaviour is identical for every caller, including the engine
- * bridges, which look methods up by name and `typeof`-check them before
- * calling. Bindings are cached so repeated reads keep a stable identity.
- *
- * This buys friction, not secrecy — the method names are in the published
- * engine docs, so it stops someone poking at the console, not someone reading.
- */
-function opaqueSdkFacade(sdk: WavedashSDK): WavedashSDK {
-  const boundMethods = new Map<PropertyKey, unknown>();
-
-  return new Proxy(sdk, {
-    get(target, prop) {
-      const value = Reflect.get(target, prop) as unknown;
-      if (typeof value !== "function") return value;
-
-      let bound = boundMethods.get(prop);
-      if (bound === undefined) {
-        bound = (value as (...args: unknown[]) => unknown).bind(target);
-        boundMethods.set(prop, bound);
-      }
-      return bound;
-    },
-    ownKeys: () => [],
-    getOwnPropertyDescriptor: () => undefined,
-    getPrototypeOf: () => null
-  });
-}
-
-/**
- * Install the SDK on `window` under `key`.
- *
- * When `hidden`, the global holds the opaque facade and the property itself is
- * non-enumerable, so the SDK stays out of `Object.keys(window)`, `for...in`,
- * object spreads and an expanded `window` in a console log. The name itself
- * cannot be hidden — anything reachable as `window.Wavedash` appears in
- * `Object.getOwnPropertyNames(window)`, which is exactly what DevTools reads —
- * so the facade is what keeps the API from unfolding once the name is found.
- */
-function exposeSdkGlobal(key: string, sdk: WavedashSDK, hidden: boolean): void {
-  if (!hidden) {
-    (window as unknown as Record<string, WavedashSDK>)[key] = sdk;
-    return;
-  }
-
+// DevTools autocompletes from getOwnPropertyNames() plus the prototype chain,
+// so hiding the SDK's shape takes Proxy traps, not a non-enumerable property.
+function hideSdkGlobal(key: string, sdk: WavedashSDK): void {
   Object.defineProperty(window, key, {
-    value: opaqueSdkFacade(sdk),
+    value: new Proxy(sdk, {
+      ownKeys: () => [],
+      getOwnPropertyDescriptor: () => undefined,
+      getPrototypeOf: () => null
+    }),
     enumerable: false,
-    // Writable and configurable so the property stays as replaceable as the
-    // plain assignment it stands in for.
     writable: true,
     configurable: true
   });
 }
 
-/**
- * The real instance, kept here so repeat calls hand back the SDK itself rather
- * than whatever facade `window.Wavedash` is holding.
- */
-let sdkInstance: WavedashSDK | undefined;
-
 // Type-safe initialization helper (idempotent — safe to call more than once).
 export function setupWavedashSDK(): WavedashSDK {
-  if (sdkInstance) return sdkInstance;
-
   const existing = window.Wavedash;
   if (existing) return existing;
 
   // `wavedash dev` inlines the config as a global instead of the query
   // param, keeping the localhost URL clean.
-  const queryConfig = new URLSearchParams(window.location.search).get(
-    UrlParams.SdkConfig
-  );
-  const inlineConfig = (window as { __wavedashSdkConfig?: string })
-    .__wavedashSdkConfig;
-  const raw = queryConfig ?? inlineConfig;
+  const raw =
+    new URLSearchParams(window.location.search).get(UrlParams.SdkConfig) ??
+    (window as { __wavedashSdkConfig?: string }).__wavedashSdkConfig;
 
   if (!raw) {
     throw new Error(
@@ -1834,23 +1756,19 @@ export function setupWavedashSDK(): WavedashSDK {
 
   const sdk = new WavedashSDK(sdkConfig);
 
-  // Developers poke at the SDK from the console while building a game; players
-  // on a live game have no use for it, and a curious one finds the global
-  // before anything else. So sandbox, `wavedash dev`, and any config predating
-  // the `environment` field keep the fully enumerable global — only a
-  // production cloud gets the hidden one.
-  const isLocalDevConfig = queryConfig === null && inlineConfig !== undefined;
-  const hideGlobals =
-    !isLocalDevConfig &&
-    (sdkConfig as SDKConfigWithEnvironment).environment ===
-      PRODUCTION_ENVIRONMENT;
+  // Widening goes once @wvdsh/api publishes SDKConfig.environment.
+  const hidden =
+    (sdkConfig as SDKConfig & { environment?: string }).environment ===
+    "PRODUCTION";
 
-  sdkInstance = sdk;
-  exposeSdkGlobal("Wavedash", sdk, hideGlobals);
-
-  // Kept for backwards compatibility — the Go, Ebiten and Love2D docs tell
-  // developers to call `window.WavedashJS` directly.
-  exposeSdkGlobal("WavedashJS", sdk, hideGlobals);
+  if (hidden) {
+    hideSdkGlobal("Wavedash", sdk);
+    hideSdkGlobal("WavedashJS", sdk);
+  } else {
+    window.Wavedash = sdk;
+    // Kept for backwards compatibility
+    (window as unknown as { WavedashJS: WavedashSDK }).WavedashJS = sdk;
+  }
 
   return sdk;
 }
