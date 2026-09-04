@@ -1,6 +1,7 @@
 import { type GameLaunchParams, LAUNCH_PARAM_PREFIX } from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { logger } from "../utils/logger";
+import { hasParentFrame } from "../utils/parentOrigin";
 import { WavedashManager } from "./manager";
 
 /**
@@ -10,7 +11,7 @@ import { WavedashManager } from "./manager";
  *
  * - `SDKConfig.launchParams`, minted by the host at sign-in and reused for the
  *   whole session.
- * - The frame's own URL: every `wd_`-prefixed query param (see
+ * - The frame's own URL: every `wvdsh_`-prefixed query param (see
  *   `LAUNCH_PARAM_PREFIX`). Standalone (`wavedash dev`) this is the only
  *   source, since the page the player opened is the game itself.
  *
@@ -18,9 +19,11 @@ import { WavedashManager } from "./manager";
  * player actually navigated to, while the config can be stale by the time a
  * page is (re)loaded.
  *
- * Writes go through `set()`, which updates the in-memory params and mirrors
- * the change onto the frame URL via `history.replaceState` so a reload or a
- * copied link lands the player back in the same state.
+ * Writes go through `set()`, which updates the in-memory params and, when
+ * running standalone, mirrors the change onto the page URL via
+ * `history.replaceState` so a reload or a copied link lands the player back in
+ * the same state. Hosted in an iframe the URL is left alone: the host tracks
+ * lobby state through the iframe messenger and owns its own URL.
  */
 export class LaunchParamManager extends WavedashManager {
   private params: GameLaunchParams;
@@ -40,6 +43,7 @@ export class LaunchParamManager extends WavedashManager {
    * `key` is the bare name (e.g. `"lobby"`); the prefix is applied on the URL.
    */
   set(key: string, value: string | null): void {
+    if ((this.params[key] ?? null) === value) return;
     if (value === null) {
       delete this.params[key];
     } else {
@@ -60,7 +64,7 @@ export class LaunchParamManager extends WavedashManager {
   }
 
   private writeToUrl(key: string, value: string | null): void {
-    if (typeof window === "undefined") return;
+    if (typeof window === "undefined" || hasParentFrame()) return;
     const urlKey = `${LAUNCH_PARAM_PREFIX}${key}`;
     const url = new URL(window.location.href);
     if (value === null) {

@@ -29,7 +29,12 @@ import {
 } from "../constants";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
-import { api, IFRAME_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
+import {
+  api,
+  IFRAME_MESSAGE_TYPE,
+  LAUNCH_PARAM_PREFIX,
+  SDKUser
+} from "@wvdsh/api";
 import { WavedashManager } from "./manager";
 import { getAvatarUrl } from "../utils/cdn";
 import { logger } from "../utils/logger";
@@ -254,7 +259,11 @@ export class LobbyManager extends WavedashManager {
       throw new Error("User is not in a lobby");
     }
     if (!hasParentFrame()) {
-      const link = window.location.href;
+      // Build from the known lobby id rather than trusting the URL mirror,
+      // which may be missing (replaceState refused) or stale (game router).
+      const url = new URL(window.location.href);
+      url.searchParams.set(`${LAUNCH_PARAM_PREFIX}lobby`, this.lobbyId);
+      const link = url.href;
       if (copyToClipboard) {
         await this.sdk.externalLinkManager.copyLink(link);
       }
@@ -291,11 +300,11 @@ export class LobbyManager extends WavedashManager {
    * @param response - The full response from createAndJoinLobby or joinLobby mutation
    */
   private handleLobbyJoin(response: LobbyJoinResponse): void {
-    // Unsubscribe from previous lobby if any
-    this.cleanupLobbyState();
+    // Unsubscribe from previous lobby (if any) and switch to the new lobby id
+    // in one step so the launch param is written once, not cleared then re-set
+    this.cleanupLobbyState(response.lobbyId);
 
     // Initialize local state from response
-    this.setLobbyId(response.lobbyId);
     this.lobbyHostId = response.hostId;
     this.lobbyUsers = response.users;
     this.lobbyMetadata = response.metadata;
@@ -396,13 +405,14 @@ export class LobbyManager extends WavedashManager {
   /**
    * Clean up lobby state without emitting events
    * Used internally by handleLobbyJoin() and handleLobbyKicked()
+   * @param nextLobbyId - The lobby being joined in place of the current one, if any
    */
-  private cleanupLobbyState(): void {
+  private cleanupLobbyState(nextLobbyId: Id<"lobbies"> | null = null): void {
     // Capture lobbyId before clearing (used for "maybe being deleted" tracking)
     const currentLobbyId = this.lobbyId;
 
-    // Set lobbyId to null immediately to guard against multiple calls (e.g., from concurrent subscription errors)
-    this.setLobbyId(null);
+    // Swap lobbyId immediately to guard against multiple calls (e.g., from concurrent subscription errors)
+    this.setLobbyId(nextLobbyId);
 
     this.throttledSetMetadata.cancel();
     this.pendingMetadataUpdates = {};
