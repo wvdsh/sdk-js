@@ -29,7 +29,12 @@ import {
 } from "../constants";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
-import { api, IFRAME_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
+import {
+  api,
+  IFRAME_MESSAGE_TYPE,
+  LAUNCH_PARAM_PREFIX,
+  SDKUser
+} from "@wvdsh/api";
 import { WavedashManager } from "./manager";
 import { getAvatarUrl } from "../utils/cdn";
 import { logger } from "../utils/logger";
@@ -253,12 +258,16 @@ export class LobbyManager extends WavedashManager {
     if (!this.lobbyId) {
       throw new Error("User is not in a lobby");
     }
-    // The invite URL is minted by the host page; fail clearly rather than time
-    // out waiting on a reply that never comes.
     if (!hasParentFrame()) {
-      throw new Error(
-        "Lobby invite links are not available outside a Wavedash parent frame (e.g. `wavedash dev`)"
-      );
+      // Build from the known lobby id rather than trusting the URL mirror,
+      // which may be missing (replaceState refused) or stale (game router).
+      const url = new URL(window.location.href);
+      url.searchParams.set(`${LAUNCH_PARAM_PREFIX}lobby`, this.lobbyId);
+      const link = url.href;
+      if (copyToClipboard) {
+        await this.sdk.externalLinkManager.copyLink(link);
+      }
+      return link;
     }
     const inviteLink = await this.sdk.iframeMessenger.requestFromParent(
       IFRAME_MESSAGE_TYPE.GET_LOBBY_INVITE_LINK,
@@ -275,6 +284,15 @@ export class LobbyManager extends WavedashManager {
   // ================
 
   /**
+   * Update the current lobby id and mirror it onto the `lobby` launch param so
+   * the frame URL (and any link copied from it) tracks lobby membership.
+   */
+  private setLobbyId(lobbyId: Id<"lobbies"> | null): void {
+    this.lobbyId = lobbyId;
+    this.sdk.launchParamManager.set("lobby", lobbyId);
+  }
+
+  /**
    * Initialize local lobby state and subscribe to all relevant updates.
    * Sets up Convex subscriptions for messages, users, and metadata.
    * Emits LobbyJoined event to the game engine.
@@ -282,11 +300,11 @@ export class LobbyManager extends WavedashManager {
    * @param response - The full response from createAndJoinLobby or joinLobby mutation
    */
   private handleLobbyJoin(response: LobbyJoinResponse): void {
-    // Unsubscribe from previous lobby if any
-    this.cleanupLobbyState();
+    // Unsubscribe from previous lobby (if any) and switch to the new lobby id
+    // in one step so the launch param is written once, not cleared then re-set
+    this.cleanupLobbyState(response.lobbyId);
 
     // Initialize local state from response
-    this.lobbyId = response.lobbyId;
     this.lobbyHostId = response.hostId;
     this.lobbyUsers = response.users;
     this.lobbyMetadata = response.metadata;
@@ -387,13 +405,14 @@ export class LobbyManager extends WavedashManager {
   /**
    * Clean up lobby state without emitting events
    * Used internally by handleLobbyJoin() and handleLobbyKicked()
+   * @param nextLobbyId - The lobby being joined in place of the current one, if any
    */
-  private cleanupLobbyState(): void {
+  private cleanupLobbyState(nextLobbyId: Id<"lobbies"> | null = null): void {
     // Capture lobbyId before clearing (used for "maybe being deleted" tracking)
     const currentLobbyId = this.lobbyId;
 
-    // Set lobbyId to null immediately to guard against multiple calls (e.g., from concurrent subscription errors)
-    this.lobbyId = null;
+    // Swap lobbyId immediately to guard against multiple calls (e.g., from concurrent subscription errors)
+    this.setLobbyId(nextLobbyId);
 
     this.throttledSetMetadata.cancel();
     this.pendingMetadataUpdates = {};

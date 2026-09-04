@@ -19,6 +19,7 @@ import { FriendsManager } from "./services/friends";
 import { FullscreenManager } from "./services/fullscreen";
 import { GameEventManager } from "./services/gameEvents";
 import { HeartbeatManager } from "./services/heartbeat";
+import { LaunchParamManager } from "./services/launchParams";
 import { LeaderboardManager } from "./services/leaderboards";
 import { LobbyManager } from "./services/lobby";
 import type { WavedashManager } from "./services/manager";
@@ -100,7 +101,6 @@ class WavedashSDK extends EventTarget {
   get eventsReady(): boolean {
     return this._eventsReady;
   }
-  private launchParams: GameLaunchParams;
   private destroyed: boolean = false;
   private gameFinishedLoading: boolean = false;
   private gameStartedLoading: boolean = false;
@@ -139,6 +139,7 @@ class WavedashSDK extends EventTarget {
   audioManager: AudioManager;
   paidContentManager: PaidContentManager;
   externalLinkManager: ExternalLinkManager;
+  launchParamManager: LaunchParamManager;
   private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
@@ -160,6 +161,11 @@ class WavedashSDK extends EventTarget {
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
     this.swMessenger = new SwMessenger();
+    // Before the other managers: lobby syncs its id through this one.
+    this.launchParamManager = new LaunchParamManager(
+      this,
+      sdkConfig.launchParams
+    );
     this.p2pManager = new P2PManager(this);
     this.lobbyManager = new LobbyManager(this);
     this.statsManager = new StatsManager(this);
@@ -178,6 +184,7 @@ class WavedashSDK extends EventTarget {
     // Order matches construction so destroys happen in dependency order
     // (e.g. lobby's destroy may want p2p, but lobby is created after p2p).
     this.managers = [
+      this.launchParamManager,
       this.p2pManager,
       this.lobbyManager,
       this.statsManager,
@@ -208,8 +215,6 @@ class WavedashSDK extends EventTarget {
       IFRAME_MESSAGE_TYPE.TAKE_FOCUS,
       takeFocus
     );
-
-    this.launchParams = sdkConfig.launchParams ?? {};
 
     this.setupWarningTimeout = setTimeout(() => {
       this.setupWarningTimeout = null;
@@ -542,7 +547,7 @@ class WavedashSDK extends EventTarget {
    * @returns Dictionary of the URL query params that were present when the game was launched
    */
   getLaunchParams(): GameLaunchParams {
-    return this.formatResponse(this.launchParams);
+    return this.formatResponse(this.launchParamManager.get());
   }
 
   // ============
