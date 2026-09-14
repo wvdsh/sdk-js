@@ -18,6 +18,7 @@ import type { BackendConnectionPayload } from "../types";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
 import { hasParentFrame } from "../utils/parentOrigin";
+import { hasGamepadActivity } from "../utils/gamepad";
 import type { WavedashSDK } from "../index";
 
 // Capture so we see input regardless of which descendant handles it; passive
@@ -45,10 +46,9 @@ export class HeartbeatManager extends WavedashManager {
   private isFirstTick: boolean = true;
   private readonly TEST_CONNECTION_INTERVAL_MS = 1_000;
   private readonly DISCONNECTED_TIMEOUT_MS = 90_000;
-  private readonly INACTIVITY_TIMEOUT_MS = 30 * 60 * 1000;
+  private readonly INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
   private readonly INPUT_THROTTLE_MS = 1_000;
   private readonly GAMEPAD_POLL_INTERVAL_MS = 1_000;
-  private readonly GAMEPAD_AXIS_DEADZONE = 0.2;
   private cachedPresenceData: Record<string, string | number | boolean | null> =
     {};
 
@@ -274,23 +274,11 @@ export class HeartbeatManager extends WavedashManager {
   };
 
   /**
-   * Polls connected gamepads; any pressed button or out-of-deadzone axis
-   * counts as user activity and (re)starts the heartbeat.
+   * Polls connected gamepads; any activity counts as user input and
+   * (re)starts the heartbeat.
    */
   private pollGamepads(): void {
-    if (typeof navigator === "undefined" || !navigator.getGamepads) return;
-    const pads = navigator.getGamepads();
-    for (const pad of pads) {
-      if (!pad) continue;
-      if (pad.buttons.some((b) => b.pressed)) {
-        this.start();
-        return;
-      }
-      if (pad.axes.some((a) => Math.abs(a) > this.GAMEPAD_AXIS_DEADZONE)) {
-        this.start();
-        return;
-      }
-    }
+    if (hasGamepadActivity()) this.start();
   }
 
   /**
