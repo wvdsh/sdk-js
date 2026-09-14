@@ -6,6 +6,7 @@ import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
 import { showDevPaywall } from "../utils/devPaywall";
 import { hasParentFrame } from "../utils/parentOrigin";
+import { suspendGamepads } from "../utils/gamepad";
 import { suspendPointerLock } from "../utils/pointerLock";
 
 const PAYWALL_TIMEOUT_MS = 10 * 60 * 1000;
@@ -45,6 +46,7 @@ function readEntitlementsFromJwt(jwt: string): string[] {
 export class PaidContentManager extends WavedashManager {
   private paywallOpen = false;
   private restorePointerLock: (() => void) | undefined;
+  private restoreGamepads: (() => void) | undefined;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -100,9 +102,10 @@ export class PaidContentManager extends WavedashManager {
     }
     this.paywallOpen = true;
 
-    // Keep the cursor free while the modal is open
+    // Keep the cursor free and gamepad input out of the game while the modal is open
     // Restored once the parent responds (or on destroy).
     this.restorePointerLock = suspendPointerLock();
+    this.restoreGamepads = suspendGamepads();
 
     // Standalone: imitate the host paywall in-page, then grant + refresh so the
     // end state matches a real purchase (entitlement in the JWT, persisted).
@@ -113,6 +116,8 @@ export class PaidContentManager extends WavedashManager {
       } finally {
         this.restorePointerLock?.();
         this.restorePointerLock = undefined;
+        this.restoreGamepads?.();
+        this.restoreGamepads = undefined;
         this.paywallOpen = false;
       }
       if (!purchased) return false;
@@ -143,6 +148,8 @@ export class PaidContentManager extends WavedashManager {
     } finally {
       this.restorePointerLock?.();
       this.restorePointerLock = undefined;
+      this.restoreGamepads?.();
+      this.restoreGamepads = undefined;
       this.paywallOpen = false;
     }
     if (!response.purchased) return false;
@@ -163,5 +170,7 @@ export class PaidContentManager extends WavedashManager {
     );
     this.restorePointerLock?.();
     this.restorePointerLock = undefined;
+    this.restoreGamepads?.();
+    this.restoreGamepads = undefined;
   }
 }
