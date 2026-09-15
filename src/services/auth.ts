@@ -61,10 +61,7 @@ export class AuthManager extends WavedashManager {
       .then((token) => {
         // Refreshes are serialized, so tokens resolve in start order
         this.jwt = token;
-        // Endpoint is healthy: drop backoff and any pending retry (Convex may
-        // have recovered on its own via its immediate refetch)
         this.retryAttempt = 0;
-        this.clearRetry();
         if (this.jwtPromise === promise) {
           this.sdk.iframeMessenger.postToParent(
             IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY,
@@ -84,11 +81,19 @@ export class AuthManager extends WavedashManager {
   private setupConvexAuth(): void {
     this.sdk.convexClient.setAuth(
       ({ forceRefreshToken }) =>
-        this.getToken(forceRefreshToken).catch((error: unknown) => {
-          logger.error("Failed to fetch gameplay token for Convex", error);
-          this.scheduleRetry();
-          return this.jwt;
-        }),
+        this.getToken(forceRefreshToken)
+          .then((token) => {
+            // Convex has a token and will run its own refresh schedule. Only
+            // this path clears the retry: a token fetched by another caller
+            // never reaches Convex, so its timer must survive
+            this.clearRetry();
+            return token;
+          })
+          .catch((error: unknown) => {
+            logger.error("Failed to fetch gameplay token for Convex", error);
+            this.scheduleRetry();
+            return this.jwt;
+          }),
       // Safety net for failures Convex detects itself (e.g. server rejects token)
       (isAuthenticated) => {
         if (!isAuthenticated) this.scheduleRetry();
