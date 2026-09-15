@@ -154,8 +154,13 @@ class WavedashSDK extends EventTarget {
     });
     this.gameCloudId = sdkConfig.gameCloudId;
     this.iframeMessenger = iframeMessenger; // should be above getAuthToken so it can post to parent, don't move this
+    // A rejected fetcher becomes an unhandled rejection inside Convex; null lets it
+    // report auth failed and the next SDK call retries the refresh
     this.convexClient.setAuth(({ forceRefreshToken }) =>
-      this.getAuthToken(forceRefreshToken)
+      this.getAuthToken(forceRefreshToken).catch((error: unknown) => {
+        logger.error("Failed to fetch gameplay token for Convex", error);
+        return null;
+      })
     );
     this.wavedashUser = sdkConfig.wavedashUser;
     this.ugcHost = sdkConfig.ugcHost;
