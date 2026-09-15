@@ -1,4 +1,4 @@
-import { IFRAME_MESSAGE_TYPE, PlayRouteCaller, UrlParams } from "@wvdsh/api";
+import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
@@ -42,15 +42,14 @@ export class AuthManager extends WavedashManager {
     const previous = this.jwtPromise;
     const fetchToken = async (): Promise<string> => {
       if (previous) await previous.catch(() => {});
-      const query = new URLSearchParams({
-        [UrlParams.Caller]: PlayRouteCaller.Wavedash
-      });
-      // Tell the dev server to skip its cached JWT and re-mint; prod ignores this
-      if (forceRefresh) query.set("fresh", "1");
-      const response = await fetch(`/auth/refresh?${query.toString()}`, {
-        method: "POST",
-        credentials: "same-origin"
-      });
+      // `fresh` tells the dev server to skip its cached JWT and re-mint; prod ignores it
+      const response = await fetch(
+        `/auth/refresh${forceRefresh ? "?fresh=1" : ""}`,
+        {
+          method: "POST",
+          credentials: "same-origin"
+        }
+      );
       if (!response.ok) {
         throw new Error(`Failed to refresh gameplay token: ${response.status}`);
       }

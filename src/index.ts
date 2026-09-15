@@ -383,7 +383,8 @@ class WavedashSDK extends EventTarget {
       script.crossOrigin = "anonymous"; // Allow cross-origin CDN scripts if they have CORS headers
       script.src = src;
       script.onload = resolve;
-      script.onerror = reject;
+      // Reject with an Error, not the bare event: entrypoints and Sentry need the URL that failed
+      script.onerror = () => reject(new Error(`Failed to load script ${src}`));
       document.head.appendChild(script);
     });
   }
