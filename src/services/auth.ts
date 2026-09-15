@@ -61,7 +61,10 @@ export class AuthManager extends WavedashManager {
       .then((token) => {
         // Refreshes are serialized, so tokens resolve in start order
         this.jwt = token;
+        // Endpoint is healthy: drop backoff and any pending retry (Convex may
+        // have recovered on its own via its immediate refetch)
         this.retryAttempt = 0;
+        this.clearRetry();
         if (this.jwtPromise === promise) {
           this.sdk.iframeMessenger.postToParent(
             IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY,
@@ -117,11 +120,15 @@ export class AuthManager extends WavedashManager {
     }, delayMs);
   }
 
-  destroy(): void {
-    this.destroyed = true;
+  private clearRetry(): void {
     if (this.retryTimeout) {
       clearTimeout(this.retryTimeout);
       this.retryTimeout = null;
     }
+  }
+
+  destroy(): void {
+    this.destroyed = true;
+    this.clearRetry();
   }
 }
