@@ -143,6 +143,8 @@ class WavedashSDK extends EventTarget {
   private managers: WavedashManager[];
   private gameplayJwt: string | null = null;
   private gameplayJwtPromise: Promise<string> | null = null;
+  private convexAuthRetryTimeout: ReturnType<typeof setTimeout> | null = null;
+  private convexAuthRetryAttempt: number = 0;
   private setupWarningTimeout: ReturnType<typeof setTimeout> | null = null;
   ugcHost: string;
   uploadsHost: string;
@@ -154,14 +156,7 @@ class WavedashSDK extends EventTarget {
     });
     this.gameCloudId = sdkConfig.gameCloudId;
     this.iframeMessenger = iframeMessenger; // should be above getAuthToken so it can post to parent, don't move this
-    // A rejected fetcher becomes an unhandled rejection inside Convex; null lets it
-    // report auth failed and the next SDK call retries the refresh
-    this.convexClient.setAuth(({ forceRefreshToken }) =>
-      this.getAuthToken(forceRefreshToken).catch((error: unknown) => {
-        logger.error("Failed to fetch gameplay token for Convex", error);
-        return null;
-      })
-    );
+    this.setupConvexAuth();
     this.wavedashUser = sdkConfig.wavedashUser;
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
@@ -1590,6 +1585,56 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
+   * Wire the gameplay JWT fetcher into the Convex client.
+   *
+   * A rejected fetcher becomes an unhandled rejection inside Convex and leaves
+   * its socket paused, so failures are converted to `null`. Convex treats
+   * `null` as "no token": it clears auth, reports `onChange(false)` and drops
+   * to a terminal `noAuth` state where it never calls the fetcher again. That
+   * would permanently disable authenticated Convex calls after one transient
+   * /auth/refresh failure, so on `onChange(false)` we re-arm by calling
+   * `setAuth` again with backoff, which restarts Convex's fetch cycle
+   */
+  private setupConvexAuth(): void {
+    this.convexClient.setAuth(
+      ({ forceRefreshToken }) =>
+        this.getAuthToken(forceRefreshToken).catch((error: unknown) => {
+          logger.error("Failed to fetch gameplay token for Convex", error);
+          return null;
+        }),
+      (isAuthenticated) => {
+        if (isAuthenticated) {
+          this.convexAuthRetryAttempt = 0;
+          return;
+        }
+        this.scheduleConvexAuthRetry();
+      }
+    );
+  }
+
+  /**
+   * Convex gave up on auth (fetcher returned null). Schedule a fresh
+   * `setAuth` so it asks for a token again. Exponential backoff from 1s,
+   * capped at 30s; reset once a token is confirmed
+   */
+  private scheduleConvexAuthRetry(): void {
+    if (this.destroyed || this.convexAuthRetryTimeout) return;
+    const delayMs = Math.min(
+      30_000,
+      1_000 * 2 ** Math.min(this.convexAuthRetryAttempt, 10)
+    );
+    this.convexAuthRetryAttempt++;
+    logger.warn(
+      `Convex auth failed, retrying token fetch in ${delayMs}ms (attempt ${this.convexAuthRetryAttempt})`
+    );
+    this.convexAuthRetryTimeout = setTimeout(() => {
+      this.convexAuthRetryTimeout = null;
+      if (this.destroyed) return;
+      this.setupConvexAuth();
+    }, delayMs);
+  }
+
+  /**
    * Fetcher wired into `ConvexClient.setAuth`; other callers use
    * {@link ensureGameplayJwt}. Same-origin POST to /auth/refresh, authenticated
    * by the gameplaySession cookie.
@@ -1672,6 +1717,10 @@ class WavedashSDK extends EventTarget {
   private destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
+    if (this.convexAuthRetryTimeout) {
+      clearTimeout(this.convexAuthRetryTimeout);
+      this.convexAuthRetryTimeout = null;
+    }
     for (const manager of this.managers) {
       manager.destroy();
     }
