@@ -13,6 +13,7 @@ import {
 } from "./constants";
 import { WavedashEvents } from "./events";
 import { AudioManager } from "./services/audio";
+import { AuthManager } from "./services/auth";
 import { ExternalLinkManager } from "./services/externalLinks";
 import { FileSystemManager } from "./services/fileSystem";
 import { FriendsManager } from "./services/friends";
@@ -42,7 +43,6 @@ import {
   SDKConfig,
   SDKUser,
   UrlParams,
-  PlayRouteCaller,
   SERVICE_WORKER_MESSAGE_TYPE
 } from "@wvdsh/api";
 import type {
@@ -129,6 +129,7 @@ class WavedashSDK extends EventTarget {
   wavedashUser: SDKUser;
   gameCloudId: SDKConfig["gameCloudId"];
   fileSystemManager: FileSystemManager;
+  authManager: AuthManager;
   convexClient: ConvexClient;
   engineCallbackReceiver: string = "WavedashCallbackReceiver";
   engineInstance: EngineInstance | null = null;
@@ -141,8 +142,6 @@ class WavedashSDK extends EventTarget {
   externalLinkManager: ExternalLinkManager;
   launchParamManager: LaunchParamManager;
   private managers: WavedashManager[];
-  private gameplayJwt: string | null = null;
-  private gameplayJwtPromise: Promise<string> | null = null;
   private setupWarningTimeout: ReturnType<typeof setTimeout> | null = null;
   ugcHost: string;
   uploadsHost: string;
@@ -153,10 +152,8 @@ class WavedashSDK extends EventTarget {
       expectAuth: true
     });
     this.gameCloudId = sdkConfig.gameCloudId;
-    this.iframeMessenger = iframeMessenger; // should be above getAuthToken so it can post to parent, don't move this
-    this.convexClient.setAuth(({ forceRefreshToken }) =>
-      this.getAuthToken(forceRefreshToken)
-    );
+    this.iframeMessenger = iframeMessenger; // AuthManager posts to parent through this, keep it above
+    this.authManager = new AuthManager(this);
     this.wavedashUser = sdkConfig.wavedashUser;
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
@@ -184,6 +181,7 @@ class WavedashSDK extends EventTarget {
     // Order matches construction so destroys happen in dependency order
     // (e.g. lobby's destroy may want p2p, but lobby is created after p2p).
     this.managers = [
+      this.authManager,
       this.launchParamManager,
       this.p2pManager,
       this.lobbyManager,
@@ -1585,80 +1583,11 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Fetcher wired into `ConvexClient.setAuth`; other callers use
-   * {@link ensureGameplayJwt}. Same-origin POST to /auth/refresh, authenticated
-   * by the gameplaySession cookie.
-   *
-   * Concurrent callers share one in-flight fetch. A forced refresh instead
-   * serializes behind any in-flight fetch (it may predate the event that
-   * required it, e.g. a purchase) and becomes the current promise; only the
-   * current promise notifies the parent, so a superseded refresh can't
-   * broadcast a stale token
-   */
-  private getAuthToken(forceRefresh = false): Promise<string> {
-    if (!forceRefresh && this.gameplayJwt) {
-      return Promise.resolve(this.gameplayJwt);
-    }
-    if (!forceRefresh && this.gameplayJwtPromise) {
-      return this.gameplayJwtPromise;
-    }
-
-    // Serialize behind any in-flight refresh so we never run two /auth/refresh
-    // round-trips at once and the later-started one always resolves last.
-    const previous = this.gameplayJwtPromise;
-    const fetchToken = async (): Promise<string> => {
-      if (previous) {
-        await previous.catch(() => {});
-      }
-      const refreshQuery = new URLSearchParams({
-        [UrlParams.Caller]: PlayRouteCaller.Wavedash
-      });
-      // A forced refresh follows an event that just changed claims (e.g. a
-      // `wavedash dev` purchase), so tell the dev server to skip its cached JWT
-      // and re-mint. The prod play worker never caches, so it ignores this.
-      if (forceRefresh) refreshQuery.set("fresh", "1");
-      const refreshPath = `/auth/refresh?${refreshQuery.toString()}`;
-      const response = await fetch(refreshPath, {
-        method: "POST",
-        credentials: "same-origin"
-      });
-      if (!response.ok) {
-        throw new Error(`Failed to refresh gameplay token: ${response.status}`);
-      }
-      return response.text();
-    };
-
-    const promise = fetchToken()
-      .then((token) => {
-        // Advance the in-memory cache unconditionally. Refreshes are serialized
-        // (each awaits `previous`), so tokens resolve in start order
-        this.gameplayJwt = token;
-
-        // Notify the parent (for /end-session) only from the latest refresh
-        if (this.gameplayJwtPromise === promise) {
-          iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY, {
-            gameplayJwt: token
-          });
-        }
-        return token;
-      })
-      .finally(() => {
-        if (this.gameplayJwtPromise === promise) {
-          this.gameplayJwtPromise = null;
-        }
-      });
-
-    this.gameplayJwtPromise = promise;
-    return promise;
-  }
-
-  /**
-   * Returns the cached gameplay JWT, awaiting the in-flight fetch if one is
-   * already running (e.g. from Convex's initial setAuth). Use this anywhere
-   * you need to authenticate a request outside of the Convex client.
+   * Gameplay JWT for authenticating requests outside the Convex client.
+   * Awaits any in-flight fetch
    */
   async ensureGameplayJwt(forceRefresh: boolean = false): Promise<string> {
-    return this.getAuthToken(forceRefresh);
+    return this.authManager.getToken(forceRefresh);
   }
 
   /**
