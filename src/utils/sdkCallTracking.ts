@@ -22,38 +22,58 @@ function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
 }
 
 export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
-  const methods = new Map<
-    PropertyKey,
-    { original: unknown; wrapped: (...args: unknown[]) => unknown }
-  >();
+  const prototype = Object.getPrototypeOf(sdk);
+  const publicSdk: WavedashSDK = Object.setPrototypeOf(
+    new EventTarget(),
+    prototype
+  );
 
-  return new Proxy(sdk, {
-    get(target, property) {
-      const descriptor = Object.getOwnPropertyDescriptor(
-        Object.getPrototypeOf(target),
-        property
-      );
-      const tracked =
-        typeof property === "string" &&
-        property !== "constructor" &&
-        !property.startsWith("_") &&
-        descriptor !== undefined;
+  for (const name of [
+    "addEventListener",
+    "removeEventListener",
+    "dispatchEvent"
+  ] as const) {
+    Object.defineProperty(sdk, name, {
+      configurable: true,
+      writable: true,
+      value: EventTarget.prototype[name].bind(publicSdk)
+    });
+  }
 
-      if (tracked && descriptor.get) trackSdkCall(target, property);
-      const value = Reflect.get(target, property, target);
-      if (typeof value !== "function" || property === "constructor")
-        return value;
+  const descriptors = {
+    ...Object.getOwnPropertyDescriptors(prototype),
+    ...Object.getOwnPropertyDescriptors(sdk)
+  };
 
-      const cached = methods.get(property);
-      if (cached && cached.original === value) return cached.wrapped;
+  for (const [name, descriptor] of Object.entries(descriptors)) {
+    if (name === "constructor") continue;
+    const tracked = !name.startsWith("_");
 
-      const wrapped = (...args: unknown[]) => {
-        if (tracked && typeof descriptor.value === "function")
-          trackSdkCall(target, property);
-        return Reflect.apply(value, target, args);
-      };
-      methods.set(property, { original: value, wrapped });
-      return wrapped;
+    if (typeof descriptor.value === "function") {
+      Object.defineProperty(publicSdk, name, {
+        ...descriptor,
+        value: (...args: unknown[]) => {
+          if (tracked) trackSdkCall(sdk, name);
+          return Reflect.apply(Reflect.get(sdk, name), sdk, args);
+        }
+      });
+    } else {
+      Object.defineProperty(publicSdk, name, {
+        configurable: descriptor.configurable,
+        enumerable: descriptor.enumerable,
+        get() {
+          if (tracked && descriptor.get) trackSdkCall(sdk, name);
+          return Reflect.get(sdk, name, sdk);
+        },
+        set:
+          descriptor.set || descriptor.writable
+            ? (value: unknown) => {
+                Reflect.set(sdk, name, value, sdk);
+              }
+            : undefined
+      });
     }
-  });
+  }
+
+  return publicSdk;
 }
