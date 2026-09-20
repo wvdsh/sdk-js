@@ -208,8 +208,8 @@ class WavedashSDK extends EventTarget {
       }
     ]);
 
-    this.setupSessionEndListeners();
-    this.setupSwCredsListener();
+    this._setupSessionEndListeners();
+    this._setupSwCredsListener();
     this.iframeMessenger.addEventListener(
       IFRAME_MESSAGE_TYPE.TAKE_FOCUS,
       takeFocus
@@ -223,7 +223,7 @@ class WavedashSDK extends EventTarget {
     }, 10_000);
   }
 
-  private clearSetupWarning(): void {
+  private _clearSetupWarning(): void {
     if (this.setupWarningTimeout !== null) {
       clearTimeout(this.setupWarningTimeout);
       this.setupWarningTimeout = null;
@@ -274,7 +274,7 @@ class WavedashSDK extends EventTarget {
    */
   readyForEvents(): void {
     if (this._eventsReady) return;
-    this.ensureInit();
+    this._ensureInit();
     this._eventsReady = true;
     this.gameEventManager.flushEventQueue();
   }
@@ -400,14 +400,14 @@ class WavedashSDK extends EventTarget {
       this.gameStartedLoading = true;
       logger.log("loadStarted");
     }
-    this.clearSetupWarning();
+    this._clearSetupWarning();
     iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.PROGRESS_UPDATE, {
       progress
     });
   }
 
   loadComplete() {
-    this.clearSetupWarning();
+    this._clearSetupWarning();
     if (this.gameFinishedLoading) return;
     this.gameFinishedLoading = true;
     logger.log("loadComplete");
@@ -497,7 +497,7 @@ class WavedashSDK extends EventTarget {
   // ============
 
   getUser(): SDKUser {
-    return this.formatResponse({
+    return this._formatResponse({
       ...this.wavedashUser,
       avatarUrl: getAvatarUrl(this.wavedashUser.avatarUrl, this.uploadsHost)
     });
@@ -533,11 +533,11 @@ class WavedashSDK extends EventTarget {
     logger.debug("getUserJwt");
     try {
       const data = await this.ensureGameplayJwt();
-      return this.formatResponse({ success: true, data });
+      return this._formatResponse({ success: true, data });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error("getUserJwt", message);
-      return this.formatResponse({ success: false, data: null, message });
+      return this._formatResponse({ success: false, data: null, message });
     }
   }
 
@@ -547,7 +547,7 @@ class WavedashSDK extends EventTarget {
    * @returns Dictionary of the URL query params that were present when the game was launched
    */
   getLaunchParams(): GameLaunchParams {
-    return this.formatResponse(this.launchParamManager.get());
+    return this._formatResponse(this.launchParamManager.get());
   }
 
   // ============
@@ -555,7 +555,7 @@ class WavedashSDK extends EventTarget {
   // ============
 
   async listFriends(): Promise<WavedashResponse<Friend[]>> {
-    return this.apiCall(this.friendsManager, "listFriends", []);
+    return this._apiCall(this.friendsManager, "listFriends", []);
   }
 
   /**
@@ -569,7 +569,7 @@ class WavedashSDK extends EventTarget {
     userId: Id<"users">,
     size: number = this.AvatarSize.MEDIUM
   ): string | null {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.friendsManager,
       "getUserAvatarUrl",
       [
@@ -586,7 +586,7 @@ class WavedashSDK extends EventTarget {
   // ============
 
   async getLeaderboard(name: string): Promise<WavedashResponse<Leaderboard>> {
-    return this.apiCall(
+    return this._apiCall(
       this.leaderboardManager,
       "getLeaderboard",
       [["name", vString]],
@@ -599,7 +599,7 @@ class WavedashSDK extends EventTarget {
     sortOrder: LeaderboardSortOrder,
     displayType: LeaderboardDisplayType
   ): Promise<WavedashResponse<Leaderboard>> {
-    return this.apiCall(
+    return this._apiCall(
       this.leaderboardManager,
       "getOrCreateLeaderboard",
       [
@@ -618,7 +618,7 @@ class WavedashSDK extends EventTarget {
 
   // Synchronously get leaderboard entry count from cache
   getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.leaderboardManager,
       "getLeaderboardEntryCount",
       [["leaderboardId", vId("leaderboards")]],
@@ -631,7 +631,7 @@ class WavedashSDK extends EventTarget {
   async getMyLeaderboardEntries(
     leaderboardId: Id<"leaderboards">
   ): Promise<WavedashResponse<LeaderboardEntries>> {
-    return this.apiCall(
+    return this._apiCall(
       this.leaderboardManager,
       "getMyLeaderboardEntries",
       [["leaderboardId", vId("leaderboards")]],
@@ -645,7 +645,7 @@ class WavedashSDK extends EventTarget {
     countBehind: number,
     friendsOnly: boolean = false
   ): Promise<WavedashResponse<LeaderboardEntries>> {
-    return this.apiCall(
+    return this._apiCall(
       this.leaderboardManager,
       "listLeaderboardEntriesAroundUser",
       [
@@ -667,7 +667,7 @@ class WavedashSDK extends EventTarget {
     limit: number,
     friendsOnly: boolean = false
   ): Promise<WavedashResponse<LeaderboardEntries>> {
-    return this.apiCall(
+    return this._apiCall(
       this.leaderboardManager,
       "listLeaderboardEntries",
       [
@@ -697,7 +697,7 @@ class WavedashSDK extends EventTarget {
       } catch (error) {
         const message = `uploadLeaderboardScore: invalid JSON: ${raw}`;
         logger.error(message, error);
-        return this.formatResponse({
+        return this._formatResponse({
           success: false,
           data: null,
           message
@@ -705,7 +705,7 @@ class WavedashSDK extends EventTarget {
       }
     }
 
-    return this.apiCall(
+    return this._apiCall(
       this.leaderboardManager,
       "uploadLeaderboardScore",
       [
@@ -743,7 +743,7 @@ class WavedashSDK extends EventTarget {
     visibility?: UGCVisibility,
     filePath?: string
   ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
-    return this.apiCall(
+    return this._apiCall(
       this.ugcManager,
       "createUGCItem",
       [
@@ -779,14 +779,14 @@ class WavedashSDK extends EventTarget {
       } catch (error) {
         const message = `updateUGCItem: invalid JSON: ${raw}`;
         logger.error(message, error);
-        return this.formatResponse({
+        return this._formatResponse({
           success: false,
           data: null,
           message
         });
       }
     }
-    return this.apiCall(
+    return this._apiCall(
       this.ugcManager,
       "updateUGCItem",
       [
@@ -815,7 +815,7 @@ class WavedashSDK extends EventTarget {
   async deleteUGCItem(
     ugcId: Id<"userGeneratedContent">
   ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
-    return this.apiCall(
+    return this._apiCall(
       this.ugcManager,
       "deleteUGCItem",
       [["ugcId", vId("userGeneratedContent")]],
@@ -827,7 +827,7 @@ class WavedashSDK extends EventTarget {
     ugcId: Id<"userGeneratedContent">,
     filePath: string
   ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
-    return this.apiCall(
+    return this._apiCall(
       this.ugcManager,
       "downloadUGCItem",
       [
@@ -849,14 +849,14 @@ class WavedashSDK extends EventTarget {
       } catch (error) {
         const message = `listUGCItems: invalid JSON: ${raw}`;
         logger.error(message, error);
-        return this.formatResponse({
+        return this._formatResponse({
           success: false,
           data: null,
           message
         });
       }
     }
-    return this.apiCall(
+    return this._apiCall(
       this.ugcManager,
       "listUGCItems",
       [
@@ -899,7 +899,7 @@ class WavedashSDK extends EventTarget {
    * @returns The path of the remote file that was deleted
    */
   async deleteRemoteFile(filePath: string): Promise<WavedashResponse<string>> {
-    return this.apiCall(
+    return this._apiCall(
       this.fileSystemManager,
       "deleteRemoteFile",
       [["filePath", vString]],
@@ -917,7 +917,7 @@ class WavedashSDK extends EventTarget {
   async downloadRemoteFile(
     filePath: string
   ): Promise<WavedashResponse<string>> {
-    return this.apiCall(
+    return this._apiCall(
       this.fileSystemManager,
       "downloadRemoteFile",
       [["filePath", vString]],
@@ -931,7 +931,7 @@ class WavedashSDK extends EventTarget {
    * @returns true if the remote file exists, false if it does not.
    */
   async remoteFileExists(filePath: string): Promise<WavedashResponse<boolean>> {
-    return this.apiCall(
+    return this._apiCall(
       this.fileSystemManager,
       "remoteFileExists",
       [["filePath", vString]],
@@ -946,7 +946,7 @@ class WavedashSDK extends EventTarget {
    * @returns The path of the remote file that the local file was uploaded to
    */
   async uploadRemoteFile(filePath: string): Promise<WavedashResponse<string>> {
-    return this.apiCall(
+    return this._apiCall(
       this.fileSystemManager,
       "uploadRemoteFile",
       [["filePath", vString]],
@@ -962,7 +962,7 @@ class WavedashSDK extends EventTarget {
   async listRemoteDirectory(
     path: string
   ): Promise<WavedashResponse<RemoteFileMetadata[]>> {
-    return this.apiCall(
+    return this._apiCall(
       this.fileSystemManager,
       "listRemoteDirectory",
       [["path", vString]],
@@ -978,7 +978,7 @@ class WavedashSDK extends EventTarget {
   async downloadRemoteDirectory(
     path: string
   ): Promise<WavedashResponse<string>> {
-    return this.apiCall(
+    return this._apiCall(
       this.fileSystemManager,
       "downloadRemoteDirectory",
       [["path", vString]],
@@ -1024,7 +1024,7 @@ class WavedashSDK extends EventTarget {
   // Achievements + Stats
   // ============
   getAchievement(identifier: string): boolean {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.statsManager,
       "getAchievement",
       [["identifier", vString]],
@@ -1032,7 +1032,7 @@ class WavedashSDK extends EventTarget {
     );
   }
   getStat(identifier: string): number {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.statsManager,
       "getStat",
       [["identifier", vString]],
@@ -1040,7 +1040,7 @@ class WavedashSDK extends EventTarget {
     );
   }
   setAchievement(identifier: string, storeNow: boolean = false): boolean {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.statsManager,
       "setAchievement",
       [
@@ -1056,7 +1056,7 @@ class WavedashSDK extends EventTarget {
     value: number,
     storeNow: boolean = false
   ): boolean {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.statsManager,
       "setStat",
       [
@@ -1070,10 +1070,10 @@ class WavedashSDK extends EventTarget {
     );
   }
   async requestStats(): Promise<WavedashResponse<boolean>> {
-    return this.apiCall(this.statsManager, "requestStats", []);
+    return this._apiCall(this.statsManager, "requestStats", []);
   }
   storeStats(): boolean {
-    return this.apiCallSync(this.statsManager, "storeStats", []);
+    return this._apiCallSync(this.statsManager, "storeStats", []);
   }
 
   // ============
@@ -1085,16 +1085,16 @@ class WavedashSDK extends EventTarget {
    * This is derived from the configured messageSize minus protocol overhead.
    */
   getP2PMaxPayloadSize(): number {
-    this.ensureInit();
-    return this.apiCallSync(this.p2pManager, "getMaxPayloadSize", []);
+    this._ensureInit();
+    return this._apiCallSync(this.p2pManager, "getMaxPayloadSize", []);
   }
 
   /**
    * Get the configured max incoming messages per channel queue.
    */
   getP2PMaxIncomingMessages(): number {
-    this.ensureInit();
-    return this.apiCallSync(this.p2pManager, "getMaxIncomingMessages", []);
+    this._ensureInit();
+    return this._apiCallSync(this.p2pManager, "getMaxIncomingMessages", []);
   }
 
   /**
@@ -1102,8 +1102,8 @@ class WavedashSDK extends EventTarget {
    * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
    */
   getP2POutgoingMessageBuffer(): Uint8Array {
-    this.ensureInit();
-    return this.apiCallSync(this.p2pManager, "getOutgoingMessageBuffer", []);
+    this._ensureInit();
+    return this._apiCallSync(this.p2pManager, "getOutgoingMessageBuffer", []);
   }
 
   /**
@@ -1208,7 +1208,7 @@ class WavedashSDK extends EventTarget {
     visibility: LobbyVisibility,
     maxPlayers?: number
   ): Promise<WavedashResponse<Id<"lobbies">>> {
-    return this.apiCall(
+    return this._apiCall(
       this.lobbyManager,
       "createLobby",
       [
@@ -1228,7 +1228,7 @@ class WavedashSDK extends EventTarget {
    * @emits LobbyJoined event on success with full lobby context
    */
   async joinLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<boolean>> {
-    return this.apiCall(
+    return this._apiCall(
       this.lobbyManager,
       "joinLobby",
       [["lobbyId", vId("lobbies")]],
@@ -1239,7 +1239,7 @@ class WavedashSDK extends EventTarget {
   async listAvailableLobbies(
     friendsOnly: boolean = false
   ): Promise<WavedashResponse<Lobby[]>> {
-    return this.apiCall(
+    return this._apiCall(
       this.lobbyManager,
       "listAvailableLobbies",
       [["friendsOnly", vBoolean]],
@@ -1248,7 +1248,7 @@ class WavedashSDK extends EventTarget {
   }
 
   async getLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<Lobby>> {
-    return this.apiCall(
+    return this._apiCall(
       this.lobbyManager,
       "getLobby",
       [["lobbyId", vId("lobbies")]],
@@ -1257,7 +1257,7 @@ class WavedashSDK extends EventTarget {
   }
 
   getLobbyUsers(lobbyId: Id<"lobbies">): LobbyUser[] {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.lobbyManager,
       "getLobbyUsers",
       [["lobbyId", vId("lobbies")]],
@@ -1266,7 +1266,7 @@ class WavedashSDK extends EventTarget {
   }
 
   getNumLobbyUsers(lobbyId: Id<"lobbies">): number {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.lobbyManager,
       "getNumLobbyUsers",
       [["lobbyId", vId("lobbies")]],
@@ -1275,7 +1275,7 @@ class WavedashSDK extends EventTarget {
   }
 
   getLobbyHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.lobbyManager,
       "getHostId",
       [["lobbyId", vId("lobbies")]],
@@ -1284,7 +1284,7 @@ class WavedashSDK extends EventTarget {
   }
 
   getLobbyData(lobbyId: Id<"lobbies">, key: string): LobbyDataValue | null {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.lobbyManager,
       "getLobbyData",
       [
@@ -1301,7 +1301,7 @@ class WavedashSDK extends EventTarget {
     key: string,
     value: LobbyDataUpdate
   ): boolean {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.lobbyManager,
       "setLobbyData",
       [
@@ -1316,7 +1316,7 @@ class WavedashSDK extends EventTarget {
   }
 
   deleteLobbyData(lobbyId: Id<"lobbies">, key: string): boolean {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.lobbyManager,
       "deleteLobbyData",
       [
@@ -1331,7 +1331,7 @@ class WavedashSDK extends EventTarget {
   async leaveLobby(
     lobbyId: Id<"lobbies">
   ): Promise<WavedashResponse<Id<"lobbies">>> {
-    return this.apiCall(
+    return this._apiCall(
       this.lobbyManager,
       "leaveLobby",
       [["lobbyId", vId("lobbies")]],
@@ -1342,7 +1342,7 @@ class WavedashSDK extends EventTarget {
   // Fire and forget, returns true if the message was sent out successfully
   // Game can listen for the LobbyMessage event to get the message that was posted
   sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
-    return this.apiCallSync(
+    return this._apiCallSync(
       this.lobbyManager,
       "sendLobbyMessage",
       [
@@ -1358,7 +1358,7 @@ class WavedashSDK extends EventTarget {
     lobbyId: Id<"lobbies">,
     userId: Id<"users">
   ): Promise<WavedashResponse<boolean>> {
-    return this.apiCall(
+    return this._apiCall(
       this.lobbyManager,
       "inviteUserToLobby",
       [
@@ -1373,7 +1373,7 @@ class WavedashSDK extends EventTarget {
   async getLobbyInviteLink(
     copyToClipboard: boolean = false
   ): Promise<WavedashResponse<string>> {
-    return this.apiCall(
+    return this._apiCall(
       this.lobbyManager,
       "getLobbyInviteLink",
       [["copyToClipboard", vBoolean]],
@@ -1396,7 +1396,7 @@ class WavedashSDK extends EventTarget {
   async isEntitled(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
-    return this.apiCall(
+    return this._apiCall(
       this.paidContentManager,
       "isEntitled",
       [["contentIdentifier", vString]],
@@ -1417,7 +1417,7 @@ class WavedashSDK extends EventTarget {
    * for access gating multiple items at once without a call per content identifier.
    */
   async getEntitlements(): Promise<WavedashResponse<string[]>> {
-    return this.apiCall(this.paidContentManager, "getEntitlements", []);
+    return this._apiCall(this.paidContentManager, "getEntitlements", []);
   }
   // Kept for backwards compatibility
   async getEntitlements_EXPERIMENTAL(): Promise<WavedashResponse<string[]>> {
@@ -1435,7 +1435,7 @@ class WavedashSDK extends EventTarget {
   async triggerPaywall(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
-    return this.apiCall(
+    return this._apiCall(
       this.paidContentManager,
       "triggerPaywall",
       [["contentIdentifier", vString]],
@@ -1472,14 +1472,14 @@ class WavedashSDK extends EventTarget {
       } catch (error) {
         const message = `updateUserPresence: invalid JSON: ${raw}`;
         logger.error(message, error);
-        return this.formatResponse({
+        return this._formatResponse({
           success: false,
           data: null,
           message
         });
       }
     }
-    return this.apiCall(
+    return this._apiCall(
       this.heartbeatManager,
       "updateUserPresence",
       [["data", vRecord]],
@@ -1499,7 +1499,7 @@ class WavedashSDK extends EventTarget {
   // Internal Helpers
   // ================
 
-  private isGodot(): boolean {
+  private _isGodot(): boolean {
     return (
       this.engineInstance !== null &&
       this.engineInstance.type === GAME_ENGINE.GODOT
@@ -1507,9 +1507,9 @@ class WavedashSDK extends EventTarget {
   }
 
   // Godot receives JSON strings for plain objects/arrays; typed as T for JS consumers
-  private formatResponse<T>(data: T): T {
+  private _formatResponse<T>(data: T): T {
     if (
-      this.isGodot() &&
+      this._isGodot() &&
       data !== null &&
       (Array.isArray(data) || Object.getPrototypeOf(data) === Object.prototype)
     ) {
@@ -1524,14 +1524,14 @@ class WavedashSDK extends EventTarget {
 
   // Throws if init() hasn't been called. Only used by methods that
   // require config or produce events (lobby join/create, P2P).
-  private ensureInit(): void {
+  private _ensureInit(): void {
     if (!this._initialized) {
       logger.error("SDK not initialized. Call WavedashJS.init first.");
       throw new Error("SDK not initialized");
     }
   }
 
-  private async apiCall<T extends WavedashManager, K extends string & keyof T>(
+  private async _apiCall<T extends WavedashManager, K extends string & keyof T>(
     manager: T,
     method: K,
     argSpecs: readonly ArgSpec[],
@@ -1541,15 +1541,15 @@ class WavedashSDK extends EventTarget {
     try {
       validateArgs(method, argSpecs, args);
       const data = await (manager[method] as AnyFn)(...args);
-      return this.formatResponse({ success: true, data });
+      return this._formatResponse({ success: true, data });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error(method, message);
-      return this.formatResponse({ success: false, data: null, message });
+      return this._formatResponse({ success: false, data: null, message });
     }
   }
 
-  private apiCallSync<T extends WavedashManager, K extends string & keyof T>(
+  private _apiCallSync<T extends WavedashManager, K extends string & keyof T>(
     target: T,
     method: K,
     argSpecs: readonly ArgSpec[],
@@ -1566,7 +1566,7 @@ class WavedashSDK extends EventTarget {
       logger.error(method, message);
       throw error;
     }
-    return this.formatResponse((target[method] as AnyFn)(...args));
+    return this._formatResponse((target[method] as AnyFn)(...args));
   }
 
   /**
@@ -1595,7 +1595,7 @@ class WavedashSDK extends EventTarget {
   /**
    * Tear down every manager. Called on the parent's `END_SESSION` signal
    */
-  private destroy(): void {
+  private _destroy(): void {
     if (this.destroyed) return;
     this.destroyed = true;
     for (const manager of this.managers) {
@@ -1603,9 +1603,9 @@ class WavedashSDK extends EventTarget {
     }
   }
 
-  private setupSessionEndListeners(): void {
+  private _setupSessionEndListeners(): void {
     iframeMessenger.addEventListener(IFRAME_MESSAGE_TYPE.END_SESSION, () =>
-      this.destroy()
+      this._destroy()
     );
   }
 
@@ -1615,7 +1615,7 @@ class WavedashSDK extends EventTarget {
    * in-memory or IDB credentials (e.g. Safari ITP storage decay) — we're the
    * fastest live source. JWT only; sessionToken is owned by the SW + cookies.
    */
-  private setupSwCredsListener(): void {
+  private _setupSwCredsListener(): void {
     this.swMessenger.addEventListener(
       SERVICE_WORKER_MESSAGE_TYPE.EMBED_CREDS_REQUEST,
       async (_payload, reply) => {
@@ -1635,25 +1635,13 @@ class WavedashSDK extends EventTarget {
   }
 }
 
-const untrackedMethods = new Set([
-  "constructor",
-  "clearSetupWarning",
-  "isGodot",
-  "formatResponse",
-  "ensureInit",
-  "apiCall",
-  "apiCallSync",
-  "setEngineInstance",
-  "destroy",
-  "setupSessionEndListeners",
-  "setupSwCredsListener"
-]);
-
 for (const [functionName, descriptor] of Object.entries(
   Object.getOwnPropertyDescriptors(WavedashSDK.prototype)
 )) {
   if (
-    untrackedMethods.has(functionName) ||
+    functionName === "constructor" ||
+    functionName === "setEngineInstance" ||
+    functionName.startsWith("_") ||
     typeof descriptor.value !== "function"
   )
     continue;
