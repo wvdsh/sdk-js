@@ -17,7 +17,6 @@ import { WavedashManager } from "./manager";
  * audio state and fans it out to every attached frame.
  */
 export class AudioManager extends WavedashManager {
-  private _isMuted: boolean;
   private _volume: number;
 
   // One shim per frame we've attached to.
@@ -45,29 +44,22 @@ export class AudioManager extends WavedashManager {
         "SDKConfig.initialVolume: expected a number from 0 to 1"
       );
     }
-    this._isMuted = initialVolume === 0;
-    this._volume = initialVolume || 1;
+    this._volume = initialVolume;
     if (typeof window !== "undefined") {
       this.attachWindow(window);
     }
     this.sdk.iframeMessenger.addEventListener(
-      IFRAME_MESSAGE_TYPE.MUTE_CHANGED,
-      this.handleMute
-    );
-    this.sdk.iframeMessenger.addEventListener(
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore Pending shared API message types.
-      "VolumeChanged",
+      IFRAME_MESSAGE_TYPE.VOLUME_CHANGED,
       this.handleVolume
     );
   }
 
   isMuted(): boolean {
-    return this._isMuted;
+    return this._volume === 0;
   }
 
   getVolume(): number {
-    return this._isMuted ? 0 : this._volume;
+    return this._volume;
   }
 
   /**
@@ -75,7 +67,7 @@ export class AudioManager extends WavedashManager {
    * host applied the change, `false` otherwise — notably, the host rejects an
    * unmute when the user muted the game from the Wavedash UI, so games can't
    * override an explicit user mute. The resulting state arrives via the usual
-   * MUTE_CHANGED broadcast, so `isMuted()` updates independently of this result.
+   * VolumeChanged broadcast, so `isMuted()` updates independently of this result.
    */
   async requestMute(muted: boolean): Promise<boolean> {
     if (!hasParentFrame()) {
@@ -109,30 +101,20 @@ export class AudioManager extends WavedashManager {
     return response.success;
   }
 
-  private handleMute = (data: { isMuted: boolean }): void => {
-    this.applyState(data.isMuted, this._volume);
-  };
-
   private handleVolume = (data: { volume: number }): void => {
     if (!Number.isFinite(data.volume) || data.volume < 0 || data.volume > 1)
       return;
-    this.applyState(data.volume === 0, data.volume || this._volume);
-  };
-
-  private applyState(isMuted: boolean, volume: number): void {
-    const previousMuted = this._isMuted;
-    const previousVolume = this.getVolume();
-    this._isMuted = isMuted;
-    this._volume = volume;
-    if (previousMuted === isMuted && previousVolume === this.getVolume())
-      return;
-    this.frames.forEach((shim) => shim.applyMute(this._isMuted));
+    const previousMuted = this.isMuted();
+    if (this._volume === data.volume) return;
+    this._volume = data.volume;
+    const isMuted = this.isMuted();
+    this.frames.forEach((shim) => shim.applyMute(isMuted));
     if (previousMuted !== isMuted) {
       this.sdk.gameEventManager.notifyGame(WavedashEvents.MUTE_CHANGED, {
         isMuted
       } satisfies MuteChangedPayload);
     }
-  }
+  };
 
   /** Shim a window we can reach. Same-origin only (cross-origin access throws). */
   private attachWindow(win: Window): void {
@@ -212,7 +194,7 @@ export class AudioManager extends WavedashManager {
     const shim = new AudioFrameShim(this, win);
     this.frames.add(shim);
     this.iframeBindings.set(iframe, { doc, shim });
-    shim.applyMute(this._isMuted);
+    shim.applyMute(this.isMuted());
   }
 
   /** Remove and uninstall the shim bound to an iframe's (previous) document. */
@@ -226,14 +208,8 @@ export class AudioManager extends WavedashManager {
 
   override destroy(): void {
     this.sdk.iframeMessenger.removeEventListener(
-      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-      // @ts-ignore Pending shared API message types.
-      "VolumeChanged",
+      IFRAME_MESSAGE_TYPE.VOLUME_CHANGED,
       this.handleVolume
-    );
-    this.sdk.iframeMessenger.removeEventListener(
-      IFRAME_MESSAGE_TYPE.MUTE_CHANGED,
-      this.handleMute
     );
 
     this.boundIframes.forEach((iframe) => {
