@@ -1645,7 +1645,6 @@ for (const [functionName, descriptor] of Object.entries(
 )) {
   if (
     functionName === "constructor" ||
-    functionName === "setEngineInstance" ||
     functionName.startsWith("_") ||
     typeof descriptor.value !== "function"
   )
