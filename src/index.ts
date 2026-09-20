@@ -532,7 +532,7 @@ class WavedashSDK extends EventTarget {
   async getUserJwt(): Promise<WavedashResponse<string>> {
     logger.debug("getUserJwt");
     try {
-      const data = await this.ensureGameplayJwt();
+      const data = await this._ensureGameplayJwt();
       return this._formatResponse({ success: true, data });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1587,8 +1587,9 @@ class WavedashSDK extends EventTarget {
   /**
    * Gameplay JWT for authenticating requests outside the Convex client.
    * Awaits any in-flight fetch
+   * @internal
    */
-  async ensureGameplayJwt(forceRefresh: boolean = false): Promise<string> {
+  async _ensureGameplayJwt(forceRefresh: boolean = false): Promise<string> {
     return this.authManager.getToken(forceRefresh);
   }
 
@@ -1621,7 +1622,7 @@ class WavedashSDK extends EventTarget {
       async (_payload, reply) => {
         let jwt: string;
         try {
-          jwt = await this.ensureGameplayJwt();
+          jwt = await this._ensureGameplayJwt();
         } catch (err) {
           logger.warn("Failed to resolve JWT for creds-request", err);
           return;
