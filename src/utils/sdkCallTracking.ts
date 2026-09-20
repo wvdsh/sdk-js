@@ -1,6 +1,9 @@
 import { IFRAME_MESSAGE_TYPE } from "./iframeMessages";
 import type { IFrameMessenger } from "./iframeMessenger";
 
+const TELEMETRY_INTERVAL_MS = 1_000;
+const lastSentByMessenger = new WeakMap<IFrameMessenger, Map<string, number>>();
+
 const publicNames: Record<string, string> = {
   getMaxPayloadSize: "getP2PMaxPayloadSize",
   getMaxIncomingMessages: "getP2PMaxIncomingMessages",
@@ -14,8 +17,20 @@ export function trackSdkCall(
   gameCloudId: string
 ): void {
   try {
+    const functionName = publicNames[method] ?? method;
+    const key = `${gameCloudId}:${functionName}`;
+    let lastSent = lastSentByMessenger.get(messenger);
+    if (!lastSent) {
+      lastSent = new Map();
+      lastSentByMessenger.set(messenger, lastSent);
+    }
+    const now = performance.now();
+    const previous = lastSent.get(key);
+    if (previous !== undefined && now - previous < TELEMETRY_INTERVAL_MS)
+      return;
+    lastSent.set(key, now);
     messenger.postToParent(IFRAME_MESSAGE_TYPE.SDK_FUNCTION_CALLED, {
-      functionName: publicNames[method] ?? method,
+      functionName,
       gameCloudId
     });
   } catch {
