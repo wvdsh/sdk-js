@@ -1584,6 +1584,10 @@ class WavedashSDK extends EventTarget {
     }
   }
 
+  async ensureGameplayJwt(forceRefresh: boolean = false): Promise<string> {
+    return this._ensureGameplayJwt(forceRefresh);
+  }
+
   /**
    * Gameplay JWT for authenticating requests outside the Convex client.
    * Awaits any in-flight fetch
