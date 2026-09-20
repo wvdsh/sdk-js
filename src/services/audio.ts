@@ -17,8 +17,8 @@ import { WavedashManager } from "./manager";
  * audio state and fans it out to every attached frame.
  */
 export class AudioManager extends WavedashManager {
-  private _isMuted = false;
-  private _volume = 1;
+  private _isMuted: boolean;
+  private _volume: number;
 
   // One shim per frame we've attached to.
   private frames = new Set<AudioFrameShim>();
@@ -34,8 +34,19 @@ export class AudioManager extends WavedashManager {
   private iframeLoadHandlers = new Map<HTMLIFrameElement, () => void>();
   private boundIframes = new Set<HTMLIFrameElement>();
 
-  constructor(sdk: WavedashSDK) {
+  constructor(sdk: WavedashSDK, initialVolume = 1) {
     super(sdk);
+    if (
+      !Number.isFinite(initialVolume) ||
+      initialVolume < 0 ||
+      initialVolume > 1
+    ) {
+      throw new RangeError(
+        "SDKConfig.initialVolume: expected a number from 0 to 1"
+      );
+    }
+    this._isMuted = initialVolume === 0;
+    this._volume = initialVolume || 1;
     if (typeof window !== "undefined") {
       this.attachWindow(window);
     }
