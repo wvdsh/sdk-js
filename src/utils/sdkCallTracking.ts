@@ -1,3 +1,4 @@
+import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 
 const reportedFunctions = new WeakMap<WavedashSDK, Set<string>>();
@@ -11,9 +12,7 @@ function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
     }
     if (reported.has(functionName)) return;
     reported.add(functionName);
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore Pending shared API message types.
-    sdk.iframeMessenger.postToParent("SdkFunctionCalled", {
+    sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.SDK_FUNCTION_CALLED, {
       functionName
     });
   } catch {

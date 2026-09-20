@@ -174,8 +174,6 @@ class WavedashSDK extends EventTarget {
     this.friendsManager = new FriendsManager(this);
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore Pending shared API config types.
     this.audioManager = new AudioManager(this, sdkConfig.initialVolume);
     this.paidContentManager = new PaidContentManager(this);
     this.externalLinkManager = new ExternalLinkManager(this);
