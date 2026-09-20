@@ -6,34 +6,17 @@ The Wavedash JS SDK enables games to interact with Wavedash Online Services incl
 
 https://docs.wavedash.com/
 
-## Master volume
+## Host-controlled master volume
 
-```ts
-const applied = await Wavedash.requestVolume(0.35);
-const volume = Wavedash.getVolume();
-
-Wavedash.on(Wavedash.Events.VOLUME_CHANGED, ({ volume }) => {
-  volumeSlider.value = String(volume);
-});
-```
-
-`requestVolume(volume)` accepts a finite number from **0 to 1**, including decimals. Zero mutes; one is full volume. Values outside this range reject with a `RangeError`. The returned promise resolves to whether the host accepted the request. The host remains responsible for respecting an explicit player mute; the SDK applies volume only when the host broadcasts its accepted state.
-
-`getVolume()` returns the effective master volume, or zero while muted. `VOLUME_CHANGED` carries `{ volume: number }` in the same 0–1 range. `isMuted()`, `toggleMute()`, and `MUTE_CHANGED` remain supported. Muting preserves the previous nonzero volume so a subsequent unmute restores it.
-
-`requestMute(boolean)` is deprecated but remains functional for existing games and the Unity/Godot bindings. New integrations should use `requestVolume(0)` to mute and `requestVolume(desiredVolume)` to restore a chosen level.
+The Wavedash player toolbar controls master volume. The SDK applies host volume changes internally; it does not expose a new volume API or volume event to game developers. Existing `requestMute(boolean)`, `isMuted()`, `toggleMute()`, and `MUTE_CHANGED` remain supported. Muting preserves the previous nonzero volume so a subsequent unmute restores it.
 
 The master volume multiplies a game's own audio levels. Web Audio uses a master gain with a short ramp. HTML audio/video uses the element's volume setting; media routed through a shimmed Web Audio context is scaled only at the master gain. HTML media volume remains subject to browser support, including iOS restrictions. Speech volume is sampled when an utterance is submitted; already-speaking utterances are not adjusted.
 
 ### Host integration
 
-This SDK change requires a corresponding host update before the new request can work on Wavedash. Existing mute requests continue to use the existing protocol.
+The host broadcasts `{ type: "VolumeChanged", volume }` with a finite number from 0 to 1, including initial persisted volume when the game starts. Zero means muted. If also sending the legacy `MuteChanged` message, send `VolumeChanged` first so clients observe the final volume without an intermediate unmute level. Invalid volume messages are ignored. The SDK does not send volume requests to the host.
 
-- Request: `{ type: "SetVolume", requestId, volume }`.
-- Response: `{ requestId, requestType: "SetVolume", data: { success: boolean } }`.
-- State broadcast: `{ type: "VolumeChanged", volume }`, including initial persisted volume when the game starts. Zero means muted. If also sending the legacy `MuteChanged` message, send `VolumeChanged` first so clients observe the final volume without an intermediate unmute level.
-
-Without a host, `requestVolume` resolves to `false`. A host that does not implement `SetVolume` causes the existing iframe request timeout to reject; the SDK does not pretend the volume changed. These message types are defined locally in the SDK until the shared API package and host adopt the protocol.
+The new messages use their wire strings with targeted type suppressions until the shared API package includes them.
 
 ## SDK call telemetry
 

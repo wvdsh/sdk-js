@@ -475,22 +475,7 @@ class WavedashSDK extends EventTarget {
     return this.audioManager.isMuted();
   }
 
-  /** Current effective master volume from 0 (muted) to 1 (full volume). */
-  getVolume(): number {
-    return this.audioManager.getVolume();
-  }
-
   /**
-   * Request a master volume from 0 (muted) to 1 (full volume).
-   * Zero mutes. Returns false if an explicit player mute prevents increasing
-   * volume, or there is no host. Rejects non-finite or out-of-range values with a RangeError.
-   */
-  async requestVolume(volume: number): Promise<boolean> {
-    return this.audioManager.requestVolume(volume);
-  }
-
-  /**
-   * @deprecated Use requestVolume(volume) with a value from 0 to 1.
    * Ask the host to mute (true) or unmute (false). Resolves to `true` if the
    * change was applied, `false` if it was rejected — the host won't let the
    * game unmute when the user has muted from the Wavedash UI.

@@ -36,7 +36,6 @@ export const WavedashEvents = {
   FULLSCREEN_CHANGED: "FullscreenChanged", // fullscreen state changed
 
   // Audio events
-  VOLUME_CHANGED: "VolumeChanged",
   MUTE_CHANGED: "MuteChanged", // mute state changed
 
   // Paid content events

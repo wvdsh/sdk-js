@@ -1,4 +1,4 @@
-import { IFRAME_MESSAGE_TYPE } from "../utils/iframeMessages";
+import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import { WavedashEvents } from "../events";
 import { type WavedashSDK } from "../index";
 import type { MuteChangedPayload } from "../types";
@@ -44,7 +44,9 @@ export class AudioManager extends WavedashManager {
       this.handleMute
     );
     this.sdk.iframeMessenger.addEventListener(
-      IFRAME_MESSAGE_TYPE.VOLUME_CHANGED,
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore Pending shared API message types.
+      "VolumeChanged",
       this.handleVolume
     );
   }
@@ -57,22 +59,7 @@ export class AudioManager extends WavedashManager {
     return this._isMuted ? 0 : this._volume;
   }
 
-  async requestVolume(volume: number): Promise<boolean> {
-    if (!Number.isFinite(volume) || volume < 0 || volume > 1) {
-      throw new RangeError(
-        "requestVolume.volume: expected a number from 0 to 1"
-      );
-    }
-    if (!hasParentFrame()) return false;
-    const response = await this.sdk.iframeMessenger.requestFromParent(
-      IFRAME_MESSAGE_TYPE.SET_VOLUME,
-      { volume }
-    );
-    return response.success;
-  }
-
   /**
-   * @deprecated Use requestVolume(volume) with a value from 0 to 1.
    * Ask the host to mute (true) or unmute (false). Resolves to `true` if the
    * host applied the change, `false` otherwise — notably, the host rejects an
    * unmute when the user muted the game from the Wavedash UI, so games can't
@@ -133,11 +120,6 @@ export class AudioManager extends WavedashManager {
       this.sdk.gameEventManager.notifyGame(WavedashEvents.MUTE_CHANGED, {
         isMuted
       } satisfies MuteChangedPayload);
-    }
-    if (previousVolume !== this.getVolume()) {
-      this.sdk.gameEventManager.notifyGame(WavedashEvents.VOLUME_CHANGED, {
-        volume: this.getVolume()
-      });
     }
   }
 
@@ -233,7 +215,9 @@ export class AudioManager extends WavedashManager {
 
   override destroy(): void {
     this.sdk.iframeMessenger.removeEventListener(
-      IFRAME_MESSAGE_TYPE.VOLUME_CHANGED,
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore Pending shared API message types.
+      "VolumeChanged",
       this.handleVolume
     );
     this.sdk.iframeMessenger.removeEventListener(

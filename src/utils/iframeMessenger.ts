@@ -5,7 +5,7 @@
  * TODO: Look into Vercel's BIDC for this https://github.com/vercel/bidc
  */
 
-import { IFRAME_MESSAGE_TYPE, IFrameEventPayloadMap } from "./iframeMessages";
+import { IFRAME_MESSAGE_TYPE, IFrameEventPayloadMap } from "@wvdsh/api";
 import { getParentOrigin } from "./parentOrigin";
 
 const RESPONSE_TIMEOUT_MS = 15_000;

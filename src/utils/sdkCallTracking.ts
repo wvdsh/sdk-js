@@ -1,4 +1,3 @@
-import { IFRAME_MESSAGE_TYPE } from "./iframeMessages";
 import type { IFrameMessenger } from "./iframeMessenger";
 
 const TELEMETRY_INTERVAL_MS = 1_000;
@@ -21,7 +20,9 @@ export function trackSdkCall(
     if (previous !== undefined && now - previous < TELEMETRY_INTERVAL_MS)
       return;
     lastSent.set(key, now);
-    messenger.postToParent(IFRAME_MESSAGE_TYPE.SDK_FUNCTION_CALLED, {
+    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+    // @ts-ignore Pending shared API message types.
+    messenger.postToParent("SdkFunctionCalled", {
       functionName,
       gameCloudId
     });
