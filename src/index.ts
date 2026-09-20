@@ -33,6 +33,7 @@ import { getAvatarUrl } from "./utils/cdn";
 import { takeFocus } from "./utils/focus";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { LOG_LEVEL, logger } from "./utils/logger";
+import { trackSdkCall } from "./utils/sdkCallTracking";
 import { SwMessenger } from "./utils/swMessenger";
 
 // Create singleton instance for iframe messaging
@@ -234,6 +235,7 @@ class WavedashSDK extends EventTarget {
   // =============
 
   init(config?: WavedashConfig): boolean {
+    trackSdkCall(this.iframeMessenger, "init", this.gameCloudId);
     this.loadComplete();
     if (this._initialized) {
       logger.warn("init called twice! Already initialized, skipping init");
@@ -272,6 +274,7 @@ class WavedashSDK extends EventTarget {
    * If deferEvents is true, call this manually after your pre-game setup is complete.
    */
   readyForEvents(): void {
+    trackSdkCall(this.iframeMessenger, "readyForEvents", this.gameCloudId);
     if (this._eventsReady) return;
     this.ensureInit();
     this._eventsReady = true;
@@ -299,6 +302,7 @@ class WavedashSDK extends EventTarget {
     event: K,
     listener: (payload: WavedashEventMap[K]) => void
   ): () => void {
+    trackSdkCall(this.iframeMessenger, "on", this.gameCloudId);
     const wrapped: EventListener = (e) => {
       listener((e as CustomEvent<WavedashEventMap[K]>).detail);
     };
@@ -323,6 +327,7 @@ class WavedashSDK extends EventTarget {
     event: K,
     listener: (payload: WavedashEventMap[K]) => void
   ): void {
+    trackSdkCall(this.iframeMessenger, "off", this.gameCloudId);
     const perEvent = this.listenerWrappers.get(event);
     const wrapped = perEvent?.get(listener);
     if (!perEvent || !wrapped) return;
@@ -350,6 +355,7 @@ class WavedashSDK extends EventTarget {
     listener: any,
     options?: boolean | AddEventListenerOptions
   ): void {
+    trackSdkCall(this.iframeMessenger, "addEventListener", this.gameCloudId);
     super.addEventListener(type, listener, options);
   }
 
@@ -369,6 +375,7 @@ class WavedashSDK extends EventTarget {
     listener: any,
     options?: boolean | EventListenerOptions
   ): void {
+    trackSdkCall(this.iframeMessenger, "removeEventListener", this.gameCloudId);
     super.removeEventListener(type, listener, options);
   }
 
@@ -376,6 +383,7 @@ class WavedashSDK extends EventTarget {
   // Entrypoint Helpers
   // ==================
   loadScript(src: string) {
+    trackSdkCall(this.iframeMessenger, "loadScript", this.gameCloudId);
     validateArgs("loadScript", [["src", vString]], [src]);
     return new Promise((resolve, reject) => {
       const script = document.createElement("script");
@@ -390,6 +398,11 @@ class WavedashSDK extends EventTarget {
   }
 
   updateLoadProgressZeroToOne(progress: number) {
+    trackSdkCall(
+      this.iframeMessenger,
+      "updateLoadProgressZeroToOne",
+      this.gameCloudId
+    );
     validateArgs(
       "updateLoadProgressZeroToOne",
       [["progress", vNumber]],
@@ -406,6 +419,7 @@ class WavedashSDK extends EventTarget {
   }
 
   loadComplete() {
+    trackSdkCall(this.iframeMessenger, "loadComplete", this.gameCloudId);
     this.clearSetupWarning();
     if (this.gameFinishedLoading) return;
     this.gameFinishedLoading = true;
@@ -427,6 +441,7 @@ class WavedashSDK extends EventTarget {
    * Wavedash host page, which owns the real fullscreen target.
    */
   isFullscreen(): boolean {
+    trackSdkCall(this.iframeMessenger, "isFullscreen", this.gameCloudId);
     return this.fullscreenManager.isFullscreen();
   }
 
@@ -436,6 +451,7 @@ class WavedashSDK extends EventTarget {
    * for the browser to permit it.
    */
   async requestFullscreen(fullscreen: boolean): Promise<boolean> {
+    trackSdkCall(this.iframeMessenger, "requestFullscreen", this.gameCloudId);
     return this.fullscreenManager.requestFullscreen(fullscreen);
   }
 
@@ -444,6 +460,7 @@ class WavedashSDK extends EventTarget {
    * a user gesture handler when entering fullscreen.
    */
   async toggleFullscreen(): Promise<boolean> {
+    trackSdkCall(this.iframeMessenger, "toggleFullscreen", this.gameCloudId);
     return this.fullscreenManager.toggleFullscreen();
   }
 
@@ -458,6 +475,7 @@ class WavedashSDK extends EventTarget {
    * pointerdown).
    */
   async copyLink(url: string): Promise<boolean> {
+    trackSdkCall(this.iframeMessenger, "copyLink", this.gameCloudId);
     validateArgs("copyLink", [["url", vString]], [url]);
     return this.externalLinkManager.copyLink(url);
   }
@@ -471,15 +489,34 @@ class WavedashSDK extends EventTarget {
    * which owns the mute control so its UI button and the game stay in sync.
    */
   isMuted(): boolean {
+    trackSdkCall(this.iframeMessenger, "isMuted", this.gameCloudId);
     return this.audioManager.isMuted();
   }
 
+  /** Current effective master volume from 0 (muted) to 1 (full volume). */
+  getVolume(): number {
+    trackSdkCall(this.iframeMessenger, "getVolume", this.gameCloudId);
+    return this.audioManager.getVolume();
+  }
+
   /**
+   * Request a master volume from 0 (muted) to 1 (full volume).
+   * Zero mutes. Returns false if an explicit player mute prevents increasing
+   * volume, or there is no host. Rejects non-finite or out-of-range values with a RangeError.
+   */
+  async requestVolume(volume: number): Promise<boolean> {
+    trackSdkCall(this.iframeMessenger, "requestVolume", this.gameCloudId);
+    return this.audioManager.requestVolume(volume);
+  }
+
+  /**
+   * @deprecated Use requestVolume(volume) with a value from 0 to 1.
    * Ask the host to mute (true) or unmute (false). Resolves to `true` if the
    * change was applied, `false` if it was rejected — the host won't let the
    * game unmute when the user has muted from the Wavedash UI.
    */
   async requestMute(muted: boolean): Promise<boolean> {
+    trackSdkCall(this.iframeMessenger, "requestMute", this.gameCloudId);
     return this.audioManager.requestMute(muted);
   }
 
@@ -488,6 +525,7 @@ class WavedashSDK extends EventTarget {
    * was rejected (e.g. trying to unmute over an explicit user mute).
    */
   async toggleMute(): Promise<boolean> {
+    trackSdkCall(this.iframeMessenger, "toggleMute", this.gameCloudId);
     return this.audioManager.toggleMute();
   }
 
@@ -496,6 +534,7 @@ class WavedashSDK extends EventTarget {
   // ============
 
   getUser(): SDKUser {
+    trackSdkCall(this.iframeMessenger, "getUser", this.gameCloudId);
     return this.formatResponse({
       ...this.wavedashUser,
       avatarUrl: getAvatarUrl(this.wavedashUser.avatarUrl, this.uploadsHost)
@@ -511,6 +550,7 @@ class WavedashSDK extends EventTarget {
   getUsername(): string;
   getUsername(userId: Id<"users">): string | null;
   getUsername(userId?: Id<"users">): string | null {
+    trackSdkCall(this.iframeMessenger, "getUsername", this.gameCloudId);
     if (userId === undefined) {
       return this.wavedashUser.username;
     }
@@ -519,6 +559,7 @@ class WavedashSDK extends EventTarget {
   }
 
   getUserId(): Id<"users"> {
+    trackSdkCall(this.iframeMessenger, "getUserId", this.gameCloudId);
     return this.wavedashUser.id;
   }
 
@@ -529,6 +570,7 @@ class WavedashSDK extends EventTarget {
    * @returns The user's JWT signed by the Wavedash backend
    */
   async getUserJwt(): Promise<WavedashResponse<string>> {
+    trackSdkCall(this.iframeMessenger, "getUserJwt", this.gameCloudId);
     logger.debug("getUserJwt");
     try {
       const data = await this.ensureGameplayJwt();
@@ -546,6 +588,7 @@ class WavedashSDK extends EventTarget {
    * @returns Dictionary of the URL query params that were present when the game was launched
    */
   getLaunchParams(): GameLaunchParams {
+    trackSdkCall(this.iframeMessenger, "getLaunchParams", this.gameCloudId);
     return this.formatResponse(this.launchParamManager.get());
   }
 
@@ -994,6 +1037,7 @@ class WavedashSDK extends EventTarget {
    * @returns true if the file was written successfully
    */
   async writeLocalFile(filePath: string, data: Uint8Array): Promise<boolean> {
+    trackSdkCall(this.iframeMessenger, "writeLocalFile", this.gameCloudId);
     validateArgs(
       "writeLocalFile",
       [
@@ -1014,6 +1058,7 @@ class WavedashSDK extends EventTarget {
    * @returns The data read from the local file (byte array)
    */
   async readLocalFile(filePath: string): Promise<Uint8Array | null> {
+    trackSdkCall(this.iframeMessenger, "readLocalFile", this.gameCloudId);
     validateArgs("readLocalFile", [["filePath", vString]], [filePath]);
     const result = await this.fileSystemManager.readLocalFile(filePath);
     return result;
@@ -1121,6 +1166,7 @@ class WavedashSDK extends EventTarget {
     payload: Uint8Array,
     payloadSize: number = payload.length
   ): boolean {
+    trackSdkCall(this.iframeMessenger, "sendP2PMessage", this.gameCloudId);
     // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
     if (toUserId && !this.p2pManager.isPeerReady(toUserId)) {
       return false;
@@ -1150,6 +1196,7 @@ class WavedashSDK extends EventTarget {
     payload: Uint8Array,
     payloadSize: number = payload.length
   ): boolean {
+    trackSdkCall(this.iframeMessenger, "broadcastP2PMessage", this.gameCloudId);
     // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
     if (!this.p2pManager.isBroadcastReady()) {
       return false;
@@ -1171,6 +1218,11 @@ class WavedashSDK extends EventTarget {
    * @returns Decoded P2PMessage, or null if the channel has no pending messages.
    */
   readP2PMessageFromChannel(appChannel: number): P2PMessage | null {
+    trackSdkCall(
+      this.iframeMessenger,
+      "readP2PMessageFromChannel",
+      this.gameCloudId
+    );
     // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
     return this.p2pManager.readMessageFromChannel(appChannel);
   }
@@ -1187,6 +1239,11 @@ class WavedashSDK extends EventTarget {
    * @returns A Uint8Array containing each message in a tightly packed format: [size:4 bytes][msg:N bytes][size:4 bytes][msg:N bytes]...
    */
   drainP2PChannelToBuffer(appChannel: number, buffer?: Uint8Array): Uint8Array {
+    trackSdkCall(
+      this.iframeMessenger,
+      "drainP2PChannelToBuffer",
+      this.gameCloudId
+    );
     // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
     return this.p2pManager.drainChannelToBuffer(appChannel, buffer);
   }
@@ -1406,6 +1463,11 @@ class WavedashSDK extends EventTarget {
   async isEntitled_EXPERIMENTAL(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
+    trackSdkCall(
+      this.iframeMessenger,
+      "isEntitled_EXPERIMENTAL",
+      this.gameCloudId
+    );
     return this.isEntitled(contentIdentifier);
   }
 
@@ -1420,6 +1482,11 @@ class WavedashSDK extends EventTarget {
   }
   // Kept for backwards compatibility
   async getEntitlements_EXPERIMENTAL(): Promise<WavedashResponse<string[]>> {
+    trackSdkCall(
+      this.iframeMessenger,
+      "getEntitlements_EXPERIMENTAL",
+      this.gameCloudId
+    );
     return this.getEntitlements();
   }
 
@@ -1445,6 +1512,11 @@ class WavedashSDK extends EventTarget {
   async triggerPaywall_EXPERIMENTAL(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
+    trackSdkCall(
+      this.iframeMessenger,
+      "triggerPaywall_EXPERIMENTAL",
+      this.gameCloudId
+    );
     return this.triggerPaywall(contentIdentifier);
   }
 
@@ -1491,6 +1563,7 @@ class WavedashSDK extends EventTarget {
   // =====================
 
   toggleOverlay(): void {
+    trackSdkCall(this.iframeMessenger, "toggleOverlay", this.gameCloudId);
     console.warn("Wavedash.toggleOverlay() is deprecated and is now a no-op");
   }
 
@@ -1536,6 +1609,7 @@ class WavedashSDK extends EventTarget {
     argSpecs: readonly ArgSpec[],
     ...args: Parameters<Extract<T[K], AnyFn>>
   ): Promise<WavedashResponse<Awaited<ReturnType<Extract<T[K], AnyFn>>>>> {
+    trackSdkCall(this.iframeMessenger, method, this.gameCloudId);
     logger.debug(method, ...args);
     try {
       validateArgs(method, argSpecs, args);
@@ -1554,6 +1628,7 @@ class WavedashSDK extends EventTarget {
     argSpecs: readonly ArgSpec[],
     ...args: Parameters<Extract<T[K], AnyFn>>
   ): ReturnType<Extract<T[K], AnyFn>> {
+    trackSdkCall(this.iframeMessenger, method, this.gameCloudId);
     logger.debug(method, ...args);
     // Validation errors rethrow — sync callsites don't have a WavedashResponse
     // envelope to surface them through. The logger.error makes the cause
@@ -1588,6 +1663,7 @@ class WavedashSDK extends EventTarget {
    * Awaits any in-flight fetch
    */
   async ensureGameplayJwt(forceRefresh: boolean = false): Promise<string> {
+    trackSdkCall(this.iframeMessenger, "ensureGameplayJwt", this.gameCloudId);
     return this.authManager.getToken(forceRefresh);
   }
 

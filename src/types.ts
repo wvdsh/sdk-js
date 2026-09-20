@@ -280,6 +280,11 @@ export interface FullscreenChangedPayload {
 
 // --- Audio Events ---
 
+/** Effective master volume from 0 to 1, emitted when the volume changes. */
+export interface VolumeChangedPayload {
+  volume: number;
+}
+
 /** Payload for MuteChanged event - emitted when mute state flips */
 export interface MuteChangedPayload {
   isMuted: boolean;
@@ -320,6 +325,7 @@ export type WavedashEventMap = {
   [WavedashEvents.BACKEND_DISCONNECTED]: BackendConnectionPayload;
   [WavedashEvents.BACKEND_RECONNECTING]: BackendConnectionPayload;
   [WavedashEvents.FULLSCREEN_CHANGED]: FullscreenChangedPayload;
+  [WavedashEvents.VOLUME_CHANGED]: VolumeChangedPayload;
   [WavedashEvents.MUTE_CHANGED]: MuteChangedPayload;
   [WavedashEvents.ENTITLEMENTS_GRANTED]: EntitlementsGrantedPayload;
 };
