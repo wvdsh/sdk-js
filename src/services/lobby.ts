@@ -150,7 +150,10 @@ export class LobbyManager extends WavedashManager {
     key: string,
     value: LobbyDataUpdate
   ): boolean {
-    if (this.lobbyId !== lobbyId || this.lobbyHostId !== this.sdk.getUserId()) {
+    if (
+      this.lobbyId !== lobbyId ||
+      this.lobbyHostId !== this.sdk.wavedashUser.id
+    ) {
       return false;
     }
     if (this.lobbyMetadata[key] === value) return true;
@@ -567,7 +570,7 @@ export class LobbyManager extends WavedashManager {
     // Find users who left
     for (const user of previousUsers) {
       if (!newUserIds.has(user.userId)) {
-        if (user.userId === this.sdk.getUserId()) {
+        if (user.userId === this.sdk.wavedashUser.id) {
           logger.warn(
             "USER WAS KICKED FROM LOBBY! Received notification for myself leaving."
           );

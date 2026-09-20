@@ -19,7 +19,7 @@ export class GameEventManager extends WavedashManager {
   // JS -> Game Event Broadcasting
   // ==============================
   notifyGame(event: WavedashEvent, payload: string | number | object): void {
-    if (!this.sdk.eventsReady) {
+    if (!this.sdk._areEventsReady()) {
       this.eventQueue.push({ event, payload });
       logger.debug(`Queued event: ${event}`);
       return;

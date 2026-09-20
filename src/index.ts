@@ -100,6 +100,11 @@ class WavedashSDK extends EventTarget {
   }
   private _eventsReady: boolean = false;
   get eventsReady(): boolean {
+    return this._areEventsReady();
+  }
+
+  /** @internal */
+  _areEventsReady(): boolean {
     return this._eventsReady;
   }
   private destroyed: boolean = false;
@@ -237,7 +242,7 @@ class WavedashSDK extends EventTarget {
   // =============
 
   init(config?: WavedashConfig): boolean {
-    this.loadComplete();
+    this._loadComplete();
     if (this._initialized) {
       logger.warn("init called twice! Already initialized, skipping init");
       return false;
@@ -263,7 +268,7 @@ class WavedashSDK extends EventTarget {
     logger.debug("Initialized with config:", this.config);
 
     if (!this.config.deferEvents) {
-      this.readyForEvents();
+      this._readyForEvents();
     }
 
     return true;
@@ -275,6 +280,10 @@ class WavedashSDK extends EventTarget {
    * If deferEvents is true, call this manually after your pre-game setup is complete.
    */
   readyForEvents(): void {
+    this._readyForEvents();
+  }
+
+  private _readyForEvents(): void {
     if (this._eventsReady) return;
     this._ensureInit();
     this._eventsReady = true;
@@ -313,10 +322,10 @@ class WavedashSDK extends EventTarget {
     // Match addEventListener semantics: same (event, listener) pair is a no-op
     // on second call. Detach the previous wrapper before re-registering.
     const prev = perEvent.get(listener);
-    if (prev) this.removeEventListener(event, prev);
+    if (prev) super.removeEventListener(event, prev);
     perEvent.set(listener, wrapped);
-    this.addEventListener(event, wrapped);
-    return () => this.off(event, listener);
+    super.addEventListener(event, wrapped);
+    return () => this._off(event, listener);
   }
 
   /**
@@ -326,10 +335,17 @@ class WavedashSDK extends EventTarget {
     event: K,
     listener: (payload: WavedashEventMap[K]) => void
   ): void {
+    this._off(event, listener);
+  }
+
+  private _off<K extends keyof WavedashEventMap>(
+    event: K,
+    listener: (payload: WavedashEventMap[K]) => void
+  ): void {
     const perEvent = this.listenerWrappers.get(event);
     const wrapped = perEvent?.get(listener);
     if (!perEvent || !wrapped) return;
-    this.removeEventListener(event, wrapped);
+    super.removeEventListener(event, wrapped);
     perEvent.delete(listener);
     if (perEvent.size === 0) this.listenerWrappers.delete(event);
   }
@@ -409,6 +425,10 @@ class WavedashSDK extends EventTarget {
   }
 
   loadComplete() {
+    this._loadComplete();
+  }
+
+  private _loadComplete() {
     this._clearSetupWarning();
     if (this.gameFinishedLoading) return;
     this.gameFinishedLoading = true;
@@ -418,6 +438,11 @@ class WavedashSDK extends EventTarget {
   }
 
   get gameLoaded(): boolean {
+    return this._isGameLoaded();
+  }
+
+  /** @internal */
+  _isGameLoaded(): boolean {
     return this.gameFinishedLoading;
   }
 
@@ -1398,6 +1423,12 @@ class WavedashSDK extends EventTarget {
   async isEntitled(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
+    return this._isEntitled(contentIdentifier);
+  }
+
+  private async _isEntitled(
+    contentIdentifier: string
+  ): Promise<WavedashResponse<boolean>> {
     return this._apiCall(
       this.paidContentManager,
       "isEntitled",
@@ -1409,7 +1440,7 @@ class WavedashSDK extends EventTarget {
   async isEntitled_EXPERIMENTAL(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
-    return this.isEntitled(contentIdentifier);
+    return this._isEntitled(contentIdentifier);
   }
 
   /**
@@ -1419,11 +1450,15 @@ class WavedashSDK extends EventTarget {
    * for access gating multiple items at once without a call per content identifier.
    */
   async getEntitlements(): Promise<WavedashResponse<string[]>> {
+    return this._getEntitlements();
+  }
+
+  private async _getEntitlements(): Promise<WavedashResponse<string[]>> {
     return this._apiCall(this.paidContentManager, "getEntitlements", []);
   }
   // Kept for backwards compatibility
   async getEntitlements_EXPERIMENTAL(): Promise<WavedashResponse<string[]>> {
-    return this.getEntitlements();
+    return this._getEntitlements();
   }
 
   /**
@@ -1437,6 +1472,12 @@ class WavedashSDK extends EventTarget {
   async triggerPaywall(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
+    return this._triggerPaywall(contentIdentifier);
+  }
+
+  private async _triggerPaywall(
+    contentIdentifier: string
+  ): Promise<WavedashResponse<boolean>> {
     return this._apiCall(
       this.paidContentManager,
       "triggerPaywall",
@@ -1448,7 +1489,7 @@ class WavedashSDK extends EventTarget {
   async triggerPaywall_EXPERIMENTAL(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
-    return this.triggerPaywall(contentIdentifier);
+    return this._triggerPaywall(contentIdentifier);
   }
 
   // ==============================

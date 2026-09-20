@@ -102,7 +102,7 @@ export class HeartbeatManager extends WavedashManager {
    * hasn't loaded yet or the tab is hidden.
    */
   start(): void {
-    if (!this.sdk.gameLoaded) return;
+    if (!this.sdk._isGameLoaded()) return;
     if (document.visibilityState !== "visible") return;
 
     if (this.inactivityTimeout !== null) {
@@ -122,7 +122,7 @@ export class HeartbeatManager extends WavedashManager {
         // isFirstTick is flipped to false by tickHeartbeat the first time it
         // runs, so repeat start() calls during the pending window all queue a
         // callback but only the first to execute does any work.
-        if (!this.sdk.gameLoaded || !this.isFirstTick) return;
+        if (!this.sdk._isGameLoaded() || !this.isFirstTick) return;
         this.tickHeartbeat();
       });
     } else {
