@@ -1576,7 +1576,7 @@ class WavedashSDK extends EventTarget {
    * @param engineInstance - The engine instance or partial attributes to merge.
    * @internal
    */
-  private setEngineInstance(engineInstance: Partial<EngineInstance>): void {
+  setEngineInstance(engineInstance: Partial<EngineInstance>): void {
     if (this.engineInstance) {
       Object.assign(this.engineInstance, engineInstance);
     } else {
