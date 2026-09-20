@@ -1643,20 +1643,17 @@ class WavedashSDK extends EventTarget {
 for (const [functionName, descriptor] of Object.entries(
   Object.getOwnPropertyDescriptors(WavedashSDK.prototype)
 )) {
-  if (
-    functionName === "constructor" ||
-    functionName.startsWith("_") ||
-    typeof descriptor.value !== "function"
-  )
-    continue;
-  const method = descriptor.value as (
+  if (functionName === "constructor" || functionName.startsWith("_")) continue;
+  const key = descriptor.get ? "get" : "value";
+  if (typeof descriptor[key] !== "function") continue;
+  const method = descriptor[key] as (
     this: WavedashSDK,
     ...args: unknown[]
   ) => unknown;
   Object.defineProperty(WavedashSDK.prototype, functionName, {
     ...descriptor,
-    value(this: WavedashSDK, ...args: unknown[]) {
-      trackSdkCall(this.iframeMessenger, functionName);
+    [key](this: WavedashSDK, ...args: unknown[]) {
+      trackSdkCall(this, functionName);
       return Reflect.apply(method, this, args);
     }
   });

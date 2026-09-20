@@ -1,26 +1,19 @@
-import type { IFrameMessenger } from "./iframeMessenger";
+import type { WavedashSDK } from "../index";
 
-const TELEMETRY_INTERVAL_MS = 1_000;
-const lastSentByMessenger = new WeakMap<IFrameMessenger, Map<string, number>>();
+const reportedFunctions = new WeakMap<WavedashSDK, Set<string>>();
 
-export function trackSdkCall(
-  messenger: IFrameMessenger,
-  functionName: string
-): void {
+export function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
   try {
-    let lastSent = lastSentByMessenger.get(messenger);
-    if (!lastSent) {
-      lastSent = new Map();
-      lastSentByMessenger.set(messenger, lastSent);
+    let reported = reportedFunctions.get(sdk);
+    if (!reported) {
+      reported = new Set();
+      reportedFunctions.set(sdk, reported);
     }
-    const now = performance.now();
-    const previous = lastSent.get(functionName);
-    if (previous !== undefined && now - previous < TELEMETRY_INTERVAL_MS)
-      return;
-    lastSent.set(functionName, now);
+    if (reported.has(functionName)) return;
+    reported.add(functionName);
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore Pending shared API message types.
-    messenger.postToParent("SdkFunctionCalled", {
+    sdk.iframeMessenger.postToParent("SdkFunctionCalled", {
       functionName
     });
   } catch {
