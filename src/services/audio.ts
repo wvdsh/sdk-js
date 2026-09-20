@@ -7,17 +7,18 @@ import { hasParentFrame } from "../utils/parentOrigin";
 import { WavedashManager } from "./manager";
 
 /**
- * Mutes & unmutes the game in response to MUTE_CHANGED iframe messages, with no
+ * Applies host volume and mute updates from iframe messages, with no
  * game-side code required.
  *
  * Globals like `AudioContext` are per-frame, so we shim the SDK's own window
  * (where the game usually runs) plus any same-origin iframes the game adds.
  *
  * Each frame's shimming lives in {@link AudioFrameShim}; this class owns the
- * mute state and fans it out to every attached frame.
+ * audio state and fans it out to every attached frame.
  */
 export class AudioManager extends WavedashManager {
-  private _isMuted = false;
+  private _isMuted: boolean;
+  private _volume: number;
 
   // One shim per frame we've attached to.
   private frames = new Set<AudioFrameShim>();
@@ -33,8 +34,19 @@ export class AudioManager extends WavedashManager {
   private iframeLoadHandlers = new Map<HTMLIFrameElement, () => void>();
   private boundIframes = new Set<HTMLIFrameElement>();
 
-  constructor(sdk: WavedashSDK) {
+  constructor(sdk: WavedashSDK, initialVolume = 1) {
     super(sdk);
+    if (
+      !Number.isFinite(initialVolume) ||
+      initialVolume < 0 ||
+      initialVolume > 1
+    ) {
+      throw new RangeError(
+        "SDKConfig.initialVolume: expected a number from 0 to 1"
+      );
+    }
+    this._isMuted = initialVolume === 0;
+    this._volume = initialVolume || 1;
     if (typeof window !== "undefined") {
       this.attachWindow(window);
     }
@@ -42,10 +54,20 @@ export class AudioManager extends WavedashManager {
       IFRAME_MESSAGE_TYPE.MUTE_CHANGED,
       this.handleMute
     );
+    this.sdk.iframeMessenger.addEventListener(
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore Pending shared API message types.
+      "VolumeChanged",
+      this.handleVolume
+    );
   }
 
   isMuted(): boolean {
     return this._isMuted;
+  }
+
+  getVolume(): number {
+    return this._isMuted ? 0 : this._volume;
   }
 
   /**
@@ -88,16 +110,29 @@ export class AudioManager extends WavedashManager {
   }
 
   private handleMute = (data: { isMuted: boolean }): void => {
-    if (this._isMuted === data.isMuted) return;
-    this._isMuted = data.isMuted;
-
-    this.frames.forEach((shim) => shim.applyMute(this._isMuted));
-
-    // Notify game in case it needs to update in-game UI.
-    this.sdk.gameEventManager.notifyGame(WavedashEvents.MUTE_CHANGED, {
-      isMuted: this._isMuted
-    } satisfies MuteChangedPayload);
+    this.applyState(data.isMuted, this._volume);
   };
+
+  private handleVolume = (data: { volume: number }): void => {
+    if (!Number.isFinite(data.volume) || data.volume < 0 || data.volume > 1)
+      return;
+    this.applyState(data.volume === 0, data.volume || this._volume);
+  };
+
+  private applyState(isMuted: boolean, volume: number): void {
+    const previousMuted = this._isMuted;
+    const previousVolume = this.getVolume();
+    this._isMuted = isMuted;
+    this._volume = volume;
+    if (previousMuted === isMuted && previousVolume === this.getVolume())
+      return;
+    this.frames.forEach((shim) => shim.applyMute(this._isMuted));
+    if (previousMuted !== isMuted) {
+      this.sdk.gameEventManager.notifyGame(WavedashEvents.MUTE_CHANGED, {
+        isMuted
+      } satisfies MuteChangedPayload);
+    }
+  }
 
   /** Shim a window we can reach. Same-origin only (cross-origin access throws). */
   private attachWindow(win: Window): void {
@@ -177,7 +212,7 @@ export class AudioManager extends WavedashManager {
     const shim = new AudioFrameShim(this, win);
     this.frames.add(shim);
     this.iframeBindings.set(iframe, { doc, shim });
-    if (this._isMuted) shim.applyMute(true);
+    shim.applyMute(this._isMuted);
   }
 
   /** Remove and uninstall the shim bound to an iframe's (previous) document. */
@@ -190,6 +225,12 @@ export class AudioManager extends WavedashManager {
   }
 
   override destroy(): void {
+    this.sdk.iframeMessenger.removeEventListener(
+      // eslint-disable-next-line @typescript-eslint/ban-ts-comment
+      // @ts-ignore Pending shared API message types.
+      "VolumeChanged",
+      this.handleVolume
+    );
     this.sdk.iframeMessenger.removeEventListener(
       IFRAME_MESSAGE_TYPE.MUTE_CHANGED,
       this.handleMute
@@ -213,7 +254,7 @@ export class AudioManager extends WavedashManager {
 type FrameWindow = Window & typeof globalThis;
 
 /**
- * Installs the mute shims into one frame (window) and tracks the audio it
+ * Installs audio shims into one frame (window) and tracks the audio it
  * produces. The mute state lives on the owning {@link AudioManager}; each shim
  * reads `manager.isMuted()` and the manager pushes changes via {@link applyMute}.
  *
@@ -244,6 +285,9 @@ class AudioFrameShim {
   // Tracked media elements + the game's intended muted value (what it last set).
   private elements = new WeakRefSet<HTMLMediaElement>();
   private intendedMuted = new WeakMap<HTMLMediaElement, boolean>();
+  private intendedVolume = new WeakMap<HTMLMediaElement, number>();
+  private webAudioElements = new WeakSet<HTMLMediaElement>();
+  private originalVolumeDescriptor: PropertyDescriptor | null = null;
 
   // Utterances + the game's intended volume.
   private intendedUtteranceVolume = new WeakMap<
@@ -274,10 +318,10 @@ class AudioFrameShim {
     this.installShims();
   }
 
-  /** Push the current mute state onto everything this frame is tracking. */
+  /** Apply the effective master volume and mute state to tracked audio. */
   applyMute(isMuted: boolean): void {
     // Short ramp avoids pops; any in-flight ramp is cancelled first.
-    const target = isMuted ? 0 : 1;
+    const target = this.manager.getVolume();
     this.contexts.forEach((ctx) => {
       const gain = this.contextGains.get(ctx);
       if (!gain) return; // context was closed
@@ -303,6 +347,11 @@ class AudioFrameShim {
       this.elements.forEach((el) => {
         const intended = this.intendedMuted.get(el) ?? false;
         setMutedNative.call(el, isMuted ? true : intended);
+        this.originalVolumeDescriptor?.set?.call(
+          el,
+          this.intendedVolume.get(el)! *
+            (this.webAudioElements.has(el) ? 1 : target)
+        );
       });
     }
   }
@@ -321,10 +370,18 @@ class AudioFrameShim {
 
   /** Track a media element and silence it if currently muted. Idempotent. */
   private trackElement(el: HTMLMediaElement): void {
-    if (this.intendedMuted.has(el)) return;
+    if (this.intendedVolume.has(el)) return;
+    const volume = this.originalVolumeDescriptor?.get?.call(el) ?? el.volume;
+    this.intendedVolume.set(el, volume);
+    this.originalVolumeDescriptor?.set?.call(
+      el,
+      volume * (this.webAudioElements.has(el) ? 1 : this.manager.getVolume())
+    );
     const getMuted = this.originalMutedDescriptor?.get;
     const setMuted = this.originalMutedDescriptor?.set;
-    const current = getMuted ? (getMuted.call(el) as boolean) : el.muted;
+    const current =
+      this.intendedMuted.get(el) ??
+      (getMuted ? (getMuted.call(el) as boolean) : el.muted);
     this.intendedMuted.set(el, current);
     this.elements.add(el);
     if (this.manager.isMuted() && !current && setMuted) {
@@ -361,6 +418,36 @@ class AudioFrameShim {
         };
         Shimmed.prototype = OriginalAudio.prototype;
         win.Audio = Shimmed as unknown as typeof Audio;
+      })(this);
+    }
+
+    this.originalVolumeDescriptor =
+      Object.getOwnPropertyDescriptor(
+        win.HTMLMediaElement.prototype,
+        "volume"
+      ) ?? null;
+    const volumeDescriptor = this.originalVolumeDescriptor;
+    if (volumeDescriptor?.get && volumeDescriptor?.set) {
+      ((shim) => {
+        Object.defineProperty(win.HTMLMediaElement.prototype, "volume", {
+          configurable: true,
+          get(this: HTMLMediaElement): number {
+            return (
+              shim.intendedVolume.get(this) ?? volumeDescriptor.get!.call(this)
+            );
+          },
+          set(this: HTMLMediaElement, value: number) {
+            volumeDescriptor.set!.call(this, value);
+            const intended = Number(value);
+            shim.trackElement(this);
+            shim.intendedVolume.set(this, intended);
+            volumeDescriptor.set!.call(
+              this,
+              intended *
+                (shim.webAudioElements.has(this) ? 1 : shim.manager.getVolume())
+            );
+          }
+        });
       })(this);
     }
 
@@ -436,8 +523,8 @@ class AudioFrameShim {
             return intended !== undefined ? intended : original.get!.call(this);
           },
           set(this: HTMLMediaElement, value: boolean) {
+            shim.trackElement(this);
             shim.intendedMuted.set(this, value);
-            shim.elements.add(this);
             original.set!.call(this, shim.manager.isMuted() ? true : value);
           }
         });
@@ -510,24 +597,15 @@ class AudioFrameShim {
     this.originalSpeak = originalSpeak;
     ((shim) => {
       speechSynthesis.speak = function (utterance: SpeechSynthesisUtterance) {
-        if (shim.manager.isMuted()) {
-          if (!shim.intendedUtteranceVolume.has(utterance)) {
-            const current = volDesc?.get
-              ? (volDesc.get.call(utterance) as number)
-              : utterance.volume;
-            shim.intendedUtteranceVolume.set(utterance, current);
-          }
-          // Native setter, so we don't record 0 as the intended volume.
-          if (volDesc?.set) volDesc.set.call(utterance, 0);
-          else utterance.volume = 0;
-        } else {
-          const intended = shim.intendedUtteranceVolume.get(utterance);
-          if (intended !== undefined) {
-            if (volDesc?.set) volDesc.set.call(utterance, intended);
-            else utterance.volume = intended;
-            shim.intendedUtteranceVolume.delete(utterance);
-          }
-        }
+        const intended =
+          shim.intendedUtteranceVolume.get(utterance) ??
+          (volDesc?.get
+            ? (volDesc.get.call(utterance) as number)
+            : utterance.volume);
+        shim.intendedUtteranceVolume.set(utterance, intended);
+        const volume = intended * shim.manager.getVolume();
+        if (volDesc?.set) volDesc.set.call(utterance, volume);
+        else utterance.volume = volume;
         return originalSpeak.call(speechSynthesis, utterance);
       };
     })(this);
@@ -538,6 +616,19 @@ class AudioFrameShim {
   ): typeof AudioContext {
     return ((shim) =>
       class extends Original {
+        override createMediaElementSource(
+          element: HTMLMediaElement
+        ): MediaElementAudioSourceNode {
+          const source = super.createMediaElementSource(element);
+          shim.trackElement(element);
+          shim.webAudioElements.add(element);
+          shim.originalVolumeDescriptor?.set?.call(
+            element,
+            shim.intendedVolume.get(element)!
+          );
+          return source;
+        }
+
         constructor(opts?: AudioContextOptions) {
           super(opts);
           const realDestination = this.destination;
@@ -546,7 +637,7 @@ class AudioFrameShim {
           // Direct assignment (not setValueAtTime) so the state applies
           // immediately rather than on the next render quantum, and so no
           // timeline event is left behind for applyMute's cancel to trip on.
-          masterGain.gain.value = shim.manager.isMuted() ? 0 : 1;
+          masterGain.gain.value = shim.manager.getVolume();
 
           // Games probe/configure these on ctx.destination (e.g. surround
           // detection via `destination.channelCount = destination.maxChannelCount`),
@@ -704,6 +795,21 @@ class AudioFrameShim {
       }
     });
     restore(() => {
+      if (this.originalVolumeDescriptor) {
+        this.elements.forEach((el) => {
+          this.originalVolumeDescriptor!.set?.call(
+            el,
+            this.intendedVolume.get(el)!
+          );
+        });
+        Object.defineProperty(
+          win.HTMLMediaElement.prototype,
+          "volume",
+          this.originalVolumeDescriptor
+        );
+      }
+    });
+    restore(() => {
       if (this.originalMutedDescriptor) {
         Object.defineProperty(
           win.HTMLMediaElement.prototype,
@@ -721,6 +827,8 @@ class AudioFrameShim {
     this.contextGains = new WeakMap();
     this.elements.clear();
     this.intendedMuted = new WeakMap();
+    this.intendedVolume = new WeakMap();
+    this.webAudioElements = new WeakSet();
     this.intendedUtteranceVolume = new WeakMap();
   }
 }
