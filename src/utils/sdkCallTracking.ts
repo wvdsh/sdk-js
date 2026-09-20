@@ -2,7 +2,7 @@ import type { WavedashSDK } from "../index";
 
 const reportedFunctions = new WeakMap<WavedashSDK, Set<string>>();
 
-export function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
+function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
   try {
     let reported = reportedFunctions.get(sdk);
     if (!reported) {
@@ -19,4 +19,41 @@ export function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
   } catch {
     return;
   }
+}
+
+export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
+  const methods = new Map<
+    PropertyKey,
+    { original: unknown; wrapped: (...args: unknown[]) => unknown }
+  >();
+
+  return new Proxy(sdk, {
+    get(target, property) {
+      const descriptor = Object.getOwnPropertyDescriptor(
+        Object.getPrototypeOf(target),
+        property
+      );
+      const tracked =
+        typeof property === "string" &&
+        property !== "constructor" &&
+        !property.startsWith("_") &&
+        descriptor !== undefined;
+
+      if (tracked && descriptor.get) trackSdkCall(target, property);
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function" || property === "constructor")
+        return value;
+
+      const cached = methods.get(property);
+      if (cached && cached.original === value) return cached.wrapped;
+
+      const wrapped = (...args: unknown[]) => {
+        if (tracked && typeof descriptor.value === "function")
+          trackSdkCall(target, property);
+        return Reflect.apply(value, target, args);
+      };
+      methods.set(property, { original: value, wrapped });
+      return wrapped;
+    }
+  });
 }

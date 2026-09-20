@@ -33,7 +33,7 @@ import { getAvatarUrl } from "./utils/cdn";
 import { takeFocus } from "./utils/focus";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { LOG_LEVEL, logger } from "./utils/logger";
-import { trackSdkCall } from "./utils/sdkCallTracking";
+import { createTrackedSdk } from "./utils/sdkCallTracking";
 import { SwMessenger } from "./utils/swMessenger";
 
 // Create singleton instance for iframe messaging
@@ -100,11 +100,6 @@ class WavedashSDK extends EventTarget {
   }
   private _eventsReady: boolean = false;
   get eventsReady(): boolean {
-    return this._areEventsReady();
-  }
-
-  /** @internal */
-  _areEventsReady(): boolean {
     return this._eventsReady;
   }
   private destroyed: boolean = false;
@@ -242,7 +237,7 @@ class WavedashSDK extends EventTarget {
   // =============
 
   init(config?: WavedashConfig): boolean {
-    this._loadComplete();
+    this.loadComplete();
     if (this._initialized) {
       logger.warn("init called twice! Already initialized, skipping init");
       return false;
@@ -268,7 +263,7 @@ class WavedashSDK extends EventTarget {
     logger.debug("Initialized with config:", this.config);
 
     if (!this.config.deferEvents) {
-      this._readyForEvents();
+      this.readyForEvents();
     }
 
     return true;
@@ -280,10 +275,6 @@ class WavedashSDK extends EventTarget {
    * If deferEvents is true, call this manually after your pre-game setup is complete.
    */
   readyForEvents(): void {
-    this._readyForEvents();
-  }
-
-  private _readyForEvents(): void {
     if (this._eventsReady) return;
     this._ensureInit();
     this._eventsReady = true;
@@ -322,10 +313,10 @@ class WavedashSDK extends EventTarget {
     // Match addEventListener semantics: same (event, listener) pair is a no-op
     // on second call. Detach the previous wrapper before re-registering.
     const prev = perEvent.get(listener);
-    if (prev) super.removeEventListener(event, prev);
+    if (prev) this.removeEventListener(event, prev);
     perEvent.set(listener, wrapped);
-    super.addEventListener(event, wrapped);
-    return () => this._off(event, listener);
+    this.addEventListener(event, wrapped);
+    return () => this.off(event, listener);
   }
 
   /**
@@ -335,17 +326,10 @@ class WavedashSDK extends EventTarget {
     event: K,
     listener: (payload: WavedashEventMap[K]) => void
   ): void {
-    this._off(event, listener);
-  }
-
-  private _off<K extends keyof WavedashEventMap>(
-    event: K,
-    listener: (payload: WavedashEventMap[K]) => void
-  ): void {
     const perEvent = this.listenerWrappers.get(event);
     const wrapped = perEvent?.get(listener);
     if (!perEvent || !wrapped) return;
-    super.removeEventListener(event, wrapped);
+    this.removeEventListener(event, wrapped);
     perEvent.delete(listener);
     if (perEvent.size === 0) this.listenerWrappers.delete(event);
   }
@@ -425,10 +409,6 @@ class WavedashSDK extends EventTarget {
   }
 
   loadComplete() {
-    this._loadComplete();
-  }
-
-  private _loadComplete() {
     this._clearSetupWarning();
     if (this.gameFinishedLoading) return;
     this.gameFinishedLoading = true;
@@ -438,11 +418,6 @@ class WavedashSDK extends EventTarget {
   }
 
   get gameLoaded(): boolean {
-    return this._isGameLoaded();
-  }
-
-  /** @internal */
-  _isGameLoaded(): boolean {
     return this.gameFinishedLoading;
   }
 
@@ -559,7 +534,7 @@ class WavedashSDK extends EventTarget {
   async getUserJwt(): Promise<WavedashResponse<string>> {
     logger.debug("getUserJwt");
     try {
-      const data = await this._ensureGameplayJwt();
+      const data = await this.ensureGameplayJwt();
       return this._formatResponse({ success: true, data });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -1423,12 +1398,6 @@ class WavedashSDK extends EventTarget {
   async isEntitled(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
-    return this._isEntitled(contentIdentifier);
-  }
-
-  private async _isEntitled(
-    contentIdentifier: string
-  ): Promise<WavedashResponse<boolean>> {
     return this._apiCall(
       this.paidContentManager,
       "isEntitled",
@@ -1440,7 +1409,7 @@ class WavedashSDK extends EventTarget {
   async isEntitled_EXPERIMENTAL(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
-    return this._isEntitled(contentIdentifier);
+    return this.isEntitled(contentIdentifier);
   }
 
   /**
@@ -1450,15 +1419,11 @@ class WavedashSDK extends EventTarget {
    * for access gating multiple items at once without a call per content identifier.
    */
   async getEntitlements(): Promise<WavedashResponse<string[]>> {
-    return this._getEntitlements();
-  }
-
-  private async _getEntitlements(): Promise<WavedashResponse<string[]>> {
     return this._apiCall(this.paidContentManager, "getEntitlements", []);
   }
   // Kept for backwards compatibility
   async getEntitlements_EXPERIMENTAL(): Promise<WavedashResponse<string[]>> {
-    return this._getEntitlements();
+    return this.getEntitlements();
   }
 
   /**
@@ -1472,12 +1437,6 @@ class WavedashSDK extends EventTarget {
   async triggerPaywall(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
-    return this._triggerPaywall(contentIdentifier);
-  }
-
-  private async _triggerPaywall(
-    contentIdentifier: string
-  ): Promise<WavedashResponse<boolean>> {
     return this._apiCall(
       this.paidContentManager,
       "triggerPaywall",
@@ -1489,7 +1448,7 @@ class WavedashSDK extends EventTarget {
   async triggerPaywall_EXPERIMENTAL(
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
-    return this._triggerPaywall(contentIdentifier);
+    return this.triggerPaywall(contentIdentifier);
   }
 
   // ==============================
@@ -1628,15 +1587,6 @@ class WavedashSDK extends EventTarget {
   }
 
   async ensureGameplayJwt(forceRefresh: boolean = false): Promise<string> {
-    return this._ensureGameplayJwt(forceRefresh);
-  }
-
-  /**
-   * Gameplay JWT for authenticating requests outside the Convex client.
-   * Awaits any in-flight fetch
-   * @internal
-   */
-  async _ensureGameplayJwt(forceRefresh: boolean = false): Promise<string> {
     return this.authManager.getToken(forceRefresh);
   }
 
@@ -1669,7 +1619,7 @@ class WavedashSDK extends EventTarget {
       async (_payload, reply) => {
         let jwt: string;
         try {
-          jwt = await this._ensureGameplayJwt();
+          jwt = await this.ensureGameplayJwt();
         } catch (err) {
           logger.warn("Failed to resolve JWT for creds-request", err);
           return;
@@ -1681,25 +1631,6 @@ class WavedashSDK extends EventTarget {
       }
     );
   }
-}
-
-for (const [functionName, descriptor] of Object.entries(
-  Object.getOwnPropertyDescriptors(WavedashSDK.prototype)
-)) {
-  if (functionName === "constructor" || functionName.startsWith("_")) continue;
-  const key = descriptor.get ? "get" : "value";
-  if (typeof descriptor[key] !== "function") continue;
-  const method = descriptor[key] as (
-    this: WavedashSDK,
-    ...args: unknown[]
-  ) => unknown;
-  Object.defineProperty(WavedashSDK.prototype, functionName, {
-    ...descriptor,
-    [key](this: WavedashSDK, ...args: unknown[]) {
-      trackSdkCall(this, functionName);
-      return Reflect.apply(method, this, args);
-    }
-  });
 }
 
 // =======
@@ -1746,7 +1677,7 @@ export function setupWavedashSDK(): WavedashSDK {
   // see the right value.
   setParentOrigin(sdkConfig.parentOrigin);
 
-  const sdk = new WavedashSDK(sdkConfig);
+  const sdk = createTrackedSdk(new WavedashSDK(sdkConfig));
   window.Wavedash = sdk;
 
   // Kept for backwards compatibility

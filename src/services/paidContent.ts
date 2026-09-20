@@ -68,7 +68,7 @@ export class PaidContentManager extends WavedashManager {
   }): void => {
     void (async () => {
       try {
-        await this.sdk._ensureGameplayJwt(true);
+        await this.sdk.ensureGameplayJwt(true);
       } catch (err) {
         logger.error("Failed to refresh gameplay JWT after purchase", err);
       }
@@ -82,12 +82,12 @@ export class PaidContentManager extends WavedashManager {
   };
 
   async isEntitled(contentIdentifier: string): Promise<boolean> {
-    const jwt = await this.sdk._ensureGameplayJwt();
+    const jwt = await this.sdk.ensureGameplayJwt();
     return readEntitlementsFromJwt(jwt).includes(contentIdentifier);
   }
 
   async getEntitlements(): Promise<string[]> {
-    const jwt = await this.sdk._ensureGameplayJwt();
+    const jwt = await this.sdk.ensureGameplayJwt();
     return readEntitlementsFromJwt(jwt);
   }
 
@@ -128,7 +128,7 @@ export class PaidContentManager extends WavedashManager {
       await this.sdk.convexClient.mutation(api.sdk.paidContent.mockPurchase, {
         contentIdentifier
       });
-      await this.sdk._ensureGameplayJwt(true);
+      await this.sdk.ensureGameplayJwt(true);
       this.sdk.gameEventManager.notifyGame(
         WavedashEvents.ENTITLEMENTS_GRANTED,
         {
@@ -155,7 +155,7 @@ export class PaidContentManager extends WavedashManager {
     if (!response.purchased) return false;
 
     // Force refresh JWT so the latest entitlements are reflected
-    await this.sdk._ensureGameplayJwt(true);
+    await this.sdk.ensureGameplayJwt(true);
     return true;
   }
 

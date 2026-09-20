@@ -290,7 +290,7 @@ export class P2PManager extends WavedashManager {
     };
 
     members.forEach((member) => {
-      if (member.id !== this.sdk.wavedashUser.id) {
+      if (member.id !== this.sdk.getUserId()) {
         connection.peers[member.id] = {
           userId: member.id,
           username: member.username
@@ -352,13 +352,13 @@ export class P2PManager extends WavedashManager {
     const currentPeerUserIds = new Set(
       Object.keys(this.currentConnection.peers)
     );
-    currentPeerUserIds.add(this.sdk.wavedashUser.id);
+    currentPeerUserIds.add(this.sdk.getUserId());
     const newPeerUserIds = new Set(members.map((member) => member.id));
 
     // Find new users who joined
     const connectionsToCreate: Id<"users">[] = [];
     for (const member of members) {
-      if (member.id === this.sdk.wavedashUser.id) continue;
+      if (member.id === this.sdk.getUserId()) continue;
 
       const existingPeer = this.currentConnection.peers[member.id];
       if (existingPeer) {
@@ -380,7 +380,7 @@ export class P2PManager extends WavedashManager {
 
     // Create connections to new peers only
     if (connectionsToCreate.length > 0) {
-      const currentUserId = this.sdk.wavedashUser.id;
+      const currentUserId = this.sdk.getUserId();
       const connectionPromises = connectionsToCreate.map((userId) => {
         const shouldCreateChannels = currentUserId < userId;
         logger.debug(
@@ -554,7 +554,7 @@ export class P2PManager extends WavedashManager {
     connection: P2PConnection
   ): Promise<void> {
     // Skip messages from ourselves
-    if (message.fromUserId === this.sdk.wavedashUser.id) {
+    if (message.fromUserId === this.sdk.getUserId()) {
       return;
     }
 
@@ -692,7 +692,7 @@ export class P2PManager extends WavedashManager {
   ): Promise<void> {
     logger.debug("Establishing WebRTC connections to peers...");
 
-    const currentUserId = this.sdk.wavedashUser.id;
+    const currentUserId = this.sdk.getUserId();
     const connectionPromises: Promise<boolean>[] = [];
 
     // Create peer connections to all other peers
@@ -978,7 +978,7 @@ export class P2PManager extends WavedashManager {
     remoteUserId: Id<"users">,
     pc: RTCPeerConnection
   ): Promise<void> {
-    const currentUserId = this.sdk.wavedashUser.id;
+    const currentUserId = this.sdk.getUserId();
 
     // Only the peer with lower userId initiates restart to avoid both sides restarting simultaneously
     if (currentUserId > remoteUserId) {

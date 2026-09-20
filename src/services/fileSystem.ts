@@ -89,7 +89,7 @@ export class FileSystemManager extends WavedashManager {
    */
   async deleteRemoteFile(filePath: string): Promise<string> {
     const url = this.getRemoteStorageUrl(filePath);
-    const jwt = await this.sdk._ensureGameplayJwt();
+    const jwt = await this.sdk.ensureGameplayJwt();
     const response = await fetch(url, {
       method: "DELETE",
       headers: {
@@ -126,7 +126,7 @@ export class FileSystemManager extends WavedashManager {
    */
   async remoteFileExists(filePath: string): Promise<boolean> {
     const url = this.getRemoteStorageUrl(filePath);
-    const jwt = await this.sdk._ensureGameplayJwt();
+    const jwt = await this.sdk.ensureGameplayJwt();
     const response = await fetch(url, {
       method: "HEAD",
       headers: {
@@ -147,7 +147,7 @@ export class FileSystemManager extends WavedashManager {
    */
   async listRemoteDirectory(path: string): Promise<RemoteFileMetadata[]> {
     const url = this.getRemoteStorageUrl(path) + "?list=true";
-    const jwt = await this.sdk._ensureGameplayJwt();
+    const jwt = await this.sdk.ensureGameplayJwt();
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -325,7 +325,7 @@ export class FileSystemManager extends WavedashManager {
       throw new Error("Engine instance is missing the Emscripten FS API");
     }
 
-    const jwt = await this.sdk._ensureGameplayJwt();
+    const jwt = await this.sdk.ensureGameplayJwt();
     const response = await fetch(url, {
       method: "GET",
       headers: {
@@ -422,7 +422,7 @@ export class FileSystemManager extends WavedashManager {
    * quota is exhausted (fetch throws immediately), retry as a normal request.
    */
   private async uploadBlob(uploadUrl: string, blob: Blob): Promise<Response> {
-    const jwt = await this.sdk._ensureGameplayJwt();
+    const jwt = await this.sdk.ensureGameplayJwt();
     const headers = {
       Authorization: `Bearer ${jwt}`
     };
