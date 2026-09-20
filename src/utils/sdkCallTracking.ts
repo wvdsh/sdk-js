@@ -5,26 +5,23 @@ const lastSentByMessenger = new WeakMap<IFrameMessenger, Map<string, number>>();
 
 export function trackSdkCall(
   messenger: IFrameMessenger,
-  functionName: string,
-  gameCloudId: string
+  functionName: string
 ): void {
   try {
-    const key = `${gameCloudId}:${functionName}`;
     let lastSent = lastSentByMessenger.get(messenger);
     if (!lastSent) {
       lastSent = new Map();
       lastSentByMessenger.set(messenger, lastSent);
     }
     const now = performance.now();
-    const previous = lastSent.get(key);
+    const previous = lastSent.get(functionName);
     if (previous !== undefined && now - previous < TELEMETRY_INTERVAL_MS)
       return;
-    lastSent.set(key, now);
+    lastSent.set(functionName, now);
     // eslint-disable-next-line @typescript-eslint/ban-ts-comment
     // @ts-ignore Pending shared API message types.
     messenger.postToParent("SdkFunctionCalled", {
-      functionName,
-      gameCloudId
+      functionName
     });
   } catch {
     return;

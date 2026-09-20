@@ -1664,7 +1664,7 @@ for (const [functionName, descriptor] of Object.entries(
   Object.defineProperty(WavedashSDK.prototype, functionName, {
     ...descriptor,
     value(this: WavedashSDK, ...args: unknown[]) {
-      trackSdkCall(this.iframeMessenger, functionName, this.gameCloudId);
+      trackSdkCall(this.iframeMessenger, functionName);
       return Reflect.apply(method, this, args);
     }
   });
