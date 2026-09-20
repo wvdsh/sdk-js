@@ -737,6 +737,11 @@ class WavedashSDK extends EventTarget {
       try {
         metadata = JSON.parse(raw);
       } catch (error) {
+        trackSdkCall(
+          this.iframeMessenger,
+          "uploadLeaderboardScore",
+          this.gameCloudId
+        );
         const message = `uploadLeaderboardScore: invalid JSON: ${raw}`;
         logger.error(message, error);
         return this.formatResponse({
@@ -819,6 +824,7 @@ class WavedashSDK extends EventTarget {
       try {
         updates = JSON.parse(raw);
       } catch (error) {
+        trackSdkCall(this.iframeMessenger, "updateUGCItem", this.gameCloudId);
         const message = `updateUGCItem: invalid JSON: ${raw}`;
         logger.error(message, error);
         return this.formatResponse({
@@ -889,6 +895,7 @@ class WavedashSDK extends EventTarget {
       try {
         args = JSON.parse(raw);
       } catch (error) {
+        trackSdkCall(this.iframeMessenger, "listUGCItems", this.gameCloudId);
         const message = `listUGCItems: invalid JSON: ${raw}`;
         logger.error(message, error);
         return this.formatResponse({
@@ -1129,7 +1136,7 @@ class WavedashSDK extends EventTarget {
    * This is derived from the configured messageSize minus protocol overhead.
    */
   getP2PMaxPayloadSize(): number {
-    this.ensureInit();
+    this.ensureInit("getP2PMaxPayloadSize");
     return this.apiCallSync(this.p2pManager, "getMaxPayloadSize", []);
   }
 
@@ -1137,7 +1144,7 @@ class WavedashSDK extends EventTarget {
    * Get the configured max incoming messages per channel queue.
    */
   getP2PMaxIncomingMessages(): number {
-    this.ensureInit();
+    this.ensureInit("getP2PMaxIncomingMessages");
     return this.apiCallSync(this.p2pManager, "getMaxIncomingMessages", []);
   }
 
@@ -1146,7 +1153,7 @@ class WavedashSDK extends EventTarget {
    * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
    */
   getP2POutgoingMessageBuffer(): Uint8Array {
-    this.ensureInit();
+    this.ensureInit("getP2POutgoingMessageBuffer");
     return this.apiCallSync(this.p2pManager, "getOutgoingMessageBuffer", []);
   }
 
@@ -1541,6 +1548,11 @@ class WavedashSDK extends EventTarget {
       try {
         data = JSON.parse(raw);
       } catch (error) {
+        trackSdkCall(
+          this.iframeMessenger,
+          "updateUserPresence",
+          this.gameCloudId
+        );
         const message = `updateUserPresence: invalid JSON: ${raw}`;
         logger.error(message, error);
         return this.formatResponse({
@@ -1596,8 +1608,9 @@ class WavedashSDK extends EventTarget {
 
   // Throws if init() hasn't been called. Only used by methods that
   // require config or produce events (lobby join/create, P2P).
-  private ensureInit(): void {
+  private ensureInit(method?: string): void {
     if (!this._initialized) {
+      if (method) trackSdkCall(this.iframeMessenger, method, this.gameCloudId);
       logger.error("SDK not initialized. Call WavedashJS.init first.");
       throw new Error("SDK not initialized");
     }

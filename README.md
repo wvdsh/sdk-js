@@ -37,7 +37,7 @@ Without a host, `requestVolume` resolves to `false`. A host that does not implem
 
 ## SDK call telemetry
 
-The SDK sends one `{ type: "SdkFunctionCalled", functionName, gameCloudId }` message to its configured host per public method invocation. Both `apiCall` and `apiCallSync` use the shared tracking helper, and public methods that bypass them (including audio, lifecycle, event subscriptions, and P2P polling) use the same helper. Manager method names are mapped to their public SDK names. Tracking occurs before helper argument validation, so rejected calls are included. Internal delegations through public methods also produce their own invocation records. Property reads and private helpers are not tracked.
+The SDK sends one `{ type: "SdkFunctionCalled", functionName, gameCloudId }` message to its configured host per public method invocation. Both `apiCall` and `apiCallSync` use the shared tracking helper, and public methods that bypass them (including audio, lifecycle, event subscriptions, and P2P polling) use the same helper. Manager method names are mapped to their public SDK names. Tracking occurs before helper argument validation. Malformed bridge JSON and P2P getters rejected before initialization are also recorded, without double-counting successful calls. Internal delegations through public methods also produce their own invocation records. Property reads and private helpers are not tracked.
 
 No argument values, return values, tokens, messages, or save data are included. Calls are not sampled or deduplicated, including frequently polled methods. Telemetry does not wait for a response, and transport errors do not interrupt SDK calls. Standalone sessions without a configured host do not send telemetry.
 
