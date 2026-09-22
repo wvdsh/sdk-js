@@ -24,20 +24,24 @@ export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
       descriptor.value as (this: WavedashSDK, ...args: unknown[]) => unknown
     ).bind(sdk);
 
+    const install = (value: unknown) => {
+      Object.defineProperty(sdk, name, {
+        configurable: descriptor.configurable,
+        enumerable: descriptor.enumerable,
+        writable: true,
+        value
+      });
+    };
+
     Object.defineProperty(sdk, name, {
       configurable: true,
       enumerable: descriptor.enumerable,
-      writable: true,
-      value: (...args: unknown[]) => {
+      get() {
+        install(original);
         trackSdkCall(sdk, name);
-        Object.defineProperty(sdk, name, {
-          configurable: descriptor.configurable,
-          enumerable: descriptor.enumerable,
-          writable: descriptor.writable,
-          value: original
-        });
-        return original(...args);
-      }
+        return original;
+      },
+      set: install
     });
   }
 
