@@ -1,9 +1,5 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
-import { WavedashEvents } from "../events";
 import { type WavedashSDK } from "../index";
-import type { MuteChangedPayload } from "../types";
-import { logger } from "../utils/logger";
-import { hasParentFrame } from "../utils/parentOrigin";
 import { WavedashManager } from "./manager";
 
 /**
@@ -62,58 +58,13 @@ export class AudioManager extends WavedashManager {
     return this._volume;
   }
 
-  /**
-   * Ask the host to mute (true) or unmute (false). Resolves to `true` if the
-   * host applied the change, `false` otherwise — notably, the host rejects an
-   * unmute when the user muted the game from the Wavedash UI, so games can't
-   * override an explicit user mute. The resulting state arrives via the usual
-   * VolumeChanged broadcast, so `isMuted()` updates independently of this result.
-   */
-  async requestMute(muted: boolean): Promise<boolean> {
-    if (!hasParentFrame()) {
-      logger.debug(
-        "requestMute() is disabled outside a Wavedash parent frame (e.g. `wavedash dev`)"
-      );
-      return false;
-    }
-    const response = await this.sdk.iframeMessenger.requestFromParent(
-      IFRAME_MESSAGE_TYPE.SET_MUTE,
-      { muted }
-    );
-    return response.success;
-  }
-
-  /**
-   * Toggle mute. Like `requestMute`, the host may reject the unmute half of a
-   * toggle if the user muted from the Wavedash UI. Resolves to `true` if the
-   * host applied the change.
-   */
-  async toggleMute(): Promise<boolean> {
-    if (!hasParentFrame()) {
-      logger.debug(
-        "toggleMute() is disabled outside a Wavedash parent frame (e.g. `wavedash dev`)"
-      );
-      return false;
-    }
-    const response = await this.sdk.iframeMessenger.requestFromParent(
-      IFRAME_MESSAGE_TYPE.TOGGLE_MUTE
-    );
-    return response.success;
-  }
-
   private handleVolume = (data: { volume: number }): void => {
     if (!Number.isFinite(data.volume) || data.volume < 0 || data.volume > 1)
       return;
-    const previousMuted = this.isMuted();
     if (this._volume === data.volume) return;
     this._volume = data.volume;
     const isMuted = this.isMuted();
     this.frames.forEach((shim) => shim.applyMute(isMuted));
-    if (previousMuted !== isMuted) {
-      this.sdk.gameEventManager.notifyGame(WavedashEvents.MUTE_CHANGED, {
-        isMuted
-      } satisfies MuteChangedPayload);
-    }
   };
 
   /** Shim a window we can reach. Same-origin only (cross-origin access throws). */

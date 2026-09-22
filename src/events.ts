@@ -35,9 +35,6 @@ export const WavedashEvents = {
   // Fullscreen events
   FULLSCREEN_CHANGED: "FullscreenChanged", // fullscreen state changed
 
-  // Audio events
-  MUTE_CHANGED: "MuteChanged", // mute state changed
-
   // Paid content events
   ENTITLEMENTS_GRANTED: "EntitlementsGranted" // player was granted paid content (in-game paywall, game page, gift, another tab)
 
