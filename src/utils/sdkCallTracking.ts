@@ -12,7 +12,6 @@ function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
 }
 
 export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
-  const reported = new Set<string>();
   const prototype = Object.getPrototypeOf(sdk) as object;
 
   for (const [name, descriptor] of Object.entries(
@@ -31,16 +30,13 @@ export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
       enumerable: descriptor.enumerable,
       writable: true,
       value: (...args: unknown[]) => {
-        if (!reported.has(name)) {
-          reported.add(name);
-          trackSdkCall(sdk, name);
-          Object.defineProperty(sdk, name, {
-            configurable: descriptor.configurable,
-            enumerable: descriptor.enumerable,
-            writable: descriptor.writable,
-            value: original
-          });
-        }
+        trackSdkCall(sdk, name);
+        Object.defineProperty(sdk, name, {
+          configurable: descriptor.configurable,
+          enumerable: descriptor.enumerable,
+          writable: descriptor.writable,
+          value: original
+        });
         return original.apply(sdk, args);
       }
     });
