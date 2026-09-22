@@ -33,7 +33,10 @@ import { getAvatarUrl } from "./utils/cdn";
 import { takeFocus } from "./utils/focus";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { LOG_LEVEL, logger } from "./utils/logger";
-import { createTrackedSdk } from "./utils/sdkCallTracking";
+import {
+  createTrackedSdk,
+  trackSdkEventListener
+} from "./utils/sdkCallTracking";
 import { SwMessenger } from "./utils/swMessenger";
 
 // Create singleton instance for iframe messaging
@@ -351,6 +354,7 @@ class WavedashSDK extends EventTarget {
     listener: any,
     options?: boolean | AddEventListenerOptions
   ): void {
+    if (listener) trackSdkEventListener(this, type);
     super.addEventListener(type, listener, options);
   }
 
