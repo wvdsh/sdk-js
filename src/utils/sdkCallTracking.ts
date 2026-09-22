@@ -20,10 +20,9 @@ export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
     if (name === "constructor" || name.startsWith("_")) continue;
     if (typeof descriptor.value !== "function") continue;
 
-    const original = descriptor.value as (
-      this: WavedashSDK,
-      ...args: unknown[]
-    ) => unknown;
+    const original = (
+      descriptor.value as (this: WavedashSDK, ...args: unknown[]) => unknown
+    ).bind(sdk);
 
     Object.defineProperty(sdk, name, {
       configurable: true,
@@ -37,7 +36,7 @@ export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
           writable: descriptor.writable,
           value: original
         });
-        return original.apply(sdk, args);
+        return original(...args);
       }
     });
   }
