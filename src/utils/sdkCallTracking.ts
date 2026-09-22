@@ -1,17 +1,8 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 
-const reportedFunctions = new WeakMap<WavedashSDK, Set<string>>();
-
 function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
   try {
-    let reported = reportedFunctions.get(sdk);
-    if (!reported) {
-      reported = new Set();
-      reportedFunctions.set(sdk, reported);
-    }
-    if (reported.has(functionName)) return;
-    reported.add(functionName);
     sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.SDK_FUNCTION_CALLED, {
       functionName
     });
@@ -21,58 +12,39 @@ function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
 }
 
 export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
-  const prototype = Object.getPrototypeOf(sdk);
-  const publicSdk: WavedashSDK = Object.setPrototypeOf(
-    new EventTarget(),
-    prototype
-  );
+  const reported = new Set<string>();
+  const prototype = Object.getPrototypeOf(sdk) as object;
 
-  for (const name of [
-    "addEventListener",
-    "removeEventListener",
-    "dispatchEvent"
-  ] as const) {
+  for (const [name, descriptor] of Object.entries(
+    Object.getOwnPropertyDescriptors(prototype)
+  )) {
+    if (name === "constructor" || name.startsWith("_")) continue;
+    if (typeof descriptor.value !== "function") continue;
+
+    const original = descriptor.value as (
+      this: WavedashSDK,
+      ...args: unknown[]
+    ) => unknown;
+
     Object.defineProperty(sdk, name, {
       configurable: true,
+      enumerable: descriptor.enumerable,
       writable: true,
-      value: EventTarget.prototype[name].bind(publicSdk)
+      value: (...args: unknown[]) => {
+        if (!reported.has(name)) {
+          reported.add(name);
+          trackSdkCall(sdk, name);
+          Object.defineProperty(sdk, name, {
+            configurable: descriptor.configurable,
+            enumerable: descriptor.enumerable,
+            writable: descriptor.writable,
+            value: original
+          });
+        }
+        return original.apply(sdk, args);
+      }
     });
   }
 
-  const descriptors = {
-    ...Object.getOwnPropertyDescriptors(prototype),
-    ...Object.getOwnPropertyDescriptors(sdk)
-  };
-
-  for (const [name, descriptor] of Object.entries(descriptors)) {
-    if (name === "constructor") continue;
-    const tracked = !name.startsWith("_");
-
-    if (typeof descriptor.value === "function") {
-      Object.defineProperty(publicSdk, name, {
-        ...descriptor,
-        value: (...args: unknown[]) => {
-          if (tracked) trackSdkCall(sdk, name);
-          return Reflect.apply(Reflect.get(sdk, name), sdk, args);
-        }
-      });
-    } else {
-      Object.defineProperty(publicSdk, name, {
-        configurable: descriptor.configurable,
-        enumerable: descriptor.enumerable,
-        get() {
-          if (tracked && descriptor.get) trackSdkCall(sdk, name);
-          return Reflect.get(sdk, name, sdk);
-        },
-        set:
-          descriptor.set || descriptor.writable
-            ? (value: unknown) => {
-                Reflect.set(sdk, name, value, sdk);
-              }
-            : undefined
-      });
-    }
-  }
-
-  return publicSdk;
+  return sdk;
 }
