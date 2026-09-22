@@ -1,5 +1,20 @@
 import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
+import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
+
+const wavedashEventNames = new Set<string>(Object.values(WavedashEvents));
+const reportedEvents = new Set<string>();
+
+export function trackSdkEventListener(
+  sdk: WavedashSDK,
+  eventName: string
+): void {
+  if (!wavedashEventNames.has(eventName) || reportedEvents.has(eventName)) {
+    return;
+  }
+  reportedEvents.add(eventName);
+  trackSdkCall(sdk, `on${eventName}`);
+}
 
 function trackSdkCall(sdk: WavedashSDK, functionName: string): void {
   try {
