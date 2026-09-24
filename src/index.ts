@@ -67,6 +67,7 @@ import type {
   LobbyVisibility,
   P2PMessage,
   PaginatedUGCItems,
+  Purchase,
   RemoteFileMetadata,
   UGCType,
   UGCVisibility,
@@ -106,6 +107,7 @@ class WavedashSDK extends EventTarget {
     return this._eventsReady;
   }
   private destroyed: boolean = false;
+  private warnedEntitlementsGranted: boolean = false;
   private gameFinishedLoading: boolean = false;
   private gameStartedLoading: boolean = false;
 
@@ -355,6 +357,16 @@ class WavedashSDK extends EventTarget {
     options?: boolean | AddEventListenerOptions
   ): void {
     if (listener) trackSdkEventListener(this, type);
+    if (
+      listener &&
+      type === WavedashEvents.ENTITLEMENTS_GRANTED &&
+      !this.warnedEntitlementsGranted
+    ) {
+      this.warnedEntitlementsGranted = true;
+      console.warn(
+        "Wavedash EntitlementsGranted is deprecated. Listen for PurchaseCompleted instead: it fires for every purchase, and for non-consumables isEntitled() is already true when it does."
+      );
+    }
     super.addEventListener(type, listener, options);
   }
 
@@ -1405,7 +1417,8 @@ class WavedashSDK extends EventTarget {
    * opens the modal and resolves with whether the user completed the purchase.
    * After a successful purchase the JWT is refreshed automatically so a
    * subsequent resource fetch is authenticated with the new purchase, and isEntitled
-   * will return true if the purchase was successful.
+   * will return true if the purchase was successful. For a consumable, grant it
+   * from the PurchaseCompleted event rather than from this result.
    */
   async triggerPaywall(
     contentIdentifier: string
@@ -1422,6 +1435,36 @@ class WavedashSDK extends EventTarget {
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
     return this.triggerPaywall(contentIdentifier);
+  }
+
+  /**
+   * Consumable purchases the game hasn't fulfilled, oldest first. Optional:
+   * these already arrive as PurchaseCompleted events at launch (register the
+   * listener before init(), or pass deferEvents), so use this only to re-check.
+   */
+  async getUnfulfilledPurchases(): Promise<WavedashResponse<Purchase[]>> {
+    return this._apiCall(
+      this.paidContentManager,
+      "getUnfulfilledPurchases",
+      []
+    );
+  }
+
+  /**
+   * Mark a consumable purchase fulfilled so it stops appearing in
+   * getUnfulfilledPurchases. The only way to fulfill: call it once the grant is
+   * saved, whether the game granted it locally or its backend did from the
+   * purchase webhook. Resolves with data `false` if it was already fulfilled.
+   */
+  async fulfillPurchase(
+    purchaseId: Id<"userPaidContent">
+  ): Promise<WavedashResponse<boolean>> {
+    return this._apiCall(
+      this.paidContentManager,
+      "fulfillPurchase",
+      [["purchaseId", vId("userPaidContent")]],
+      purchaseId
+    );
   }
 
   // ==============================

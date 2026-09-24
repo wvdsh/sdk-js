@@ -1,7 +1,17 @@
-import { api, IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
+import {
+  api,
+  IFRAME_MESSAGE_TYPE,
+  type IFrameEventPayloadMap,
+  PAID_CONTENT_TYPE
+} from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
-import type { EntitlementsGrantedPayload } from "../types";
+import type {
+  EntitlementsGrantedPayload,
+  Id,
+  Purchase,
+  PurchaseCompletedPayload
+} from "../types";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
 import { showDevPaywall } from "../utils/devPaywall";
@@ -47,6 +57,9 @@ export class PaidContentManager extends WavedashManager {
   private paywallOpen = false;
   private restorePointerLock: (() => void) | undefined;
   private restoreGamepads: (() => void) | undefined;
+  // Launch delivery and the host broadcast can both see a purchase landing at
+  // boot; each purchase fires PurchaseCompleted once per session.
+  private deliveredPurchaseIds = new Set<Id<"userPaidContent">>();
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -54,6 +67,69 @@ export class PaidContentManager extends WavedashManager {
       IFRAME_MESSAGE_TYPE.ENTITLEMENTS_GRANTED,
       this.handleEntitlementsGranted
     );
+    this.sdk.iframeMessenger.addEventListener(
+      IFRAME_MESSAGE_TYPE.PURCHASE_COMPLETED,
+      this.handlePurchaseCompleted
+    );
+    void this.deliverUnfulfilledPurchases();
+  }
+
+  /**
+   * Like StoreKit's launch-time delivery of unfinished transactions: every
+   * consumable not yet fulfilled (bought while the game was closed, or granted
+   * but never fulfilled) arrives as PurchaseCompleted, queued until the game is
+   * ready for events, so games can't strand one by forgetting a recovery call.
+   */
+  private async deliverUnfulfilledPurchases(): Promise<void> {
+    try {
+      await this.notifyPurchasesCompleted(await this.getUnfulfilledPurchases());
+    } catch (err) {
+      logger.error("Failed to deliver unfulfilled purchases at launch", err);
+    }
+  }
+
+  /**
+   * Host broadcast: purchases made while the game is running, from any source
+   * (the game's own paywall, the game page, a gift, another tab). One game
+   * event per purchase; unfulfilled consumables are the game's to fulfill.
+   */
+  private handlePurchaseCompleted = (
+    data: IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.PURCHASE_COMPLETED]
+  ): void => {
+    void this.notifyPurchasesCompleted(
+      data.purchases.map((purchase) => ({
+        ...purchase,
+        purchaseId: purchase.purchaseId as Id<"userPaidContent">
+      }))
+    );
+  };
+
+  /**
+   * Refresh the gameplay JWT first when a non-consumable is included, so
+   * isEntitled() is already true by the time the game receives the event.
+   */
+  private async notifyPurchasesCompleted(
+    candidates: PurchaseCompletedPayload[]
+  ): Promise<void> {
+    const purchases = candidates.filter(
+      (p) => !this.deliveredPurchaseIds.has(p.purchaseId)
+    );
+    for (const purchase of purchases) {
+      this.deliveredPurchaseIds.add(purchase.purchaseId);
+    }
+    if (purchases.some((p) => p.type === PAID_CONTENT_TYPE.NON_CONSUMABLE)) {
+      try {
+        await this.sdk.ensureGameplayJwt(true);
+      } catch (err) {
+        logger.error("Failed to refresh gameplay JWT after purchase", err);
+      }
+    }
+    for (const purchase of purchases) {
+      this.sdk.gameEventManager.notifyGame(
+        WavedashEvents.PURCHASE_COMPLETED,
+        purchase
+      );
+    }
   }
 
   /**
@@ -91,6 +167,21 @@ export class PaidContentManager extends WavedashManager {
     return readEntitlementsFromJwt(jwt);
   }
 
+  async getUnfulfilledPurchases(): Promise<Purchase[]> {
+    return await this.sdk.convexClient.query(
+      api.sdk.paidContent.listUnfulfilledPurchases,
+      {}
+    );
+  }
+
+  async fulfillPurchase(purchaseId: Id<"userPaidContent">): Promise<boolean> {
+    const { fulfilled } = await this.sdk.convexClient.mutation(
+      api.sdk.paidContent.fulfillPurchase,
+      { purchaseId }
+    );
+    return fulfilled;
+  }
+
   async triggerPaywall(contentIdentifier: string): Promise<boolean> {
     // Short-circuit when the player is already entitled — never show the modal
     // for already-purchased content. Game flows can call triggerPaywall freely.
@@ -121,20 +212,22 @@ export class PaidContentManager extends WavedashManager {
         this.paywallOpen = false;
       }
       if (!purchased) return false;
-      // Grant via the gameplay JWT (sandbox-gated server-side), then refresh so
-      // the new entitlement lands in the JWT `ents`. There's no host to
-      // broadcast EntitlementsGranted here, so emit it ourselves — games that
-      // unlock in the event handler behave the same in `wavedash dev`.
-      await this.sdk.convexClient.mutation(api.sdk.paidContent.mockPurchase, {
-        contentIdentifier
-      });
-      await this.sdk.ensureGameplayJwt(true);
-      this.sdk.gameEventManager.notifyGame(
-        WavedashEvents.ENTITLEMENTS_GRANTED,
-        {
-          contentIdentifiers: [contentIdentifier]
-        } satisfies EntitlementsGrantedPayload
+      // Grant via the gameplay JWT (sandbox-gated server-side). There's no host
+      // to broadcast PurchaseCompleted / EntitlementsGranted here, so emit them
+      // ourselves — games behave the same in `wavedash dev`.
+      const { purchase } = await this.sdk.convexClient.mutation(
+        api.sdk.paidContent.mockPurchase,
+        { contentIdentifier }
       );
+      await this.notifyPurchasesCompleted([purchase]);
+      if (purchase.type === PAID_CONTENT_TYPE.NON_CONSUMABLE) {
+        this.sdk.gameEventManager.notifyGame(
+          WavedashEvents.ENTITLEMENTS_GRANTED,
+          {
+            contentIdentifiers: [contentIdentifier]
+          } satisfies EntitlementsGrantedPayload
+        );
+      }
       return true;
     }
 
@@ -167,6 +260,10 @@ export class PaidContentManager extends WavedashManager {
     this.sdk.iframeMessenger.removeEventListener(
       IFRAME_MESSAGE_TYPE.ENTITLEMENTS_GRANTED,
       this.handleEntitlementsGranted
+    );
+    this.sdk.iframeMessenger.removeEventListener(
+      IFRAME_MESSAGE_TYPE.PURCHASE_COMPLETED,
+      this.handlePurchaseCompleted
     );
     this.restorePointerLock?.();
     this.restorePointerLock = undefined;

@@ -82,6 +82,9 @@ export type LobbyDataUpdate = FunctionArgs<
 >["updates"][string];
 
 export type Friend = FunctionReturnType<typeof api.sdk.friends.listFriends>[0];
+export type Purchase = FunctionReturnType<
+  typeof api.sdk.paidContent.listUnfulfilledPurchases
+>[number];
 export type Leaderboard = FunctionReturnType<
   typeof api.sdk.leaderboards.getLeaderboard
 >;
@@ -291,6 +294,18 @@ export interface EntitlementsGrantedPayload {
   contentIdentifiers: string[];
 }
 
+/**
+ * Payload for PurchaseCompleted event - one per purchase made while the game is
+ * running (in-game paywall, game page, gift, another tab), plus, at launch, one
+ * per consumable still unfulfilled. Non-consumables arrive `fulfilled: true`
+ * (Wavedash already granted them). For a consumable, grant it (or confirm your
+ * backend did from the purchase webhook), then call fulfillPurchase(purchaseId);
+ * until then it's redelivered every launch, so dedupe on purchaseId if you
+ * persist grants. `receipt` is the same signed JWT the purchase.completed
+ * webhook sends.
+ */
+export type PurchaseCompletedPayload = Purchase;
+
 // =============================================================================
 // Event map: links each event name to its payload type so addEventListener,
 // removeEventListener, on, and off can infer the right CustomEvent / payload.
@@ -314,6 +329,7 @@ export type WavedashEventMap = {
   [WavedashEvents.BACKEND_RECONNECTING]: BackendConnectionPayload;
   [WavedashEvents.FULLSCREEN_CHANGED]: FullscreenChangedPayload;
   [WavedashEvents.ENTITLEMENTS_GRANTED]: EntitlementsGrantedPayload;
+  [WavedashEvents.PURCHASE_COMPLETED]: PurchaseCompletedPayload;
 };
 
 // =============================================================================
