@@ -537,7 +537,7 @@ class WavedashSDK extends EventTarget {
    * Get avatar URL for a cached user with size transformation.
    * Users are cached when seen via listFriends() or lobby membership.
    * @param userId - The user ID to get the avatar URL for
-   * @param size - Avatar size constant (Wavedash.AvatarSize.SMALL=0, Wavedash.AvatarSize.MEDIUM=1, Wavedash.AvatarSize.LARGE=2)
+   * @param size - Size in pixels: a Wavedash.AvatarSize preset (SMALL=64, MEDIUM=128, LARGE=256) or a custom value. Defaults to MEDIUM.
    * @returns CDN URL with size transformation, or null if user not cached or has no avatar
    */
   getUserAvatarUrl(
@@ -917,7 +917,6 @@ class WavedashSDK extends EventTarget {
   /**
    * Uploads a local file to remote storage
    * @param filePath - The path of the local file to upload
-   * @param uploadTo - Optionally provide a path to upload the file to, defaults to the same path as the local file
    * @returns The path of the remote file that the local file was uploaded to
    */
   async uploadRemoteFile(filePath: string): Promise<WavedashResponse<string>> {
