@@ -1438,9 +1438,10 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Consumable purchases the game hasn't fulfilled, oldest first. Optional:
-   * these already arrive as PurchaseCompleted events at launch (register the
-   * listener before init(), or pass deferEvents), so use this only to re-check.
+   * Consumable purchases the game hasn't fulfilled, oldest first. These already
+   * arrive as PurchaseCompleted events at launch (register the listener before
+   * init(), or pass deferEvents), but each purchase fires once per session: use
+   * this to retry one whose fulfillPurchase call failed.
    */
   async getUnfulfilledPurchases(): Promise<WavedashResponse<Purchase[]>> {
     return this._apiCall(

@@ -1,9 +1,4 @@
-import {
-  api,
-  IFRAME_MESSAGE_TYPE,
-  type IFrameEventPayloadMap,
-  PAID_CONTENT_TYPE
-} from "@wvdsh/api";
+import { api, IFRAME_MESSAGE_TYPE, PAID_CONTENT_TYPE } from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type {
@@ -57,9 +52,14 @@ export class PaidContentManager extends WavedashManager {
   private paywallOpen = false;
   private restorePointerLock: (() => void) | undefined;
   private restoreGamepads: (() => void) | undefined;
-  // Launch delivery and the host broadcast can both see a purchase landing at
-  // boot; each purchase fires PurchaseCompleted once per session.
-  private deliveredPurchaseIds = new Set<Id<"userPaidContent">>();
+  // Every purchase id this session has seen: the subscription's first result
+  // (the boot baseline) plus each one delivered since. One event per purchase.
+  private seenPurchaseIds = new Set<Id<"userPaidContent">>();
+  private receivedFirstPurchases = false;
+  // Serializes updates so events keep the subscription's order while the first
+  // one awaits the gameplay JWT.
+  private purchaseUpdates: Promise<void> = Promise.resolve();
+  private unsubscribePurchases: (() => void) | null = null;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -67,56 +67,79 @@ export class PaidContentManager extends WavedashManager {
       IFRAME_MESSAGE_TYPE.ENTITLEMENTS_GRANTED,
       this.handleEntitlementsGranted
     );
-    this.sdk.iframeMessenger.addEventListener(
-      IFRAME_MESSAGE_TYPE.PURCHASE_COMPLETED,
-      this.handlePurchaseCompleted
+    this.unsubscribePurchases = this.sdk.convexClient.onUpdate(
+      api.sdk.paidContent.listActivePurchases,
+      {},
+      (purchases) => {
+        this.purchaseUpdates = this.purchaseUpdates
+          .then(() => this.handlePurchasesUpdate(purchases))
+          .catch((err) => {
+            logger.error("Failed to deliver purchases", err);
+          });
+      },
+      (error) => {
+        logger.error(`Purchases subscription error: ${error}`);
+      }
     );
-    void this.deliverUnfulfilledPurchases();
   }
 
   /**
-   * Like StoreKit's launch-time delivery of unfinished transactions: every
-   * consumable not yet fulfilled (bought while the game was closed, or granted
-   * but never fulfilled) arrives as PurchaseCompleted, queued until the game is
-   * ready for events, so games can't strand one by forgetting a recovery call.
+   * One stream for launch and live delivery, so no purchase falls between
+   * them, and it works with or without a host (`wavedash dev` included). Like
+   * StoreKit's transaction listener: the first result delivers every
+   * unfulfilled consumable (bought while the game was closed, or never
+   * fulfilled); after that, each new id is a purchase from any source
+   * (paywall, game page, gift, another tab). Events queue until the game is
+   * ready for them.
    */
-  private async deliverUnfulfilledPurchases(): Promise<void> {
-    try {
-      await this.notifyPurchasesCompleted(await this.getUnfulfilledPurchases());
-    } catch (err) {
-      logger.error("Failed to deliver unfulfilled purchases at launch", err);
+  private async handlePurchasesUpdate(purchases: Purchase[]): Promise<void> {
+    const fresh = purchases.filter(
+      (p) => !this.seenPurchaseIds.has(p.purchaseId)
+    );
+    for (const purchase of fresh) {
+      this.seenPurchaseIds.add(purchase.purchaseId);
     }
+    if (this.receivedFirstPurchases) {
+      await this.notifyPurchasesCompleted(fresh);
+      return;
+    }
+    this.receivedFirstPurchases = true;
+    await this.notifyPurchasesCompleted(await this.withoutKnownOwned(fresh));
   }
 
   /**
-   * Host broadcast: purchases made while the game is running, from any source
-   * (the game's own paywall, the game page, a gift, another tab). One game
-   * event per purchase; unfulfilled consumables are the game's to fulfill.
+   * Boot baseline: a non-consumable already in the gameplay JWT is ownership
+   * the game reads with isEntitled(), not a new purchase. One missing from it
+   * was bought after the JWT was minted (e.g. while the game loaded), so it
+   * still gets its event.
    */
-  private handlePurchaseCompleted = (
-    data: IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.PURCHASE_COMPLETED]
-  ): void => {
-    void this.notifyPurchasesCompleted(
-      data.purchases.map((purchase) => ({
-        ...purchase,
-        purchaseId: purchase.purchaseId as Id<"userPaidContent">
-      }))
+  private async withoutKnownOwned(purchases: Purchase[]): Promise<Purchase[]> {
+    if (!purchases.some((p) => p.type === PAID_CONTENT_TYPE.NON_CONSUMABLE)) {
+      return purchases;
+    }
+    let owned: Set<string>;
+    try {
+      owned = new Set(
+        readEntitlementsFromJwt(await this.sdk.ensureGameplayJwt())
+      );
+    } catch (err) {
+      logger.error("Failed to read entitlements for purchase baseline", err);
+      owned = new Set(purchases.map((p) => p.contentIdentifier));
+    }
+    return purchases.filter(
+      (p) =>
+        p.type !== PAID_CONTENT_TYPE.NON_CONSUMABLE ||
+        !owned.has(p.contentIdentifier)
     );
-  };
+  }
 
   /**
    * Refresh the gameplay JWT first when a non-consumable is included, so
    * isEntitled() is already true by the time the game receives the event.
    */
   private async notifyPurchasesCompleted(
-    candidates: PurchaseCompletedPayload[]
+    purchases: PurchaseCompletedPayload[]
   ): Promise<void> {
-    const purchases = candidates.filter(
-      (p) => !this.deliveredPurchaseIds.has(p.purchaseId)
-    );
-    for (const purchase of purchases) {
-      this.deliveredPurchaseIds.add(purchase.purchaseId);
-    }
     if (purchases.some((p) => p.type === PAID_CONTENT_TYPE.NON_CONSUMABLE)) {
       try {
         await this.sdk.ensureGameplayJwt(true);
@@ -212,15 +235,16 @@ export class PaidContentManager extends WavedashManager {
         this.paywallOpen = false;
       }
       if (!purchased) return false;
-      // Grant via the gameplay JWT (sandbox-gated server-side). There's no host
-      // to broadcast PurchaseCompleted / EntitlementsGranted here, so emit them
-      // ourselves — games behave the same in `wavedash dev`.
+      // Grant via the gameplay JWT (sandbox-gated server-side). PurchaseCompleted
+      // arrives from the purchases subscription, as it does in production.
+      // There's no host to broadcast the deprecated EntitlementsGranted, so
+      // emit it ourselves.
       const { purchase } = await this.sdk.convexClient.mutation(
         api.sdk.paidContent.mockPurchase,
         { contentIdentifier }
       );
-      await this.notifyPurchasesCompleted([purchase]);
       if (purchase.type === PAID_CONTENT_TYPE.NON_CONSUMABLE) {
+        await this.sdk.ensureGameplayJwt(true);
         this.sdk.gameEventManager.notifyGame(
           WavedashEvents.ENTITLEMENTS_GRANTED,
           {
@@ -261,10 +285,8 @@ export class PaidContentManager extends WavedashManager {
       IFRAME_MESSAGE_TYPE.ENTITLEMENTS_GRANTED,
       this.handleEntitlementsGranted
     );
-    this.sdk.iframeMessenger.removeEventListener(
-      IFRAME_MESSAGE_TYPE.PURCHASE_COMPLETED,
-      this.handlePurchaseCompleted
-    );
+    this.unsubscribePurchases?.();
+    this.unsubscribePurchases = null;
     this.restorePointerLock?.();
     this.restorePointerLock = undefined;
     this.restoreGamepads?.();

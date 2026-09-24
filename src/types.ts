@@ -298,11 +298,12 @@ export interface EntitlementsGrantedPayload {
  * Payload for PurchaseCompleted event - one per purchase made while the game is
  * running (in-game paywall, game page, gift, another tab), plus, at launch, one
  * per consumable still unfulfilled. Non-consumables arrive `fulfilled: true`
- * (Wavedash already granted them). For a consumable, grant it (or confirm your
+ * (Wavedash already granted them) and aren't redelivered at launch: read
+ * ownership with isEntitled(). For a consumable, grant it (or confirm your
  * backend did from the purchase webhook), then call fulfillPurchase(purchaseId);
  * until then it's redelivered every launch, so dedupe on purchaseId if you
- * persist grants. `receipt` is the same signed JWT the purchase.completed
- * webhook sends.
+ * persist grants. `receiptJwt` is the same signed JWT the purchase.completed
+ * webhook sends; verify it against the Wavedash JWKS on your backend.
  */
 export type PurchaseCompletedPayload = Purchase;
 
