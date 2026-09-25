@@ -19,7 +19,7 @@ const RETRY_MAX_MS = 30_000;
  */
 export class AuthManager extends WavedashManager {
   private jwt: string | null = null;
-  // `iat` timestamp of the first gameplay JWT
+  // `iat` timestamp of the first gameplay JWT, in milliseconds
   readonly firstAuthenticatedAt: Promise<number>;
   private resolveFirstAuthenticatedAt: ((issuedAtMs: number) => void) | null =
     null;
