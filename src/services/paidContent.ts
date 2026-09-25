@@ -3,9 +3,9 @@ import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type {
   EntitlementsGrantedPayload,
-  Id,
   Purchase,
-  PurchaseCompletedPayload
+  PurchaseCompletedPayload,
+  PurchaseId
 } from "../types";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
@@ -23,7 +23,7 @@ export class PaidContentManager extends WavedashManager {
   private restoreGamepads: (() => void) | undefined;
   // Every purchase id this session has seen: the subscription's first result
   // (the boot baseline) plus each one delivered since. One event per purchase.
-  private seenPurchaseIds = new Set<Id<"userPaidContent">>();
+  private seenPurchaseIds = new Set<PurchaseId>();
   private receivedFirstPurchases = false;
   // Serializes updates so events keep the subscription's order while one awaits
   // a gameplay JWT refresh.
@@ -150,7 +150,7 @@ export class PaidContentManager extends WavedashManager {
     );
   }
 
-  async fulfillPurchase(purchaseId: Id<"userPaidContent">): Promise<boolean> {
+  async fulfillPurchase(purchaseId: PurchaseId): Promise<boolean> {
     const { fulfilled } = await this.sdk.convexClient.mutation(
       api.sdk.paidContent.fulfillPurchase,
       { purchaseId }
