@@ -9,44 +9,13 @@ import type {
 } from "../types";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
+import { readJwtClaim } from "../utils/jwt";
 import { showDevPaywall } from "../utils/devPaywall";
 import { hasParentFrame } from "../utils/parentOrigin";
 import { suspendGamepads } from "../utils/gamepad";
 import { suspendPointerLock } from "../utils/pointerLock";
 
 const PAYWALL_TIMEOUT_MS = 10 * 60 * 1000;
-
-/**
- * Decode the gameplay JWT payload to read the `ents` claim (short on the wire
- * to keep token size down; surfaced as `entitlements` everywhere else). We
- * don't verify the signature here — a hostile client can patch this function
- * to return whatever it wants either way, so verifying locally adds bar but
- * no real boundary. The play worker re-verifies the JWT signature on every
- * paid-asset request — that's the actual security gate.
- *
- * UTF-8 safe: claims may carry arbitrary user/file paths (e.g. r2key).
- */
-function decodeJwtPayload(jwt: string): Record<string, unknown> | null {
-  try {
-    const [, payloadB64] = jwt.split(".");
-    if (!payloadB64) return null;
-    const b64 = payloadB64.replace(/-/g, "+").replace(/_/g, "/");
-    const padded = b64 + "===".slice((b64.length + 3) % 4);
-    const bytes = Uint8Array.from(atob(padded), (c) => c.charCodeAt(0));
-    const json = new TextDecoder().decode(bytes);
-    return JSON.parse(json) as Record<string, unknown>;
-  } catch (err) {
-    logger.warn("Failed to decode JWT payload", err);
-    return null;
-  }
-}
-
-function readEntitlementsFromJwt(jwt: string): string[] {
-  const payload = decodeJwtPayload(jwt);
-  const ents = payload?.ents;
-  if (!Array.isArray(ents)) return [];
-  return ents.filter((e): e is string => typeof e === "string");
-}
 
 export class PaidContentManager extends WavedashManager {
   private paywallOpen = false;
@@ -56,8 +25,8 @@ export class PaidContentManager extends WavedashManager {
   // (the boot baseline) plus each one delivered since. One event per purchase.
   private seenPurchaseIds = new Set<Id<"userPaidContent">>();
   private receivedFirstPurchases = false;
-  // Serializes updates so events keep the subscription's order while the first
-  // one awaits the gameplay JWT.
+  // Serializes updates so events keep the subscription's order while one awaits
+  // a gameplay JWT refresh.
   private purchaseUpdates: Promise<void> = Promise.resolve();
   private unsubscribePurchases: (() => void) | null = null;
 
@@ -88,49 +57,31 @@ export class PaidContentManager extends WavedashManager {
    * them, and it works with or without a host (`wavedash dev` included). Like
    * StoreKit's transaction listener: the first result delivers every
    * unfulfilled consumable (bought while the game was closed, or never
-   * fulfilled); after that, each new id is a purchase from any source
-   * (paywall, game page, gift, another tab). Events queue until the game is
-   * ready for them.
+   * fulfilled) plus non-consumables bought this session; after that, each new
+   * id is a purchase from any source (paywall, game page, gift, another tab).
+   * Events queue until the game is ready for them.
    */
   private async handlePurchasesUpdate(purchases: Purchase[]): Promise<void> {
-    const fresh = purchases.filter(
+    let fresh = purchases.filter(
       (p) => !this.seenPurchaseIds.has(p.purchaseId)
     );
     for (const purchase of fresh) {
       this.seenPurchaseIds.add(purchase.purchaseId);
     }
-    if (this.receivedFirstPurchases) {
-      await this.notifyPurchasesCompleted(fresh);
-      return;
-    }
-    this.receivedFirstPurchases = true;
-    await this.notifyPurchasesCompleted(await this.withoutKnownOwned(fresh));
-  }
-
-  /**
-   * Boot baseline: a non-consumable already in the gameplay JWT is ownership
-   * the game reads with isEntitled(), not a new purchase. One missing from it
-   * was bought after the JWT was minted (e.g. while the game loaded), so it
-   * still gets its event.
-   */
-  private async withoutKnownOwned(purchases: Purchase[]): Promise<Purchase[]> {
-    if (!purchases.some((p) => p.type === PAID_CONTENT_TYPE.NON_CONSUMABLE)) {
-      return purchases;
-    }
-    let owned: Set<string>;
-    try {
-      owned = new Set(
-        readEntitlementsFromJwt(await this.sdk.ensureGameplayJwt())
+    if (!this.receivedFirstPurchases) {
+      this.receivedFirstPurchases = true;
+      // A non-consumable bought before this session authenticated is ownership
+      // the game reads with isEntitled(); one bought since (while the game
+      // loaded, even through its own paywall) gets its event. JWT ownership
+      // can't tell these apart, since a refresh picks up new purchases.
+      const authenticatedAt = await this.sdk.authManager.firstAuthenticatedAt;
+      fresh = fresh.filter(
+        (p) =>
+          p.type !== PAID_CONTENT_TYPE.NON_CONSUMABLE ||
+          p.purchasedAt >= authenticatedAt
       );
-    } catch (err) {
-      logger.error("Failed to read entitlements for purchase baseline", err);
-      owned = new Set(purchases.map((p) => p.contentIdentifier));
     }
-    return purchases.filter(
-      (p) =>
-        p.type !== PAID_CONTENT_TYPE.NON_CONSUMABLE ||
-        !owned.has(p.contentIdentifier)
-    );
+    await this.notifyPurchasesCompleted(fresh);
   }
 
   /**
@@ -182,12 +133,14 @@ export class PaidContentManager extends WavedashManager {
 
   async isEntitled(contentIdentifier: string): Promise<boolean> {
     const jwt = await this.sdk.ensureGameplayJwt();
-    return readEntitlementsFromJwt(jwt).includes(contentIdentifier);
+    const entitlements = readJwtClaim<string[]>(jwt, "ents") ?? [];
+    return entitlements.includes(contentIdentifier);
   }
 
   async getEntitlements(): Promise<string[]> {
     const jwt = await this.sdk.ensureGameplayJwt();
-    return readEntitlementsFromJwt(jwt);
+    const entitlements = readJwtClaim<string[]>(jwt, "ents") ?? [];
+    return entitlements;
   }
 
   async getUnfulfilledPurchases(): Promise<Purchase[]> {
