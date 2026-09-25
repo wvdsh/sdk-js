@@ -5,13 +5,14 @@
  */
 
 import type {
-  Id,
   LeaderboardSortOrder,
   LeaderboardDisplayType,
   Leaderboard,
   LeaderboardEntries,
   LeaderboardEntryMetadata,
-  UpsertedLeaderboardEntry
+  UpsertedLeaderboardEntry,
+  LeaderboardId,
+  UGCId
 } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
@@ -20,7 +21,7 @@ import { WavedashManager } from "./manager";
 
 export class LeaderboardManager extends WavedashManager {
   // Cache leaderboards to return totalEntries synchronously without a network call
-  private leaderboardCache: Map<Id<"leaderboards">, Leaderboard> = new Map();
+  private leaderboardCache: Map<LeaderboardId, Leaderboard> = new Map();
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -48,13 +49,13 @@ export class LeaderboardManager extends WavedashManager {
     return leaderboard;
   }
 
-  getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
+  getLeaderboardEntryCount(leaderboardId: LeaderboardId): number {
     const cachedLeaderboard = this.leaderboardCache.get(leaderboardId);
     return cachedLeaderboard ? cachedLeaderboard.totalEntries : -1;
   }
 
   async getMyLeaderboardEntries(
-    leaderboardId: Id<"leaderboards">
+    leaderboardId: LeaderboardId
   ): Promise<LeaderboardEntries> {
     const result = await this.sdk.convexClient.query(
       api.sdk.leaderboards.getMyLeaderboardEntry,
@@ -81,7 +82,7 @@ export class LeaderboardManager extends WavedashManager {
   }
 
   async listLeaderboardEntriesAroundUser(
-    leaderboardId: Id<"leaderboards">,
+    leaderboardId: LeaderboardId,
     countAhead: number,
     countBehind: number,
     friendsOnly: boolean = false
@@ -102,7 +103,7 @@ export class LeaderboardManager extends WavedashManager {
   }
 
   async listLeaderboardEntries(
-    leaderboardId: Id<"leaderboards">,
+    leaderboardId: LeaderboardId,
     offset: number,
     limit: number,
     friendsOnly: boolean = false
@@ -123,10 +124,10 @@ export class LeaderboardManager extends WavedashManager {
   }
 
   async uploadLeaderboardScore(
-    leaderboardId: Id<"leaderboards">,
+    leaderboardId: LeaderboardId,
     score: number,
     keepBest: boolean,
-    ugcId?: Id<"userGeneratedContent">,
+    ugcId?: UGCId,
     metadata?: LeaderboardEntryMetadata
   ): Promise<UpsertedLeaderboardEntry> {
     const result = await this.sdk.convexClient.mutation(
@@ -157,7 +158,7 @@ export class LeaderboardManager extends WavedashManager {
   // ================
 
   private updateCachedTotalEntries(
-    leaderboardId: Id<"leaderboards">,
+    leaderboardId: LeaderboardId,
     totalEntries: number
   ): void {
     const cachedLeaderboard = this.leaderboardCache.get(leaderboardId);

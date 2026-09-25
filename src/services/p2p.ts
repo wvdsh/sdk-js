@@ -17,7 +17,9 @@ import type {
   P2PPeerReconnectingPayload,
   P2PPeerReconnectedPayload,
   P2PPacketDroppedPayload,
-  P2PPacketDropReason
+  P2PPacketDropReason,
+  UserId,
+  LobbyId
 } from "../types";
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
@@ -50,25 +52,25 @@ export class P2PManager extends WavedashManager {
   private currentConnection: P2PConnection | null = null;
 
   // WebRTC connection state
-  private peerConnections = new Map<Id<"users">, RTCPeerConnection>();
-  private reliableChannels = new Map<Id<"users">, RTCDataChannel>();
-  private unreliableChannels = new Map<Id<"users">, RTCDataChannel>();
-  private pendingIceCandidates = new Map<Id<"users">, RTCIceCandidateInit[]>();
+  private peerConnections = new Map<UserId, RTCPeerConnection>();
+  private reliableChannels = new Map<UserId, RTCDataChannel>();
+  private unreliableChannels = new Map<UserId, RTCDataChannel>();
+  private pendingIceCandidates = new Map<UserId, RTCIceCandidateInit[]>();
 
   // ICE restart tracking
-  private iceRestartAttempts = new Map<Id<"users">, number>();
-  private iceRestartInProgress = new Set<Id<"users">>();
+  private iceRestartAttempts = new Map<UserId, number>();
+  private iceRestartInProgress = new Set<UserId>();
   private readonly MAX_ICE_RESTART_ATTEMPTS = 3;
 
   // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
   // Tracked on both active and passive sides so reconnect events stay symmetric
   // regardless of which peer drives the ICE restart.
-  private reconnectingPeers = new Set<Id<"users">>();
+  private reconnectingPeers = new Set<UserId>();
 
   // Peers for which we've emitted P2P_CONNECTION_ESTABLISHED. Prevents duplicate
   // emissions if both data channels happen to open concurrently, and is cleared
   // on peer disconnect so a rejoining peer gets a fresh ESTABLISHED event.
-  private establishedPeers = new Set<Id<"users">>();
+  private establishedPeers = new Set<UserId>();
 
   // One packet-drop tracker per distinct problem, keyed by
   // `${direction}:${channel}:${reason}` so e.g. send-side oversize vs
@@ -105,7 +107,7 @@ export class P2PManager extends WavedashManager {
 
   // Initialization lock to prevent duplicate concurrent initialization for the same lobby
   private initializationInProgress: Promise<P2PConnection> | null = null;
-  private initializationLobbyId: Id<"lobbies"> | null = null;
+  private initializationLobbyId: LobbyId | null = null;
 
   // Signaling subscription readiness tracking
   private signalingSubscriptionReady: Promise<void> | null = null;
@@ -241,7 +243,7 @@ export class P2PManager extends WavedashManager {
   // ================
 
   async initializeP2PForCurrentLobby(
-    lobbyId: Id<"lobbies">,
+    lobbyId: LobbyId,
     members: SDKUser[]
   ): Promise<P2PConnection> {
     this.ensureInitialized();
@@ -281,7 +283,7 @@ export class P2PManager extends WavedashManager {
    * Called by initializeP2PForCurrentLobby with proper locking.
    */
   private async doInitializeP2P(
-    lobbyId: Id<"lobbies">,
+    lobbyId: LobbyId,
     members: SDKUser[]
   ): Promise<P2PConnection> {
     const connection: P2PConnection = {
@@ -356,7 +358,7 @@ export class P2PManager extends WavedashManager {
     const newPeerUserIds = new Set(members.map((member) => member.id));
 
     // Find new users who joined
-    const connectionsToCreate: Id<"users">[] = [];
+    const connectionsToCreate: UserId[] = [];
     for (const member of members) {
       if (member.id === this.sdk.getUserId()) continue;
 
@@ -415,7 +417,7 @@ export class P2PManager extends WavedashManager {
     // Clean up connections to users who left
     for (const userId of Object.keys(
       this.currentConnection.peers
-    ) as Id<"users">[]) {
+    ) as UserId[]) {
       if (!newPeerUserIds.has(userId)) {
         const peer = this.currentConnection.peers[userId];
         logger.debug(`Peer left: ${peer.username} (${userId})`);
@@ -668,7 +670,7 @@ export class P2PManager extends WavedashManager {
    * This handles the race condition where ICE candidates arrive before the offer/answer.
    */
   private async flushPendingIceCandidates(
-    remoteUserId: Id<"users">,
+    remoteUserId: UserId,
     pc: RTCPeerConnection
   ): Promise<void> {
     const pending = this.pendingIceCandidates.get(remoteUserId);
@@ -696,7 +698,7 @@ export class P2PManager extends WavedashManager {
     const connectionPromises: Promise<boolean>[] = [];
 
     // Create peer connections to all other peers
-    (Object.entries(connection.peers) as [Id<"users">, P2PPeer][]).forEach(
+    (Object.entries(connection.peers) as [UserId, P2PPeer][]).forEach(
       ([userId, peer]) => {
         const shouldCreateChannels = currentUserId < userId;
         logger.debug(
@@ -712,9 +714,9 @@ export class P2PManager extends WavedashManager {
     await Promise.all(connectionPromises);
 
     // Initiate offers to peers where we have lower userId
-    const peersToInitiate = (
-      Object.keys(connection.peers) as Id<"users">[]
-    ).filter((userId) => currentUserId < userId);
+    const peersToInitiate = (Object.keys(connection.peers) as UserId[]).filter(
+      (userId) => currentUserId < userId
+    );
 
     if (peersToInitiate.length > 0) {
       const offerPromises = peersToInitiate.map((userId) => {
@@ -733,7 +735,7 @@ export class P2PManager extends WavedashManager {
     }
   }
 
-  private async createOfferToPeer(remoteUserId: Id<"users">): Promise<void> {
+  private async createOfferToPeer(remoteUserId: UserId): Promise<void> {
     const pc = this.peerConnections.get(remoteUserId);
     if (!pc) {
       throw new Error(`No peer connection for user ${remoteUserId}`);
@@ -766,7 +768,7 @@ export class P2PManager extends WavedashManager {
   }
 
   private async createPeerConnection(
-    remoteUserId: Id<"users">,
+    remoteUserId: UserId,
     connection: P2PConnection,
     shouldCreateChannels: boolean = false
   ): Promise<boolean> {
@@ -975,7 +977,7 @@ export class P2PManager extends WavedashManager {
    * Only the peer with the lower userId initiates the restart to avoid conflicts.
    */
   private async attemptIceRestart(
-    remoteUserId: Id<"users">,
+    remoteUserId: UserId,
     pc: RTCPeerConnection
   ): Promise<void> {
     const currentUserId = this.sdk.getUserId();
@@ -1061,7 +1063,7 @@ export class P2PManager extends WavedashManager {
 
   private setupDataChannelHandlers(
     channel: RTCDataChannel,
-    remoteUserId: Id<"users">,
+    remoteUserId: UserId,
     type: "reliable" | "unreliable"
   ): void {
     channel.onopen = () => {
@@ -1134,7 +1136,7 @@ export class P2PManager extends WavedashManager {
   // ================
 
   sendP2PMessage(
-    toUserId: Id<"users"> | undefined,
+    toUserId: UserId | undefined,
     appChannel: number = 0,
     reliable: boolean = true,
     payload: Uint8Array,
@@ -1254,7 +1256,7 @@ export class P2PManager extends WavedashManager {
   // ================================
 
   private async sendSignalingMessage(
-    toUserId: Id<"users">,
+    toUserId: UserId,
     message: {
       type: (typeof P2P_SIGNALING_MESSAGE_TYPE)[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
       data: RTCSessionDescriptionInit | RTCIceCandidateInit;
@@ -1293,7 +1295,7 @@ export class P2PManager extends WavedashManager {
     this.stopSignalingMessageSubscription();
 
     (
-      Object.entries(this.currentConnection.peers) as [Id<"users">, P2PPeer][]
+      Object.entries(this.currentConnection.peers) as [UserId, P2PPeer][]
     ).forEach(([userId, _]) => {
       const pc = this.peerConnections.get(userId);
       if (pc) {
@@ -1328,7 +1330,7 @@ export class P2PManager extends WavedashManager {
   // ===============
 
   // Check if channels are ready for a specific peer
-  isPeerReady(userId: Id<"users">): boolean {
+  isPeerReady(userId: UserId): boolean {
     if (!this.currentConnection) return false;
 
     const reliableChannel = this.reliableChannels.get(userId);
@@ -1351,19 +1353,19 @@ export class P2PManager extends WavedashManager {
 
   // Get status of all peer connections
   getPeerStatuses(): Record<
-    Id<"users">,
+    UserId,
     { reliable?: string; unreliable?: string; ready: boolean }
   > {
     if (!this.currentConnection) return {};
 
     const statuses: Record<
-      Id<"users">,
+      UserId,
       { reliable?: string; unreliable?: string; ready: boolean }
     > = {};
 
     for (const userId of Object.keys(
       this.currentConnection.peers
-    ) as Id<"users">[]) {
+    ) as UserId[]) {
       const reliableChannel = this.reliableChannels.get(userId);
       const unreliableChannel = this.unreliableChannels.get(userId);
 
@@ -1493,7 +1495,7 @@ export class P2PManager extends WavedashManager {
     this.packetDropTrackers.clear();
   }
 
-  private enqueueMessage(wireData: ArrayBuffer, fromUserId: Id<"users">): void {
+  private enqueueMessage(wireData: ArrayBuffer, fromUserId: UserId): void {
     try {
       if (wireData.byteLength < this.WIRE_PAYLOAD_OFFSET) {
         logger.warn("Binary message too short to extract channel");
@@ -1795,7 +1797,7 @@ export class P2PManager extends WavedashManager {
     const fromUserIdBytes = uint8View.slice(offset, offset + this.USERID_SIZE);
     const fromUserId = this.textDecoder
       .decode(fromUserIdBytes)
-      .replace(/\0+$/, "") as Id<"users">;
+      .replace(/\0+$/, "") as UserId;
     offset += this.USERID_SIZE;
 
     // channel (4 bytes)

@@ -28,7 +28,13 @@ import { P2PManager } from "./services/p2p";
 import { PaidContentManager } from "./services/paidContent";
 import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
-import type { WavedashEventMap } from "./types";
+import type {
+  WavedashEventMap,
+  UserId,
+  LobbyId,
+  LeaderboardId,
+  UGCId
+} from "./types";
 import { getAvatarUrl } from "./utils/cdn";
 import { takeFocus } from "./utils/focus";
 import { IFrameMessenger } from "./utils/iframeMessenger";
@@ -53,7 +59,6 @@ import type {
   EngineInstance,
   Friend,
   GameLaunchParams,
-  Id,
   Leaderboard,
   LeaderboardDisplayType,
   LeaderboardEntries,
@@ -67,6 +72,8 @@ import type {
   LobbyVisibility,
   P2PMessage,
   PaginatedUGCItems,
+  Purchase,
+  PurchaseId,
   RemoteFileMetadata,
   UGCType,
   UGCVisibility,
@@ -106,6 +113,7 @@ class WavedashSDK extends EventTarget {
     return this._eventsReady;
   }
   private destroyed: boolean = false;
+  private warnedEntitlementsGranted: boolean = false;
   private gameFinishedLoading: boolean = false;
   private gameStartedLoading: boolean = false;
 
@@ -355,6 +363,16 @@ class WavedashSDK extends EventTarget {
     options?: boolean | AddEventListenerOptions
   ): void {
     if (listener) trackSdkEventListener(this, type);
+    if (
+      listener &&
+      type === WavedashEvents.ENTITLEMENTS_GRANTED &&
+      !this.warnedEntitlementsGranted
+    ) {
+      this.warnedEntitlementsGranted = true;
+      console.warn(
+        "Wavedash EntitlementsGranted is deprecated. Listen for PurchaseCompleted instead: it fires for every purchase, and for non-consumables isEntitled() is already true when it does."
+      );
+    }
     super.addEventListener(type, listener, options);
   }
 
@@ -485,16 +503,16 @@ class WavedashSDK extends EventTarget {
    * @returns The username, or null if a userId was passed but the user has not been seen by the game yet.
    */
   getUsername(): string;
-  getUsername(userId: Id<"users">): string | null;
-  getUsername(userId?: Id<"users">): string | null {
+  getUsername(userId: UserId): string | null;
+  getUsername(userId?: UserId): string | null {
     if (userId === undefined) {
       return this.wavedashUser.username;
     }
-    validateArgs("getUsername", [["userId", vId("users")]], [userId]);
+    validateArgs("getUsername", [["userId", vId("UserId")]], [userId]);
     return this.friendsManager.getUsername(userId);
   }
 
-  getUserId(): Id<"users"> {
+  getUserId(): UserId {
     return this.wavedashUser.id;
   }
 
@@ -541,14 +559,14 @@ class WavedashSDK extends EventTarget {
    * @returns CDN URL with size transformation, or null if user not cached or has no avatar
    */
   getUserAvatarUrl(
-    userId: Id<"users">,
+    userId: UserId,
     size: number = this.AvatarSize.MEDIUM
   ): string | null {
     return this._apiCallSync(
       this.friendsManager,
       "getUserAvatarUrl",
       [
-        ["userId", vId("users")],
+        ["userId", vId("UserId")],
         ["size", vNumber]
       ],
       userId,
@@ -592,11 +610,11 @@ class WavedashSDK extends EventTarget {
   }
 
   // Synchronously get leaderboard entry count from cache
-  getLeaderboardEntryCount(leaderboardId: Id<"leaderboards">): number {
+  getLeaderboardEntryCount(leaderboardId: LeaderboardId): number {
     return this._apiCallSync(
       this.leaderboardManager,
       "getLeaderboardEntryCount",
-      [["leaderboardId", vId("leaderboards")]],
+      [["leaderboardId", vId("LeaderboardId")]],
       leaderboardId
     );
   }
@@ -604,18 +622,18 @@ class WavedashSDK extends EventTarget {
   // This is called get my "entries" but under the hood we enforce one entry per user
   // The engine SDK expects a list of entries, so we return a list with 0 or 1 entries
   async getMyLeaderboardEntries(
-    leaderboardId: Id<"leaderboards">
+    leaderboardId: LeaderboardId
   ): Promise<WavedashResponse<LeaderboardEntries>> {
     return this._apiCall(
       this.leaderboardManager,
       "getMyLeaderboardEntries",
-      [["leaderboardId", vId("leaderboards")]],
+      [["leaderboardId", vId("LeaderboardId")]],
       leaderboardId
     );
   }
 
   async listLeaderboardEntriesAroundUser(
-    leaderboardId: Id<"leaderboards">,
+    leaderboardId: LeaderboardId,
     countAhead: number,
     countBehind: number,
     friendsOnly: boolean = false
@@ -624,7 +642,7 @@ class WavedashSDK extends EventTarget {
       this.leaderboardManager,
       "listLeaderboardEntriesAroundUser",
       [
-        ["leaderboardId", vId("leaderboards")],
+        ["leaderboardId", vId("LeaderboardId")],
         ["countAhead", vNumber],
         ["countBehind", vNumber],
         ["friendsOnly", vBoolean]
@@ -637,7 +655,7 @@ class WavedashSDK extends EventTarget {
   }
 
   async listLeaderboardEntries(
-    leaderboardId: Id<"leaderboards">,
+    leaderboardId: LeaderboardId,
     offset: number,
     limit: number,
     friendsOnly: boolean = false
@@ -646,7 +664,7 @@ class WavedashSDK extends EventTarget {
       this.leaderboardManager,
       "listLeaderboardEntries",
       [
-        ["leaderboardId", vId("leaderboards")],
+        ["leaderboardId", vId("LeaderboardId")],
         ["offset", vNumber],
         ["limit", vNumber],
         ["friendsOnly", vBoolean]
@@ -659,10 +677,10 @@ class WavedashSDK extends EventTarget {
   }
 
   async uploadLeaderboardScore(
-    leaderboardId: Id<"leaderboards">,
+    leaderboardId: LeaderboardId,
     score: number,
     keepBest: boolean,
-    ugcId?: Id<"userGeneratedContent">,
+    ugcId?: UGCId,
     metadata?: LeaderboardEntryMetadata
   ): Promise<WavedashResponse<UpsertedLeaderboardEntry>> {
     if (typeof metadata === "string") {
@@ -684,10 +702,10 @@ class WavedashSDK extends EventTarget {
       this.leaderboardManager,
       "uploadLeaderboardScore",
       [
-        ["leaderboardId", vId("leaderboards")],
+        ["leaderboardId", vId("LeaderboardId")],
         ["score", vNumber],
         ["keepBest", vBoolean],
-        ["ugcId", vOptional(vId("userGeneratedContent"))],
+        ["ugcId", vOptional(vId("UGCId"))],
         ["metadata", vOptional(vMetadataRecord)]
       ],
       leaderboardId,
@@ -717,7 +735,7 @@ class WavedashSDK extends EventTarget {
     description?: string,
     visibility?: UGCVisibility,
     filePath?: string
-  ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
+  ): Promise<WavedashResponse<UGCId>> {
     return this._apiCall(
       this.ugcManager,
       "createUGCItem",
@@ -744,9 +762,9 @@ class WavedashSDK extends EventTarget {
    * @returns ugcId
    */
   async updateUGCItem(
-    ugcId: Id<"userGeneratedContent">,
+    ugcId: UGCId,
     updates: UpdateUGCItemArgs = {}
-  ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
+  ): Promise<WavedashResponse<UGCId>> {
     if (typeof updates === "string") {
       const raw = updates;
       try {
@@ -765,7 +783,7 @@ class WavedashSDK extends EventTarget {
       this.ugcManager,
       "updateUGCItem",
       [
-        ["ugcId", vId("userGeneratedContent")],
+        ["ugcId", vId("UGCId")],
         [
           "updates",
           vOptional(
@@ -787,26 +805,24 @@ class WavedashSDK extends EventTarget {
    * Delete a UGC item: removes the row, the R2 object, and frees up the
    * user's storage quota by the size of the deleted upload.
    */
-  async deleteUGCItem(
-    ugcId: Id<"userGeneratedContent">
-  ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
+  async deleteUGCItem(ugcId: UGCId): Promise<WavedashResponse<UGCId>> {
     return this._apiCall(
       this.ugcManager,
       "deleteUGCItem",
-      [["ugcId", vId("userGeneratedContent")]],
+      [["ugcId", vId("UGCId")]],
       ugcId
     );
   }
 
   async downloadUGCItem(
-    ugcId: Id<"userGeneratedContent">,
+    ugcId: UGCId,
     filePath: string
-  ): Promise<WavedashResponse<Id<"userGeneratedContent">>> {
+  ): Promise<WavedashResponse<UGCId>> {
     return this._apiCall(
       this.ugcManager,
       "downloadUGCItem",
       [
-        ["ugcId", vId("userGeneratedContent")],
+        ["ugcId", vId("UGCId")],
         ["filePath", vString]
       ],
       ugcId,
@@ -839,7 +855,7 @@ class WavedashSDK extends EventTarget {
           "args",
           vOptional((value, path) => {
             const obj = vObject({
-              createdBy: vOptional(vId("users")),
+              createdBy: vOptional(vId("UserId")),
               ugcType: vOptional(vEnum(UGC_TYPE, "UGCType")),
               titleSearch: vOptional(vString),
               numItems: vOptional(vNumber),
@@ -1091,7 +1107,7 @@ class WavedashSDK extends EventTarget {
    * @returns true if the message was sent out successfully
    */
   sendP2PMessage(
-    toUserId: Id<"users"> | undefined,
+    toUserId: UserId | undefined,
     appChannel: number = 0,
     reliable: boolean = true,
     payload: Uint8Array,
@@ -1182,7 +1198,7 @@ class WavedashSDK extends EventTarget {
   async createLobby(
     visibility: LobbyVisibility,
     maxPlayers?: number
-  ): Promise<WavedashResponse<Id<"lobbies">>> {
+  ): Promise<WavedashResponse<LobbyId>> {
     return this._apiCall(
       this.lobbyManager,
       "createLobby",
@@ -1202,11 +1218,11 @@ class WavedashSDK extends EventTarget {
    *          Full lobby context is provided via the LobbyJoined event.
    * @emits LobbyJoined event on success with full lobby context
    */
-  async joinLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<boolean>> {
+  async joinLobby(lobbyId: LobbyId): Promise<WavedashResponse<boolean>> {
     return this._apiCall(
       this.lobbyManager,
       "joinLobby",
-      [["lobbyId", vId("lobbies")]],
+      [["lobbyId", vId("LobbyId")]],
       lobbyId
     );
   }
@@ -1222,48 +1238,48 @@ class WavedashSDK extends EventTarget {
     );
   }
 
-  async getLobby(lobbyId: Id<"lobbies">): Promise<WavedashResponse<Lobby>> {
+  async getLobby(lobbyId: LobbyId): Promise<WavedashResponse<Lobby>> {
     return this._apiCall(
       this.lobbyManager,
       "getLobby",
-      [["lobbyId", vId("lobbies")]],
+      [["lobbyId", vId("LobbyId")]],
       lobbyId
     );
   }
 
-  getLobbyUsers(lobbyId: Id<"lobbies">): LobbyUser[] {
+  getLobbyUsers(lobbyId: LobbyId): LobbyUser[] {
     return this._apiCallSync(
       this.lobbyManager,
       "getLobbyUsers",
-      [["lobbyId", vId("lobbies")]],
+      [["lobbyId", vId("LobbyId")]],
       lobbyId
     );
   }
 
-  getNumLobbyUsers(lobbyId: Id<"lobbies">): number {
+  getNumLobbyUsers(lobbyId: LobbyId): number {
     return this._apiCallSync(
       this.lobbyManager,
       "getNumLobbyUsers",
-      [["lobbyId", vId("lobbies")]],
+      [["lobbyId", vId("LobbyId")]],
       lobbyId
     );
   }
 
-  getLobbyHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
+  getLobbyHostId(lobbyId: LobbyId): UserId | null {
     return this._apiCallSync(
       this.lobbyManager,
       "getHostId",
-      [["lobbyId", vId("lobbies")]],
+      [["lobbyId", vId("LobbyId")]],
       lobbyId
     );
   }
 
-  getLobbyData(lobbyId: Id<"lobbies">, key: string): LobbyDataValue | null {
+  getLobbyData(lobbyId: LobbyId, key: string): LobbyDataValue | null {
     return this._apiCallSync(
       this.lobbyManager,
       "getLobbyData",
       [
-        ["lobbyId", vId("lobbies")],
+        ["lobbyId", vId("LobbyId")],
         ["key", vString]
       ],
       lobbyId,
@@ -1271,16 +1287,12 @@ class WavedashSDK extends EventTarget {
     );
   }
 
-  setLobbyData(
-    lobbyId: Id<"lobbies">,
-    key: string,
-    value: LobbyDataUpdate
-  ): boolean {
+  setLobbyData(lobbyId: LobbyId, key: string, value: LobbyDataUpdate): boolean {
     return this._apiCallSync(
       this.lobbyManager,
       "setLobbyData",
       [
-        ["lobbyId", vId("lobbies")],
+        ["lobbyId", vId("LobbyId")],
         ["key", vString],
         ["value", vUnion<LobbyDataUpdate>(vString, vNumber, vBoolean, vNull)]
       ],
@@ -1290,12 +1302,12 @@ class WavedashSDK extends EventTarget {
     );
   }
 
-  deleteLobbyData(lobbyId: Id<"lobbies">, key: string): boolean {
+  deleteLobbyData(lobbyId: LobbyId, key: string): boolean {
     return this._apiCallSync(
       this.lobbyManager,
       "deleteLobbyData",
       [
-        ["lobbyId", vId("lobbies")],
+        ["lobbyId", vId("LobbyId")],
         ["key", vString]
       ],
       lobbyId,
@@ -1303,25 +1315,23 @@ class WavedashSDK extends EventTarget {
     );
   }
 
-  async leaveLobby(
-    lobbyId: Id<"lobbies">
-  ): Promise<WavedashResponse<Id<"lobbies">>> {
+  async leaveLobby(lobbyId: LobbyId): Promise<WavedashResponse<LobbyId>> {
     return this._apiCall(
       this.lobbyManager,
       "leaveLobby",
-      [["lobbyId", vId("lobbies")]],
+      [["lobbyId", vId("LobbyId")]],
       lobbyId
     );
   }
 
   // Fire and forget, returns true if the message was sent out successfully
   // Game can listen for the LobbyMessage event to get the message that was posted
-  sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
+  sendLobbyMessage(lobbyId: LobbyId, message: string): boolean {
     return this._apiCallSync(
       this.lobbyManager,
       "sendLobbyMessage",
       [
-        ["lobbyId", vId("lobbies")],
+        ["lobbyId", vId("LobbyId")],
         ["message", vString]
       ],
       lobbyId,
@@ -1330,15 +1340,15 @@ class WavedashSDK extends EventTarget {
   }
 
   async inviteUserToLobby(
-    lobbyId: Id<"lobbies">,
-    userId: Id<"users">
+    lobbyId: LobbyId,
+    userId: UserId
   ): Promise<WavedashResponse<boolean>> {
     return this._apiCall(
       this.lobbyManager,
       "inviteUserToLobby",
       [
-        ["lobbyId", vId("lobbies")],
-        ["userId", vId("users")]
+        ["lobbyId", vId("LobbyId")],
+        ["userId", vId("UserId")]
       ],
       lobbyId,
       userId
@@ -1405,7 +1415,8 @@ class WavedashSDK extends EventTarget {
    * opens the modal and resolves with whether the user completed the purchase.
    * After a successful purchase the JWT is refreshed automatically so a
    * subsequent resource fetch is authenticated with the new purchase, and isEntitled
-   * will return true if the purchase was successful.
+   * will return true if the purchase was successful. For a consumable, grant it
+   * from the PurchaseCompleted event rather than from this result.
    */
   async triggerPaywall(
     contentIdentifier: string
@@ -1422,6 +1433,37 @@ class WavedashSDK extends EventTarget {
     contentIdentifier: string
   ): Promise<WavedashResponse<boolean>> {
     return this.triggerPaywall(contentIdentifier);
+  }
+
+  /**
+   * Consumable purchases the game hasn't fulfilled, oldest first. These already
+   * arrive as PurchaseCompleted events at launch (register the listener before
+   * init(), or pass deferEvents), but each purchase fires once per session: use
+   * this to retry one whose fulfillPurchase call failed.
+   */
+  async getUnfulfilledPurchases(): Promise<WavedashResponse<Purchase[]>> {
+    return this._apiCall(
+      this.paidContentManager,
+      "getUnfulfilledPurchases",
+      []
+    );
+  }
+
+  /**
+   * Mark a consumable purchase fulfilled so it stops appearing in
+   * getUnfulfilledPurchases. The only way to fulfill: call it once the grant is
+   * saved, whether the game granted it locally or its backend did from the
+   * purchase webhook. Resolves with data `false` if it was already fulfilled.
+   */
+  async fulfillPurchase(
+    purchaseId: PurchaseId
+  ): Promise<WavedashResponse<boolean>> {
+    return this._apiCall(
+      this.paidContentManager,
+      "fulfillPurchase",
+      [["purchaseId", vId("PurchaseId")]],
+      purchaseId
+    );
   }
 
   // ==============================

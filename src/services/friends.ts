@@ -4,7 +4,7 @@
  * Implements friend-related methods for the Wavedash SDK
  */
 
-import type { Friend, Id } from "../types";
+import type { Friend, UserId } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
 import { getAvatarUrl } from "../utils/cdn";
@@ -18,9 +18,9 @@ interface CachedUser {
 
 export class FriendsManager extends WavedashManager {
   // Persistent cache for users with a durable relationship (self, friends, shared lobby).
-  private userCache: Map<Id<"users">, CachedUser> = new Map();
+  private userCache: Map<UserId, CachedUser> = new Map();
   // Transient cache for only the most recently loaded leaderboard page. Cleared on each new page.
-  private leaderboardPageUserCache: Map<Id<"users">, CachedUser> = new Map();
+  private leaderboardPageUserCache: Map<UserId, CachedUser> = new Map();
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -34,7 +34,7 @@ export class FriendsManager extends WavedashManager {
    * @returns CDN URL with size transformation, or null if user not cached or has no avatar
    */
   getUserAvatarUrl(
-    userId: Id<"users">,
+    userId: UserId,
     size: number = AvatarSize.MEDIUM
   ): string | null {
     const user =
@@ -50,7 +50,7 @@ export class FriendsManager extends WavedashManager {
    * @param userId - The user ID to get the username for
    * @returns The username, or null if user not cached
    */
-  getUsername(userId: Id<"users">): string | null {
+  getUsername(userId: UserId): string | null {
     return (
       this.userCache.get(userId)?.username ??
       this.leaderboardPageUserCache.get(userId)?.username ??
@@ -63,7 +63,7 @@ export class FriendsManager extends WavedashManager {
    * @returns Array<{
    *   avatarUrl?: string;
    *   isOnline: boolean;
-   *   userId: Id<"users">;
+   *   userId: UserId;
    *   username: string;
    * }>
    */
@@ -88,7 +88,7 @@ export class FriendsManager extends WavedashManager {
    */
   cacheUsers(
     users: Array<{
-      userId: Id<"users">;
+      userId: UserId;
       username: string;
       avatarUrl?: string;
       userAvatarUrl?: string;
@@ -114,7 +114,7 @@ export class FriendsManager extends WavedashManager {
    */
   cacheLeaderboardPage(
     users: Array<{
-      userId: Id<"users">;
+      userId: UserId;
       username: string;
       userAvatarUrl?: string;
     }>

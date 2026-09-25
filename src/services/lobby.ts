@@ -6,7 +6,6 @@
 
 import throttle from "lodash.throttle";
 import type {
-  Id,
   Lobby,
   LobbyVisibility,
   LobbyUser,
@@ -20,7 +19,11 @@ import type {
   LobbyDataUpdatedPayload,
   LobbyMessagePayload,
   LobbyInvitePayload,
-  LobbyJoinResponse
+  LobbyJoinResponse,
+  UserId,
+  LobbyId,
+  LobbyMessageId,
+  LobbyInviteId
 } from "../types";
 import {
   LobbyKickedReason,
@@ -45,14 +48,14 @@ export class LobbyManager extends WavedashManager {
   private unsubscribeLobbyMessages: (() => void) | null = null;
   private unsubscribeLobbyUsers: (() => void) | null = null;
   private unsubscribeLobbyData: (() => void) | null = null;
-  private lobbyId: Id<"lobbies"> | null = null;
+  private lobbyId: LobbyId | null = null;
   private lobbyUsers: LobbyUser[] = [];
-  private lobbyHostId: Id<"users"> | null = null;
+  private lobbyHostId: UserId | null = null;
   private lobbyMetadata: Record<string, unknown> = {};
   private pendingMetadataUpdates: Record<string, LobbyDataUpdate> = {};
-  private recentMessageIds: Id<"lobbyMessages">[] = [];
-  private maybeBeingDeletedLobbyIds: Set<Id<"lobbies">> = new Set();
-  private resetMaybeBeingDeletedLobbyIdTimeouts: Map<Id<"lobbies">, number> =
+  private recentMessageIds: LobbyMessageId[] = [];
+  private maybeBeingDeletedLobbyIds: Set<LobbyId> = new Set();
+  private resetMaybeBeingDeletedLobbyIdTimeouts: Map<LobbyId, number> =
     new Map();
 
   // Throttle (not debounce) batches rapid setLobbyData calls; the in-flight
@@ -62,11 +65,11 @@ export class LobbyManager extends WavedashManager {
 
   // Cache results of queries for a list of lobbies
   // We'll cache metadata and num users for each lobby and return that info synchronously when requested by the game
-  private cachedLobbies: Record<Id<"lobbies">, Lobby> = {};
+  private cachedLobbies: Record<LobbyId, Lobby> = {};
 
   // Track lobby invites
   private unsubscribeLobbyInvites: (() => void) | null = null;
-  private seenInviteIds: Set<Id<"notifications">> = new Set();
+  private seenInviteIds: Set<LobbyInviteId> = new Set();
 
   // Queue for serializing P2P connection updates to prevent race conditions
   private p2pUpdateQueue: Promise<void> = Promise.resolve();
@@ -86,7 +89,7 @@ export class LobbyManager extends WavedashManager {
   async createLobby(
     visibility: LobbyVisibility,
     maxPlayers?: number
-  ): Promise<Id<"lobbies">> {
+  ): Promise<LobbyId> {
     const result = await this.sdk.convexClient.mutation(
       api.sdk.gameLobby.createAndJoinLobby,
       { visibility, maxPlayers }
@@ -101,7 +104,7 @@ export class LobbyManager extends WavedashManager {
    * @returns true on success. Full lobby context comes via LobbyJoined event.
    * @emits LobbyJoined event on success with full lobby context
    */
-  async joinLobby(lobbyId: Id<"lobbies">): Promise<boolean> {
+  async joinLobby(lobbyId: LobbyId): Promise<boolean> {
     const result = await this.sdk.convexClient.mutation(
       api.sdk.gameLobby.joinLobby,
       { lobbyId }
@@ -110,7 +113,7 @@ export class LobbyManager extends WavedashManager {
     return true;
   }
 
-  getLobbyUsers(lobbyId: Id<"lobbies">): LobbyUser[] {
+  getLobbyUsers(lobbyId: LobbyId): LobbyUser[] {
     if (this.lobbyId !== lobbyId) {
       logger.error("Must be a member of the lobby to access user list");
       return [];
@@ -121,7 +124,7 @@ export class LobbyManager extends WavedashManager {
     }));
   }
 
-  getHostId(lobbyId: Id<"lobbies">): Id<"users"> | null {
+  getHostId(lobbyId: LobbyId): UserId | null {
     if (this.lobbyId !== lobbyId) {
       logger.error("Must be a member of the lobby to access the host ID");
       return null;
@@ -129,7 +132,7 @@ export class LobbyManager extends WavedashManager {
     return this.lobbyHostId;
   }
 
-  getLobbyData(lobbyId: Id<"lobbies">, key: string): LobbyDataValue | null {
+  getLobbyData(lobbyId: LobbyId, key: string): LobbyDataValue | null {
     if (this.lobbyId === lobbyId) {
       return (this.lobbyMetadata[key] as LobbyDataValue) ?? null;
     }
@@ -141,15 +144,11 @@ export class LobbyManager extends WavedashManager {
     );
   }
 
-  deleteLobbyData(lobbyId: Id<"lobbies">, key: string): boolean {
+  deleteLobbyData(lobbyId: LobbyId, key: string): boolean {
     return this.setLobbyData(lobbyId, key, null);
   }
 
-  setLobbyData(
-    lobbyId: Id<"lobbies">,
-    key: string,
-    value: LobbyDataUpdate
-  ): boolean {
+  setLobbyData(lobbyId: LobbyId, key: string, value: LobbyDataUpdate): boolean {
     if (this.lobbyId !== lobbyId || this.lobbyHostId !== this.sdk.getUserId()) {
       return false;
     }
@@ -166,14 +165,14 @@ export class LobbyManager extends WavedashManager {
     return true;
   }
 
-  getLobbyMaxPlayers(lobbyId: Id<"lobbies">): number {
+  getLobbyMaxPlayers(lobbyId: LobbyId): number {
     if (!this.cachedLobbies[lobbyId]) {
       return 0;
     }
     return this.cachedLobbies[lobbyId].maxPlayers;
   }
 
-  getNumLobbyUsers(lobbyId: Id<"lobbies">): number {
+  getNumLobbyUsers(lobbyId: LobbyId): number {
     if (this.lobbyId === lobbyId) {
       return this.lobbyUsers.length;
     }
@@ -183,7 +182,7 @@ export class LobbyManager extends WavedashManager {
     return this.cachedLobbies[lobbyId].playerCount;
   }
 
-  async leaveLobby(lobbyId: Id<"lobbies">): Promise<Id<"lobbies">> {
+  async leaveLobby(lobbyId: LobbyId): Promise<LobbyId> {
     // Clean up subscriptions BEFORE leaving lobby so we don't trigger updates to ourselves from leaving
     this.cleanupLobbyState();
     await this.sdk.convexClient.mutation(api.sdk.gameLobby.leaveLobby, {
@@ -211,7 +210,7 @@ export class LobbyManager extends WavedashManager {
     return filteredLobbies;
   }
 
-  async getLobby(lobbyId: Id<"lobbies">): Promise<Lobby> {
+  async getLobby(lobbyId: LobbyId): Promise<Lobby> {
     const lobby = await this.sdk.convexClient.query(
       api.sdk.gameLobby.getLobby,
       { lobbyId }
@@ -220,7 +219,7 @@ export class LobbyManager extends WavedashManager {
     return lobby;
   }
 
-  sendLobbyMessage(lobbyId: Id<"lobbies">, message: string): boolean {
+  sendLobbyMessage(lobbyId: LobbyId, message: string): boolean {
     const args = { lobbyId, message };
     if (message.length === 0) {
       logger.error("Message cannot be empty");
@@ -243,10 +242,7 @@ export class LobbyManager extends WavedashManager {
     return true;
   }
 
-  async inviteUserToLobby(
-    lobbyId: Id<"lobbies">,
-    userId: Id<"users">
-  ): Promise<boolean> {
+  async inviteUserToLobby(lobbyId: LobbyId, userId: UserId): Promise<boolean> {
     await this.sdk.convexClient.mutation(api.sdk.gameLobby.inviteToLobby, {
       lobbyId,
       targetUserId: userId
@@ -287,7 +283,7 @@ export class LobbyManager extends WavedashManager {
    * Update the current lobby id and mirror it onto the `lobby` launch param so
    * the frame URL (and any link copied from it) tracks lobby membership.
    */
-  private setLobbyId(lobbyId: Id<"lobbies"> | null): void {
+  private setLobbyId(lobbyId: LobbyId | null): void {
     this.lobbyId = lobbyId;
     this.sdk.launchParamManager.set("lobby", lobbyId);
   }
@@ -407,7 +403,7 @@ export class LobbyManager extends WavedashManager {
    * Used internally by handleLobbyJoin() and handleLobbyKicked()
    * @param nextLobbyId - The lobby being joined in place of the current one, if any
    */
-  private cleanupLobbyState(nextLobbyId: Id<"lobbies"> | null = null): void {
+  private cleanupLobbyState(nextLobbyId: LobbyId | null = null): void {
     // Capture lobbyId before clearing (used for "maybe being deleted" tracking)
     const currentLobbyId = this.lobbyId;
 
