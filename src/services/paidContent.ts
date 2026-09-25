@@ -32,10 +32,6 @@ export class PaidContentManager extends WavedashManager {
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
-    this.sdk.iframeMessenger.addEventListener(
-      IFRAME_MESSAGE_TYPE.ENTITLEMENTS_GRANTED,
-      this.handleEntitlementsGranted
-    );
     this.unsubscribePurchases = this.sdk.convexClient.onUpdate(
       api.sdk.paidContent.listActivePurchases,
       {},
@@ -86,17 +82,18 @@ export class PaidContentManager extends WavedashManager {
 
   /**
    * Refresh the gameplay JWT first when a non-consumable is included, so
-   * isEntitled() is already true by the time the game receives the event.
+   * isEntitled() is already true by the time the game receives the events.
+   * New non-consumables also fire the deprecated EntitlementsGranted, one
+   * event per update so a bundle's contents arrive together.
    */
   private async notifyPurchasesCompleted(
     purchases: PurchaseCompletedPayload[]
   ): Promise<void> {
-    if (purchases.some((p) => p.type === PAID_CONTENT_TYPE.NON_CONSUMABLE)) {
-      try {
-        await this.sdk.ensureGameplayJwt(true);
-      } catch (err) {
-        logger.error("Failed to refresh gameplay JWT after purchase", err);
-      }
+    const granted = purchases
+      .filter((p) => p.type === PAID_CONTENT_TYPE.NON_CONSUMABLE)
+      .map((p) => p.contentIdentifier);
+    if (granted.length > 0) {
+      await this.refreshGameplayJwtAfterPurchase();
     }
     for (const purchase of purchases) {
       this.sdk.gameEventManager.notifyGame(
@@ -104,32 +101,24 @@ export class PaidContentManager extends WavedashManager {
         purchase
       );
     }
-  }
-
-  /**
-   * Host broadcast: the player was granted paid content, from any source (the
-   * game's own paywall, the game page purchase list, a gift redemption, or a
-   * purchase in another tab). Refresh the gameplay JWT first so the new
-   * entitlement is already reflected (isEntitled(), paid-asset requests) by
-   * the time the game receives the event.
-   */
-  private handleEntitlementsGranted = (data: {
-    contentIdentifiers: string[];
-  }): void => {
-    void (async () => {
-      try {
-        await this.sdk.ensureGameplayJwt(true);
-      } catch (err) {
-        logger.error("Failed to refresh gameplay JWT after purchase", err);
-      }
+    if (granted.length > 0) {
       this.sdk.gameEventManager.notifyGame(
         WavedashEvents.ENTITLEMENTS_GRANTED,
         {
-          contentIdentifiers: data.contentIdentifiers
+          contentIdentifiers: [...new Set(granted)]
         } satisfies EntitlementsGrantedPayload
       );
-    })();
-  };
+    }
+  }
+
+  /** Never throws: a failed refresh must not undo a completed purchase. */
+  private async refreshGameplayJwtAfterPurchase(): Promise<void> {
+    try {
+      await this.sdk.ensureGameplayJwt(true);
+    } catch (err) {
+      logger.error("Failed to refresh gameplay JWT after purchase", err);
+    }
+  }
 
   async isEntitled(contentIdentifier: string): Promise<boolean> {
     const jwt = await this.sdk.ensureGameplayJwt();
@@ -188,22 +177,14 @@ export class PaidContentManager extends WavedashManager {
         this.paywallOpen = false;
       }
       if (!purchased) return false;
-      // Grant via the gameplay JWT (sandbox-gated server-side). PurchaseCompleted
-      // arrives from the purchases subscription, as it does in production.
-      // There's no host to broadcast the deprecated EntitlementsGranted, so
-      // emit it ourselves.
+      // Grant via the gameplay JWT (sandbox-gated server-side). Its events
+      // arrive from the purchases subscription, as they do in production.
       const { purchase } = await this.sdk.convexClient.mutation(
         api.sdk.paidContent.mockPurchase,
         { contentIdentifier }
       );
       if (purchase.type === PAID_CONTENT_TYPE.NON_CONSUMABLE) {
         await this.sdk.ensureGameplayJwt(true);
-        this.sdk.gameEventManager.notifyGame(
-          WavedashEvents.ENTITLEMENTS_GRANTED,
-          {
-            contentIdentifiers: [contentIdentifier]
-          } satisfies EntitlementsGrantedPayload
-        );
       }
       return true;
     }
@@ -224,8 +205,13 @@ export class PaidContentManager extends WavedashManager {
     }
     if (!response.purchased) return false;
 
-    // Force refresh JWT so the latest entitlements are reflected
-    await this.sdk.ensureGameplayJwt(true);
+    // A consumable isn't in the JWT (PurchaseCompleted delivers it), so don't
+    // let a failed refresh report a completed purchase as failed. Otherwise
+    // (a type-less response is an older host) refresh before returning, so
+    // isEntitled() is already true.
+    if (response.type !== PAID_CONTENT_TYPE.CONSUMABLE) {
+      await this.sdk.ensureGameplayJwt(true);
+    }
     return true;
   }
 
@@ -234,10 +220,6 @@ export class PaidContentManager extends WavedashManager {
   }
 
   destroy(): void {
-    this.sdk.iframeMessenger.removeEventListener(
-      IFRAME_MESSAGE_TYPE.ENTITLEMENTS_GRANTED,
-      this.handleEntitlementsGranted
-    );
     this.unsubscribePurchases?.();
     this.unsubscribePurchases = null;
     this.restorePointerLock?.();
