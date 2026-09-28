@@ -961,7 +961,7 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Persists data to local file storage (IndexeDB).
+   * Persists data to local file storage (IndexedDB).
    * For use in pure JS games.
    * Games built from engines should use their engine's builtin File API to read and write files.
    * @param filePath - The path of the local file to write
@@ -1073,7 +1073,7 @@ class WavedashSDK extends EventTarget {
 
   /**
    * Get a pre-allocated scratch buffer for outgoing messages
-   * @returns A Uint8Array buffer that can your game can write the binary payload to before calling sendP2PMessage
+   * @returns A Uint8Array buffer your game can write the binary payload to before calling sendP2PMessage
    */
   getP2POutgoingMessageBuffer(): Uint8Array {
     this._ensureInit();
@@ -1511,11 +1511,11 @@ class WavedashSDK extends EventTarget {
     return data;
   }
 
-  // Throws if init() hasn't been called. Only used by methods that
-  // require config or produce events (lobby join/create, P2P).
+  // Throws if init() hasn't been called. Only used by readyForEvents() and
+  // the P2P limit getters, which depend on the config applied in init().
   private _ensureInit(): void {
     if (!this._initialized) {
-      logger.error("SDK not initialized. Call WavedashJS.init first.");
+      logger.error("SDK not initialized. Call Wavedash.init first.");
       throw new Error("SDK not initialized");
     }
   }
