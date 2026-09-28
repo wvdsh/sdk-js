@@ -1512,7 +1512,8 @@ class WavedashSDK extends EventTarget {
   }
 
   // Throws if init() hasn't been called. Only used by readyForEvents() and
-  // the P2P limit getters, which depend on the config applied in init().
+  // the getP2P* getters (limits and outgoing buffer), which depend on the
+  // config applied in init().
   private _ensureInit(): void {
     if (!this._initialized) {
       logger.error("SDK not initialized. Call Wavedash.init first.");
