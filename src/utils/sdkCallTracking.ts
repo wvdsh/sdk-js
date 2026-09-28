@@ -52,6 +52,8 @@ export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
       configurable: true,
       enumerable: descriptor.enumerable,
       get() {
+        // Only the first call should come with the overhead of trackSdkCall
+        // After that use the original so no copying of ...args per call
         install(original);
         trackSdkCall(sdk, name);
         return original;

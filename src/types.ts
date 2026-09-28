@@ -16,6 +16,7 @@ import {
   LEADERBOARD_DISPLAY_TYPE,
   UGC_TYPE,
   UGC_VISIBILITY,
+  FULFILL_PURCHASE_STATUS,
   GAME_ENGINE
 } from "./constants";
 
@@ -29,6 +30,18 @@ export type LeaderboardDisplayType =
 export type UGCType = (typeof UGC_TYPE)[keyof typeof UGC_TYPE];
 export type UGCVisibility =
   (typeof UGC_VISIBILITY)[keyof typeof UGC_VISIBILITY];
+/**
+ * What fulfillPurchase did. FULFILLED: marked just now. ALREADY_FULFILLED: an
+ * earlier call from the game or its backend got there first, or it's a
+ * non-consumable (fulfilled when granted); treat it as success. NOT_FOUND: no
+ * such purchase for this player, or it was refunded; don't grant it.
+ */
+export type FulfillPurchaseStatus =
+  (typeof FULFILL_PURCHASE_STATUS)[keyof typeof FULFILL_PURCHASE_STATUS];
+/** fulfillPurchase's result: `status` says what happened. */
+export type FulfillPurchaseResult = FunctionReturnType<
+  typeof api.sdk.paidContent.fulfillPurchase
+>;
 
 // Public names for the ids the API uses. Each is the same type as the
 // Id<"table"> it names, so code written against Id<...> keeps compiling.

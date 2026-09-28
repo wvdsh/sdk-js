@@ -72,6 +72,7 @@ import type {
   LobbyVisibility,
   P2PMessage,
   PaginatedUGCItems,
+  FulfillPurchaseResult,
   Purchase,
   PurchaseId,
   RemoteFileMetadata,
@@ -370,7 +371,7 @@ class WavedashSDK extends EventTarget {
     ) {
       this.warnedEntitlementsGranted = true;
       console.warn(
-        "Wavedash EntitlementsGranted is deprecated. Listen for PurchaseCompleted instead: it fires for every purchase, and for non-consumables isEntitled() is already true when it does."
+        "The EntitlementsGranted event is deprecated. Subscribe to the PurchaseCompleted event instead."
       );
     }
     super.addEventListener(type, listener, options);
@@ -1450,14 +1451,16 @@ class WavedashSDK extends EventTarget {
   }
 
   /**
-   * Mark a consumable purchase fulfilled so it stops appearing in
-   * getUnfulfilledPurchases. The only way to fulfill: call it once the grant is
-   * saved, whether the game granted it locally or its backend did from the
-   * purchase webhook. Resolves with data `false` if it was already fulfilled.
+   * Mark a consumable purchase fulfilled once the grant is saved, so it stops
+   * being redelivered. A game's backend can do the same with
+   * POST /api/purchases/{purchaseId}/fulfill and the webhook's JWT; both are
+   * idempotent, so calling either or both is safe. Resolves with `status`:
+   * FULFILLED, ALREADY_FULFILLED (also success), or NOT_FOUND (unknown or
+   * refunded: don't grant it).
    */
   async fulfillPurchase(
     purchaseId: PurchaseId
-  ): Promise<WavedashResponse<boolean>> {
+  ): Promise<WavedashResponse<FulfillPurchaseResult>> {
     return this._apiCall(
       this.paidContentManager,
       "fulfillPurchase",

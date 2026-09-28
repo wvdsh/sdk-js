@@ -3,6 +3,7 @@ import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type {
   EntitlementsGrantedPayload,
+  FulfillPurchaseResult,
   Purchase,
   PurchaseCompletedPayload,
   PurchaseId
@@ -139,12 +140,13 @@ export class PaidContentManager extends WavedashManager {
     );
   }
 
-  async fulfillPurchase(purchaseId: PurchaseId): Promise<boolean> {
-    const { fulfilled } = await this.sdk.convexClient.mutation(
+  async fulfillPurchase(
+    purchaseId: PurchaseId
+  ): Promise<FulfillPurchaseResult> {
+    return await this.sdk.convexClient.mutation(
       api.sdk.paidContent.fulfillPurchase,
       { purchaseId }
     );
-    return fulfilled;
   }
 
   async triggerPaywall(contentIdentifier: string): Promise<boolean> {
