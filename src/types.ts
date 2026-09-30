@@ -33,7 +33,7 @@ export type UGCVisibility =
 /**
  * What fulfillPurchase did. FULFILLED: marked just now. ALREADY_FULFILLED: an
  * earlier call from the game or its backend got there first, or it's a
- * non-consumable (fulfilled when granted); treat it as success. NOT_FOUND: no
+ * durable (fulfilled when granted); treat it as success. NOT_FOUND: no
  * such purchase for this player, or it was refunded; don't grant it.
  */
 export type FulfillPurchaseStatus =
@@ -350,7 +350,7 @@ export interface EntitlementsGrantedPayload {
 /**
  * Payload for PurchaseCompleted event - one per purchase made while the game is
  * running (in-game paywall, game page, gift, another tab), plus, at launch, one
- * per consumable still unfulfilled. Non-consumables arrive `fulfilled: true`
+ * per consumable still unfulfilled. Durables arrive `fulfilled: true`
  * (Wavedash already granted them) and aren't redelivered at launch: read
  * ownership with isEntitled(). For a consumable, grant it (or confirm your
  * backend did from the purchase webhook), then call fulfillPurchase(purchaseId);

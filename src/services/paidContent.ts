@@ -35,7 +35,7 @@ export class PaidContentManager extends WavedashManager {
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
-    // Older non-consumables are ownership read via isEntitled(), not events.
+    // Older durables are ownership read via isEntitled(), not events.
     void this.sdk.authManager.firstAuthenticatedAt.then((since) => {
       if (this.destroyed) return;
       this.unsubscribePurchases = this.sdk.convexClient.onUpdate(
@@ -60,7 +60,7 @@ export class PaidContentManager extends WavedashManager {
    * them, and it works with or without a host (`wavedash dev` included). Like
    * StoreKit's transaction listener: the first result delivers every
    * unfulfilled consumable (bought while the game was closed, or never
-   * fulfilled) plus non-consumables bought this session; after that, each new
+   * fulfilled) plus durables bought this session; after that, each new
    * id is a purchase from any source (paywall, game page, gift, another tab).
    * Events queue until the game is ready for them.
    */
@@ -75,16 +75,16 @@ export class PaidContentManager extends WavedashManager {
   }
 
   /**
-   * Make sure the gameplay JWT entitles every new non-consumable first, so
+   * Make sure the gameplay JWT entitles every new durable first, so
    * isEntitled() is already true by the time the game receives the events.
-   * New non-consumables also fire the deprecated EntitlementsGranted, one
+   * New durables also fire the deprecated EntitlementsGranted, one
    * event per update so a bundle's contents arrive together.
    */
   private async notifyPurchasesCompleted(
     purchases: PurchaseCompletedPayload[]
   ): Promise<void> {
     const granted = purchases
-      .filter((p) => p.type === PAID_CONTENT_TYPE.NON_CONSUMABLE)
+      .filter((p) => p.type === PAID_CONTENT_TYPE.DURABLE)
       .map((p) => p.contentIdentifier);
     if (granted.length > 0) {
       try {
@@ -188,7 +188,7 @@ export class PaidContentManager extends WavedashManager {
         api.sdk.paidContent.mockPurchase,
         { contentIdentifier }
       );
-      if (purchase.type === PAID_CONTENT_TYPE.NON_CONSUMABLE) {
+      if (purchase.type === PAID_CONTENT_TYPE.DURABLE) {
         await this.ensureJwtEntitles([contentIdentifier]);
       }
       return true;
