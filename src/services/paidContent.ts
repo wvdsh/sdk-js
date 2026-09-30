@@ -25,28 +25,34 @@ export class PaidContentManager extends WavedashManager {
   // Every purchase id this session has seen: the subscription's first result
   // (the boot baseline) plus each one delivered since. One event per purchase.
   private seenPurchaseIds = new Set<PurchaseId>();
-  private receivedFirstPurchases = false;
   // Serializes updates so events keep the subscription's order while one awaits
   // a gameplay JWT refresh.
   private purchaseUpdates: Promise<void> = Promise.resolve();
+  // Serializes entitlement checks so one purchase triggers one JWT refresh.
+  private entitlementChecks: Promise<void> = Promise.resolve();
   private unsubscribePurchases: (() => void) | null = null;
+  private destroyed = false;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
-    this.unsubscribePurchases = this.sdk.convexClient.onUpdate(
-      api.sdk.paidContent.listActivePurchases,
-      {},
-      (purchases) => {
-        this.purchaseUpdates = this.purchaseUpdates
-          .then(() => this.handlePurchasesUpdate(purchases))
-          .catch((err) => {
-            logger.error("Failed to deliver purchases", err);
-          });
-      },
-      (error) => {
-        logger.error(`Purchases subscription error: ${error}`);
-      }
-    );
+    // Older non-consumables are ownership read via isEntitled(), not events.
+    void this.sdk.authManager.firstAuthenticatedAt.then((since) => {
+      if (this.destroyed) return;
+      this.unsubscribePurchases = this.sdk.convexClient.onUpdate(
+        api.sdk.paidContent.listNewAndUnfulfilled,
+        { since },
+        (purchases) => {
+          this.purchaseUpdates = this.purchaseUpdates
+            .then(() => this.handlePurchasesUpdate(purchases))
+            .catch((err) => {
+              logger.error("Failed to deliver purchases", err);
+            });
+        },
+        (error) => {
+          logger.error(`Purchases subscription error: ${error}`);
+        }
+      );
+    });
   }
 
   /**
@@ -59,30 +65,17 @@ export class PaidContentManager extends WavedashManager {
    * Events queue until the game is ready for them.
    */
   private async handlePurchasesUpdate(purchases: Purchase[]): Promise<void> {
-    let fresh = purchases.filter(
+    const fresh = purchases.filter(
       (p) => !this.seenPurchaseIds.has(p.purchaseId)
     );
     for (const purchase of fresh) {
       this.seenPurchaseIds.add(purchase.purchaseId);
     }
-    if (!this.receivedFirstPurchases) {
-      this.receivedFirstPurchases = true;
-      // A non-consumable bought before this session authenticated is ownership
-      // the game reads with isEntitled(); one bought since (while the game
-      // loaded, even through its own paywall) gets its event. JWT ownership
-      // can't tell these apart, since a refresh picks up new purchases.
-      const authenticatedAt = await this.sdk.authManager.firstAuthenticatedAt;
-      fresh = fresh.filter(
-        (p) =>
-          p.type !== PAID_CONTENT_TYPE.NON_CONSUMABLE ||
-          p.purchasedAt >= authenticatedAt
-      );
-    }
     await this.notifyPurchasesCompleted(fresh);
   }
 
   /**
-   * Refresh the gameplay JWT first when a non-consumable is included, so
+   * Make sure the gameplay JWT entitles every new non-consumable first, so
    * isEntitled() is already true by the time the game receives the events.
    * New non-consumables also fire the deprecated EntitlementsGranted, one
    * event per update so a bundle's contents arrive together.
@@ -94,7 +87,12 @@ export class PaidContentManager extends WavedashManager {
       .filter((p) => p.type === PAID_CONTENT_TYPE.NON_CONSUMABLE)
       .map((p) => p.contentIdentifier);
     if (granted.length > 0) {
-      await this.refreshGameplayJwtAfterPurchase();
+      try {
+        await this.ensureJwtEntitles(granted);
+      } catch (err) {
+        // A failed refresh must not undo a completed purchase.
+        logger.error("Failed to refresh gameplay JWT after purchase", err);
+      }
     }
     for (const purchase of purchases) {
       this.sdk.gameEventManager.notifyGame(
@@ -112,13 +110,17 @@ export class PaidContentManager extends WavedashManager {
     }
   }
 
-  /** Never throws: a failed refresh must not undo a completed purchase. */
-  private async refreshGameplayJwtAfterPurchase(): Promise<void> {
-    try {
+  /** Force-refresh the gameplay JWT only if its `ents` lacks any of these identifiers. */
+  private ensureJwtEntitles(contentIdentifiers: string[]): Promise<void> {
+    const check = async () => {
+      const jwt = await this.sdk.ensureGameplayJwt();
+      const entitlements = readJwtClaim<string[]>(jwt, "ents") ?? [];
+      if (contentIdentifiers.every((id) => entitlements.includes(id))) return;
       await this.sdk.ensureGameplayJwt(true);
-    } catch (err) {
-      logger.error("Failed to refresh gameplay JWT after purchase", err);
-    }
+    };
+    const result = this.entitlementChecks.then(check, check);
+    this.entitlementChecks = result.catch(() => {});
+    return result;
   }
 
   async isEntitled(contentIdentifier: string): Promise<boolean> {
@@ -135,8 +137,8 @@ export class PaidContentManager extends WavedashManager {
 
   async getUnfulfilledPurchases(): Promise<Purchase[]> {
     const purchases = await this.sdk.convexClient.query(
-      api.sdk.paidContent.listActivePurchases,
-      {}
+      api.sdk.paidContent.listNewAndUnfulfilled,
+      { since: await this.sdk.authManager.firstAuthenticatedAt }
     );
     return purchases.filter((p) => !p.fulfilled);
   }
@@ -187,7 +189,7 @@ export class PaidContentManager extends WavedashManager {
         { contentIdentifier }
       );
       if (purchase.type === PAID_CONTENT_TYPE.NON_CONSUMABLE) {
-        await this.sdk.ensureGameplayJwt(true);
+        await this.ensureJwtEntitles([contentIdentifier]);
       }
       return true;
     }
@@ -213,7 +215,7 @@ export class PaidContentManager extends WavedashManager {
     // (a type-less response is an older host) refresh before returning, so
     // isEntitled() is already true.
     if (response.type !== PAID_CONTENT_TYPE.CONSUMABLE) {
-      await this.sdk.ensureGameplayJwt(true);
+      await this.ensureJwtEntitles([contentIdentifier]);
     }
     return true;
   }
@@ -223,6 +225,7 @@ export class PaidContentManager extends WavedashManager {
   }
 
   destroy(): void {
+    this.destroyed = true;
     this.unsubscribePurchases?.();
     this.unsubscribePurchases = null;
     this.restorePointerLock?.();
