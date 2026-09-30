@@ -120,7 +120,7 @@ export interface RemoteFileMetadata {
   exists: boolean; // Whether the entry exists
   key: string; // Absolute file path of the entry, this is the path downloadRemoteDirectory will download to (ex: /idbfs/<hash>/save.dat)
   name: string; // Name of the entry relative to the requested directory path (ex: save.dat)
-  lastModified: number; // Last modified timestamp of the entry (ISO format)
+  lastModified: number; // Last modified time of the entry, in Unix seconds
   size: number; // Size of the entry in bytes
   etag: string; // ETag of the entry
 }
