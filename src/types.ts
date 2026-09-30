@@ -132,9 +132,7 @@ export type Friend = WithPublicIds<
   FunctionReturnType<typeof api.sdk.friends.listFriends>[0]
 >;
 export type Purchase = WithPublicIds<
-  FunctionReturnType<
-    typeof api.sdk.paidContent.listUnfulfilledPurchases
-  >[number]
+  FunctionReturnType<typeof api.sdk.paidContent.listActivePurchases>[number]
 >;
 export type Leaderboard = WithPublicIds<
   FunctionReturnType<typeof api.sdk.leaderboards.getLeaderboard>

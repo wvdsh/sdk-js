@@ -134,10 +134,11 @@ export class PaidContentManager extends WavedashManager {
   }
 
   async getUnfulfilledPurchases(): Promise<Purchase[]> {
-    return await this.sdk.convexClient.query(
-      api.sdk.paidContent.listUnfulfilledPurchases,
+    const purchases = await this.sdk.convexClient.query(
+      api.sdk.paidContent.listActivePurchases,
       {}
     );
+    return purchases.filter((p) => !p.fulfilled);
   }
 
   async fulfillPurchase(
@@ -181,7 +182,7 @@ export class PaidContentManager extends WavedashManager {
       if (!purchased) return false;
       // Grant via the gameplay JWT (sandbox-gated server-side). Its events
       // arrive from the purchases subscription, as they do in production.
-      const { purchase } = await this.sdk.convexClient.mutation(
+      const purchase = await this.sdk.convexClient.mutation(
         api.sdk.paidContent.mockPurchase,
         { contentIdentifier }
       );
