@@ -17,6 +17,7 @@ import {
   UGC_TYPE,
   UGC_VISIBILITY,
   FULFILL_PURCHASE_STATUS,
+  PURCHASE_TYPE,
   GAME_ENGINE
 } from "./constants";
 
@@ -28,6 +29,7 @@ export type LeaderboardSortOrder =
 export type LeaderboardDisplayType =
   (typeof LEADERBOARD_DISPLAY_TYPE)[keyof typeof LEADERBOARD_DISPLAY_TYPE];
 export type UGCType = (typeof UGC_TYPE)[keyof typeof UGC_TYPE];
+export type PurchaseType = (typeof PURCHASE_TYPE)[keyof typeof PURCHASE_TYPE];
 export type UGCVisibility =
   (typeof UGC_VISIBILITY)[keyof typeof UGC_VISIBILITY];
 /**

@@ -8,6 +8,8 @@ import {
   LobbyKickedReason,
   LobbyUserChangeType,
   P2PPacketDropReason,
+  PURCHASE_TYPE,
+  FULFILL_PURCHASE_STATUS,
   UGC_TYPE,
   UGC_VISIBILITY
 } from "./constants";
@@ -129,6 +131,8 @@ class WavedashSDK extends EventTarget {
   LobbyKickedReason = LobbyKickedReason;
   LobbyUserChangeType = LobbyUserChangeType;
   P2PPacketDropReason = P2PPacketDropReason;
+  PurchaseType = PURCHASE_TYPE;
+  FulfillPurchaseStatus = FULFILL_PURCHASE_STATUS;
 
   protected lobbyManager: LobbyManager;
   protected statsManager: StatsManager;

@@ -1,4 +1,5 @@
-import { api, IFRAME_MESSAGE_TYPE, PAID_CONTENT_TYPE } from "@wvdsh/api";
+import { api, IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
+import { PURCHASE_TYPE } from "../constants";
 import type { WavedashSDK } from "../index";
 import { WavedashEvents } from "../events";
 import type {
@@ -84,7 +85,7 @@ export class PaidContentManager extends WavedashManager {
     purchases: PurchaseCompletedPayload[]
   ): Promise<void> {
     const granted = purchases
-      .filter((p) => p.type === PAID_CONTENT_TYPE.DURABLE)
+      .filter((p) => p.type === PURCHASE_TYPE.DURABLE)
       .map((p) => p.contentIdentifier);
     if (granted.length > 0) {
       try {
@@ -188,7 +189,7 @@ export class PaidContentManager extends WavedashManager {
         api.sdk.paidContent.mockPurchase,
         { contentIdentifier }
       );
-      if (purchase.type === PAID_CONTENT_TYPE.DURABLE) {
+      if (purchase.type === PURCHASE_TYPE.DURABLE) {
         await this.ensureJwtEntitles([contentIdentifier]);
       }
       return true;
@@ -214,7 +215,7 @@ export class PaidContentManager extends WavedashManager {
     // let a failed refresh report a completed purchase as failed. Otherwise
     // (a type-less response is an older host) refresh before returning, so
     // isEntitled() is already true.
-    if (response.type !== PAID_CONTENT_TYPE.CONSUMABLE) {
+    if (response.type !== PURCHASE_TYPE.CONSUMABLE) {
       await this.ensureJwtEntitles([contentIdentifier]);
     }
     return true;
