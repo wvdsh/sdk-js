@@ -16,6 +16,8 @@ import {
   LEADERBOARD_DISPLAY_TYPE,
   UGC_TYPE,
   UGC_VISIBILITY,
+  FULFILL_PURCHASE_STATUS,
+  PURCHASE_TYPE,
   GAME_ENGINE
 } from "./constants";
 
@@ -27,45 +29,92 @@ export type LeaderboardSortOrder =
 export type LeaderboardDisplayType =
   (typeof LEADERBOARD_DISPLAY_TYPE)[keyof typeof LEADERBOARD_DISPLAY_TYPE];
 export type UGCType = (typeof UGC_TYPE)[keyof typeof UGC_TYPE];
+export type PurchaseType = (typeof PURCHASE_TYPE)[keyof typeof PURCHASE_TYPE];
 export type UGCVisibility =
   (typeof UGC_VISIBILITY)[keyof typeof UGC_VISIBILITY];
+/**
+ * What fulfillPurchase did. FULFILLED: marked just now. ALREADY_FULFILLED: an
+ * earlier call from the game or its backend got there first, or it's a
+ * durable (fulfilled when granted); treat it as success. NOT_FOUND: no
+ * such purchase for this player, or it was refunded; don't grant it.
+ */
+export type FulfillPurchaseStatus =
+  (typeof FULFILL_PURCHASE_STATUS)[keyof typeof FULFILL_PURCHASE_STATUS];
+/** fulfillPurchase's result: `status` says what happened. */
+export type FulfillPurchaseResult = FunctionReturnType<
+  typeof api.sdk.paidContent.fulfillPurchase
+>;
+
+// Public names for the ids the API uses. Each is the same type as the
+// Id<"table"> it names, so code written against Id<...> keeps compiling.
+export type UserId = Id<"users">;
+export type LobbyId = Id<"lobbies">;
+export type LobbyMessageId = Id<"lobbyMessages">;
+export type LobbyInviteId = Id<"notifications">;
+export type LeaderboardId = Id<"leaderboards">;
+export type LeaderboardEntryId = Id<"leaderboardEntries">;
+export type UGCId = Id<"userGeneratedContent">;
+/** Identifies one purchase: dedupe grants on it and pass it to fulfillPurchase. */
+export type PurchaseId = Id<"userPaidContent">;
+
+// Shows each id in an API-derived type by its public name. Display only: the
+// result is the same type, just without the table names.
+type WithPublicIds<T> = T extends UserId
+  ? UserId
+  : T extends LobbyId
+    ? LobbyId
+    : T extends LobbyMessageId
+      ? LobbyMessageId
+      : T extends LobbyInviteId
+        ? LobbyInviteId
+        : T extends LeaderboardId
+          ? LeaderboardId
+          : T extends LeaderboardEntryId
+            ? LeaderboardEntryId
+            : T extends UGCId
+              ? UGCId
+              : T extends PurchaseId
+                ? PurchaseId
+                : T extends object
+                  ? { [K in keyof T]: WithPublicIds<T[K]> }
+                  : T;
 
 export type UpdateUGCItemArgs = Omit<
-  FunctionArgs<typeof api.sdk.userGeneratedContent.updateUGCItem>,
+  WithPublicIds<
+    FunctionArgs<typeof api.sdk.userGeneratedContent.updateUGCItem>
+  >,
   "ugcId" | "createPresignedUploadUrl"
 > & {
   filePath?: string;
 };
 
-export type UGCItem = FunctionReturnType<
-  typeof api.sdk.userGeneratedContent.listUGCItems
->["page"][0];
-export type PaginatedUGCItems = FunctionReturnType<
-  typeof api.sdk.userGeneratedContent.listUGCItems
+export type UGCItem = PaginatedUGCItems["page"][0];
+export type PaginatedUGCItems = WithPublicIds<
+  FunctionReturnType<typeof api.sdk.userGeneratedContent.listUGCItems>
 >;
-type RawListUGCItemsArgs = FunctionArgs<
-  typeof api.sdk.userGeneratedContent.listUGCItems
+type RawListUGCItemsArgs = WithPublicIds<
+  FunctionArgs<typeof api.sdk.userGeneratedContent.listUGCItems>
 >;
 
 export type ListUGCItemsArgs = Omit<RawListUGCItemsArgs, "filters"> &
   NonNullable<RawListUGCItemsArgs["filters"]>;
 
 // Function return type aliases derived from the API
-export type LobbyUser = FunctionReturnType<
-  typeof api.sdk.gameLobby.lobbyUsers
->[0];
-export type LobbyMessage = FunctionReturnType<
-  typeof api.sdk.gameLobby.lobbyMessages
->[0];
-export type Lobby = FunctionReturnType<
-  typeof api.sdk.gameLobby.listAvailable
->[0];
-export type LobbyJoinResponse = FunctionReturnType<
-  typeof api.sdk.gameLobby.joinLobby
+export type LobbyUser = WithPublicIds<
+  FunctionReturnType<typeof api.sdk.gameLobby.lobbyUsers>[0]
 >;
-export type LobbyInvite = FunctionReturnType<
-  typeof api.sdk.gameLobby.getLobbyInvites
->[0];
+export type LobbyMessage = WithPublicIds<
+  FunctionReturnType<typeof api.sdk.gameLobby.lobbyMessages>[0]
+>;
+export type Lobby = WithPublicIds<
+  FunctionReturnType<typeof api.sdk.gameLobby.listAvailable>[0]
+>;
+export type LobbyJoinResponse = WithPublicIds<
+  FunctionReturnType<typeof api.sdk.gameLobby.joinLobby>
+>;
+export type LobbyInvite = WithPublicIds<
+  FunctionReturnType<typeof api.sdk.gameLobby.getLobbyInvites>[0]
+>;
 
 /** A value stored in lobby metadata. */
 export type LobbyDataValue = FunctionReturnType<
@@ -81,17 +130,26 @@ export type LobbyDataUpdate = FunctionArgs<
   typeof api.sdk.gameLobby.setLobbyMetadata
 >["updates"][string];
 
-export type Friend = FunctionReturnType<typeof api.sdk.friends.listFriends>[0];
-export type Leaderboard = FunctionReturnType<
-  typeof api.sdk.leaderboards.getLeaderboard
+export type Friend = WithPublicIds<
+  FunctionReturnType<typeof api.sdk.friends.listFriends>[0]
 >;
-export type LeaderboardEntries = FunctionReturnType<
-  typeof api.sdk.leaderboards.listEntriesAroundUser
->["entries"];
-export type UpsertedLeaderboardEntry = FunctionReturnType<
-  typeof api.sdk.leaderboards.upsertLeaderboardEntry
->["entry"] & {
-  userId: Id<"users">;
+export type Purchase = WithPublicIds<
+  FunctionReturnType<typeof api.sdk.paidContent.listNewAndUnfulfilled>[number]
+>;
+export type Leaderboard = WithPublicIds<
+  FunctionReturnType<typeof api.sdk.leaderboards.getLeaderboard>
+>;
+export type LeaderboardEntries = WithPublicIds<
+  FunctionReturnType<
+    typeof api.sdk.leaderboards.listEntriesAroundUser
+  >["entries"]
+>;
+export type UpsertedLeaderboardEntry = WithPublicIds<
+  FunctionReturnType<
+    typeof api.sdk.leaderboards.upsertLeaderboardEntry
+  >["entry"]
+> & {
+  userId: UserId;
   username: string;
   userAvatarUrl?: string;
   submittedScore: number;
@@ -166,8 +224,8 @@ export type WavedashResponse<T> =
 
 /** Payload for LobbyJoined event - emitted on successful lobby join or create */
 export interface LobbyJoinedPayload {
-  lobbyId: Id<"lobbies">;
-  hostId: Id<"users">;
+  lobbyId: LobbyId;
+  hostId: UserId;
   users: LobbyUser[];
   metadata: Record<string, string | number | boolean>;
 }
@@ -177,7 +235,7 @@ export type LobbyKickedReason =
 
 /** Payload for LobbyKicked event - emitted when removed from a lobby */
 export interface LobbyKickedPayload {
-  lobbyId: Id<"lobbies">;
+  lobbyId: LobbyId;
   reason: LobbyKickedReason;
 }
 
@@ -210,32 +268,32 @@ export interface StatsStoredPayload {
 
 /** Payload for P2PConnectionEstablished event */
 export interface P2PConnectionEstablishedPayload {
-  userId: Id<"users">;
+  userId: UserId;
   username: string;
 }
 
 /** Payload for P2PConnectionFailed event */
 export interface P2PConnectionFailedPayload {
-  userId: Id<"users">;
+  userId: UserId;
   username: string;
   error: string;
 }
 
 /** Payload for P2PPeerDisconnected event */
 export interface P2PPeerDisconnectedPayload {
-  userId: Id<"users">;
+  userId: UserId;
   username: string;
 }
 
 /** Payload for P2PPeerReconnecting event */
 export interface P2PPeerReconnectingPayload {
-  userId: Id<"users">;
+  userId: UserId;
   username: string;
 }
 
 /** Payload for P2PPeerReconnected event */
 export interface P2PPeerReconnectedPayload {
-  userId: Id<"users">;
+  userId: UserId;
   username: string;
 }
 
@@ -291,6 +349,19 @@ export interface EntitlementsGrantedPayload {
   contentIdentifiers: string[];
 }
 
+/**
+ * Payload for PurchaseCompleted event - one per purchase made while the game is
+ * running (in-game paywall, game page, gift, another tab), plus, at launch, one
+ * per consumable still unfulfilled. Durables arrive `fulfilled: true`
+ * (Wavedash already granted them) and aren't redelivered at launch: read
+ * ownership with isEntitled(). For a consumable, grant it (or confirm your
+ * backend did from the purchase webhook), then call fulfillPurchase(purchaseId);
+ * until then it's redelivered every launch, so dedupe on purchaseId if you
+ * persist grants. `receiptJwt` is the same signed JWT the purchase.completed
+ * webhook sends; verify it against the Wavedash JWKS on your backend.
+ */
+export type PurchaseCompletedPayload = Purchase;
+
 // =============================================================================
 // Event map: links each event name to its payload type so addEventListener,
 // removeEventListener, on, and off can infer the right CustomEvent / payload.
@@ -314,24 +385,25 @@ export type WavedashEventMap = {
   [WavedashEvents.BACKEND_RECONNECTING]: BackendConnectionPayload;
   [WavedashEvents.FULLSCREEN_CHANGED]: FullscreenChangedPayload;
   [WavedashEvents.ENTITLEMENTS_GRANTED]: EntitlementsGrantedPayload;
+  [WavedashEvents.PURCHASE_COMPLETED]: PurchaseCompletedPayload;
 };
 
 // =============================================================================
 // P2P Connection types
 // =============================================================================
 export interface P2PPeer {
-  userId: Id<"users">; // Primary identifier - links to persistent user
+  userId: UserId; // Primary identifier - links to persistent user
   username: string;
   // TODO Calvin: Consider adding int handle for each peer to speed up messaging over string handles
 }
 
 export interface P2PConnection {
-  lobbyId: Id<"lobbies">;
-  peers: Record<Id<"users">, P2PPeer>; // userId -> peer info (we may add more fields to P2PPeer later)
+  lobbyId: LobbyId;
+  peers: Record<UserId, P2PPeer>; // userId -> peer info (we may add more fields to P2PPeer later)
 }
 
 export interface P2PMessage {
-  fromUserId: Id<"users">; // Primary identifier for sender TODO: Make this a small int handle instead of a 32 byte string
+  fromUserId: UserId; // Primary identifier for sender TODO: Make this a small int handle instead of a 32 byte string
   channel: number; // Channel for message routing
   payload: Uint8Array;
   // TODO: Assign an incrementing messsage ID to each message for ordering?

@@ -2,6 +2,7 @@ import { IFRAME_MESSAGE_TYPE } from "@wvdsh/api";
 import type { WavedashSDK } from "../index";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
+import { readJwtClaim } from "../utils/jwt";
 
 const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 30_000;
@@ -18,6 +19,10 @@ const RETRY_MAX_MS = 30_000;
  */
 export class AuthManager extends WavedashManager {
   private jwt: string | null = null;
+  // `iat` timestamp of the first gameplay JWT, in milliseconds
+  readonly firstAuthenticatedAt: Promise<number>;
+  private resolveFirstAuthenticatedAt: ((issuedAtMs: number) => void) | null =
+    null;
   private jwtPromise: Promise<string> | null = null;
   private retryTimeout: ReturnType<typeof setTimeout> | null = null;
   private retryAttempt = 0;
@@ -25,6 +30,9 @@ export class AuthManager extends WavedashManager {
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
+    this.firstAuthenticatedAt = new Promise((resolve) => {
+      this.resolveFirstAuthenticatedAt = resolve;
+    });
     this.setupConvexAuth();
   }
 
@@ -60,6 +68,12 @@ export class AuthManager extends WavedashManager {
       .then((token) => {
         // Refreshes are serialized, so tokens resolve in start order
         this.jwt = token;
+        if (this.resolveFirstAuthenticatedAt) {
+          this.resolveFirstAuthenticatedAt(
+            (readJwtClaim<number>(token, "iat") ?? 0) * 1000
+          );
+          this.resolveFirstAuthenticatedAt = null;
+        }
         this.retryAttempt = 0;
         if (this.jwtPromise === promise) {
           this.sdk.iframeMessenger.postToParent(

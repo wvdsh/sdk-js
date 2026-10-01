@@ -5,12 +5,12 @@
  */
 
 import type {
-  Id,
   UGCType,
   UGCVisibility,
   UpdateUGCItemArgs,
   PaginatedUGCItems,
-  ListUGCItemsArgs
+  ListUGCItemsArgs,
+  UGCId
 } from "../types";
 import type { WavedashSDK } from "../index";
 import { api } from "@wvdsh/api";
@@ -27,7 +27,7 @@ export class UGCManager extends WavedashManager {
     description?: string,
     visibility?: UGCVisibility,
     filePath?: string
-  ): Promise<Id<"userGeneratedContent">> {
+  ): Promise<UGCId> {
     const { ugcId, uploadUrl } = await this.sdk.convexClient.mutation(
       api.sdk.userGeneratedContent.createUGCItem,
       {
@@ -55,9 +55,9 @@ export class UGCManager extends WavedashManager {
   }
 
   async updateUGCItem(
-    ugcId: Id<"userGeneratedContent">,
+    ugcId: UGCId,
     updates: UpdateUGCItemArgs = {}
-  ): Promise<Id<"userGeneratedContent">> {
+  ): Promise<UGCId> {
     const { title, description, visibility, filePath } = updates;
     const { uploadUrl } = await this.sdk.convexClient.mutation(
       api.sdk.userGeneratedContent.updateUGCItem,
@@ -85,9 +85,7 @@ export class UGCManager extends WavedashManager {
     return ugcId;
   }
 
-  async deleteUGCItem(
-    ugcId: Id<"userGeneratedContent">
-  ): Promise<Id<"userGeneratedContent">> {
+  async deleteUGCItem(ugcId: UGCId): Promise<UGCId> {
     await this.sdk.convexClient.mutation(
       api.sdk.userGeneratedContent.deleteUGCItem,
       { ugcId }
@@ -95,10 +93,7 @@ export class UGCManager extends WavedashManager {
     return ugcId;
   }
 
-  async downloadUGCItem(
-    ugcId: Id<"userGeneratedContent">,
-    filePath: string
-  ): Promise<Id<"userGeneratedContent">> {
+  async downloadUGCItem(ugcId: UGCId, filePath: string): Promise<UGCId> {
     const downloadUrl = await this.sdk.convexClient.query(
       api.sdk.userGeneratedContent.getUGCItemDownloadUrl,
       { ugcId }

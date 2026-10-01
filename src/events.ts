@@ -36,7 +36,9 @@ export const WavedashEvents = {
   FULLSCREEN_CHANGED: "FullscreenChanged", // fullscreen state changed
 
   // Paid content events
-  ENTITLEMENTS_GRANTED: "EntitlementsGranted" // player was granted paid content (in-game paywall, game page, gift, another tab)
+  /** @deprecated Use PURCHASE_COMPLETED, which also covers consumables. */
+  ENTITLEMENTS_GRANTED: "EntitlementsGranted", // player was granted paid content (in-game paywall, game page, gift, another tab)
+  PURCHASE_COMPLETED: "PurchaseCompleted" // player bought paid content (in-game paywall, game page, gift, another tab), or a consumable is still unfulfilled at launch; fulfill consumables
 
   // TODO: Future events to implement
   // P2P_CONNECTION_REQUESTED: 'P2PConnectionRequested', // for now we always connect all lobby members

@@ -11,7 +11,7 @@
  * used purely for error messages (e.g. `"createLobby.visibility"`).
  */
 
-import type { Id, LeaderboardEntryMetadata } from "../types";
+import type { LeaderboardEntryMetadata } from "../types";
 
 export type Validator<T = unknown> = (value: unknown, path: string) => T;
 
@@ -81,18 +81,18 @@ export const vMetadataRecord: Validator<LeaderboardEntryMetadata> = vRecordOf(
 );
 
 /**
- * Validate a Convex document ID string.
- * Format check only (31-37 char lowercase base32); the actual table binding
+ * Validate a Convex document ID string, named by its public type (e.g.
+ * "LobbyId") in errors. Format check only (31-37 char lowercase base32); the actual table binding
  * is enforced server-side.
  */
-export function vId<T extends string>(tableName: T): Validator<Id<T>> {
+export function vId(typeName: string): Validator<string> {
   return (value, path) => {
     if (typeof value !== "string" || !CONVEX_ID_REGEX.test(value)) {
       throw new Error(
-        `${path}: expected Id<"${tableName}"> (base32 string, 31-37 chars), got ${describeValue(value)}`
+        `${path}: expected ${typeName} (base32 string, 31-37 chars), got ${describeValue(value)}`
       );
     }
-    return value as Id<T>;
+    return value;
   };
 }
 
