@@ -32,11 +32,15 @@ type P2PTurnCredentials = FunctionReturnType<
   typeof api.sdk.turnCredentials.getOrCreate
 >;
 
+type P2PSessionDescriptionData = RTCSessionDescriptionInit & {
+  offerId?: string;
+};
+
 type P2PSignalingMessage = Omit<
   FunctionReturnType<typeof api.sdk.p2pSignaling.getSignalingMessages>[0],
   "data"
 > & {
-  data: RTCSessionDescriptionInit | RTCIceCandidateInit;
+  data: P2PSessionDescriptionData | RTCIceCandidateInit;
 };
 
 // Default P2P configuration
@@ -60,11 +64,14 @@ export class P2PManager extends WavedashManager {
   // ICE restart tracking
   private iceRestartAttempts = new Map<UserId, number>();
   private offerRetryTimers = new Map<UserId, ReturnType<typeof setTimeout>>();
-  private readonly OFFER_RETRY_BASE_DELAY_MS = 5_000;
-  private readonly OFFER_RETRY_MAX_DELAY_MS = 30_000;
-  private readonly ICE_DISCONNECTED_GRACE_MS = 3_000;
-  private readonly SIGNALING_SEND_MAX_ATTEMPTS = 6;
+  private offersInFlight = new Set<UserId>();
+  private currentOfferIds = new Map<UserId, string>();
+  private readonly OFFER_RETRY_BASE_DELAY_MS = 15_000;
+  private readonly OFFER_RETRY_MAX_DELAY_MS = 60_000;
+  private readonly ICE_DISCONNECTED_GRACE_MS = 5_000;
+  private readonly SIGNALING_SEND_MAX_ATTEMPTS = 10;
   private readonly SIGNALING_SEND_BASE_DELAY_MS = 500;
+  private readonly SIGNALING_SEND_MAX_DELAY_MS = 8_000;
 
   // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
   // Tracked on both active and passive sides so reconnect events stay symmetric
@@ -444,6 +451,8 @@ export class P2PManager extends WavedashManager {
         this.pendingIceCandidates.delete(userId);
         this.iceRestartAttempts.delete(userId);
         this.clearOfferRetry(userId);
+        this.offersInFlight.delete(userId);
+        this.currentOfferIds.delete(userId);
         this.reconnectingPeers.delete(userId);
         this.establishedPeers.delete(userId);
 
@@ -618,8 +627,12 @@ export class P2PManager extends WavedashManager {
       case P2P_SIGNALING_MESSAGE_TYPE.OFFER: {
         logger.debug(`Processing offer from peer ${remoteUserId}:`);
 
+        const offerData = message.data as P2PSessionDescriptionData;
         await pc.setRemoteDescription(
-          new RTCSessionDescription(message.data as RTCSessionDescriptionInit)
+          new RTCSessionDescription({
+            type: offerData.type,
+            sdp: offerData.sdp
+          })
         );
 
         // Flush any buffered ICE candidates now that remote description is set
@@ -633,7 +646,8 @@ export class P2PManager extends WavedashManager {
         // Convert RTCSessionDescription to plain object for Convex
         const answerData = {
           type: answer.type,
-          sdp: answer.sdp
+          sdp: answer.sdp,
+          offerId: offerData.offerId
         };
 
         await this.sendSignalingMessage(remoteUserId, {
@@ -643,20 +657,34 @@ export class P2PManager extends WavedashManager {
         break;
       }
 
-      case P2P_SIGNALING_MESSAGE_TYPE.ANSWER:
+      case P2P_SIGNALING_MESSAGE_TYPE.ANSWER: {
+        const answerData = message.data as P2PSessionDescriptionData;
         if (pc.signalingState !== "have-local-offer") {
           logger.debug(
             `Ignoring answer from peer ${remoteUserId} in signaling state ${pc.signalingState}`
           );
           break;
         }
+        if (
+          answerData.offerId !== undefined &&
+          answerData.offerId !== this.currentOfferIds.get(remoteUserId)
+        ) {
+          logger.debug(
+            `Ignoring answer from peer ${remoteUserId} to superseded offer ${answerData.offerId}`
+          );
+          break;
+        }
         await pc.setRemoteDescription(
-          new RTCSessionDescription(message.data as RTCSessionDescriptionInit)
+          new RTCSessionDescription({
+            type: answerData.type,
+            sdp: answerData.sdp
+          })
         );
 
         // Flush any buffered ICE candidates now that remote description is set
         await this.flushPendingIceCandidates(remoteUserId, pc);
         break;
+      }
 
       case P2P_SIGNALING_MESSAGE_TYPE.ICE_CANDIDATE: {
         const iceData = message.data as RTCIceCandidateInit;
@@ -766,20 +794,30 @@ export class P2PManager extends WavedashManager {
       `  Unreliable channel state: ${unreliableChannel?.readyState || "none"}`
     );
 
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    this.scheduleOfferRetry(remoteUserId, pc);
+    this.offersInFlight.add(remoteUserId);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
 
-    // Convert RTCSessionDescription to plain object for Convex
-    const offerData = {
-      type: offer.type,
-      sdp: offer.sdp
-    };
+      // Convert RTCSessionDescription to plain object for Convex
+      const offerId = crypto.randomUUID();
+      this.currentOfferIds.set(remoteUserId, offerId);
+      const offerData = {
+        type: offer.type,
+        sdp: offer.sdp,
+        offerId
+      };
 
-    await this.sendSignalingMessage(remoteUserId, {
-      type: P2P_SIGNALING_MESSAGE_TYPE.OFFER,
-      data: offerData
-    });
+      await this.sendSignalingMessage(remoteUserId, {
+        type: P2P_SIGNALING_MESSAGE_TYPE.OFFER,
+        data: offerData
+      });
+    } finally {
+      if (this.peerConnections.get(remoteUserId) === pc) {
+        this.offersInFlight.delete(remoteUserId);
+        this.scheduleOfferRetry(remoteUserId, pc);
+      }
+    }
   }
 
   private async createPeerConnection(
@@ -1005,9 +1043,12 @@ export class P2PManager extends WavedashManager {
       return;
     }
 
-    if (this.offerRetryTimers.has(remoteUserId)) {
+    if (
+      this.offersInFlight.has(remoteUserId) ||
+      this.offerRetryTimers.has(remoteUserId)
+    ) {
       logger.debug(
-        `Offer retry already scheduled for peer ${remoteUserId}, skipping ICE restart`
+        `Offer already in flight or retry scheduled for peer ${remoteUserId}, skipping ICE restart`
       );
       return;
     }
@@ -1016,8 +1057,7 @@ export class P2PManager extends WavedashManager {
     this.iceRestartAttempts.set(remoteUserId, attempts);
     logger.debug(`ICE restart attempt ${attempts} for peer ${remoteUserId}`);
 
-    this.scheduleOfferRetry(remoteUserId, pc);
-
+    this.offersInFlight.add(remoteUserId);
     try {
       // Trigger ICE restart - this invalidates current ICE candidates and gathers new ones
       pc.restartIce();
@@ -1035,9 +1075,12 @@ export class P2PManager extends WavedashManager {
       }
       await pc.setLocalDescription(offer);
 
+      const offerId = crypto.randomUUID();
+      this.currentOfferIds.set(remoteUserId, offerId);
       const offerData = {
         type: offer.type,
-        sdp: offer.sdp
+        sdp: offer.sdp,
+        offerId
       };
 
       await this.sendSignalingMessage(remoteUserId, {
@@ -1051,6 +1094,11 @@ export class P2PManager extends WavedashManager {
         `Failed to initiate ICE restart for peer ${remoteUserId}:`,
         error
       );
+    } finally {
+      if (this.peerConnections.get(remoteUserId) === pc) {
+        this.offersInFlight.delete(remoteUserId);
+        this.scheduleOfferRetry(remoteUserId, pc);
+      }
     }
   }
 
@@ -1058,7 +1106,14 @@ export class P2PManager extends WavedashManager {
     remoteUserId: UserId,
     pc: RTCPeerConnection
   ): void {
+    if (this.peerConnections.get(remoteUserId) !== pc) return;
     this.clearOfferRetry(remoteUserId);
+    if (
+      pc.iceConnectionState === "connected" ||
+      pc.iceConnectionState === "completed"
+    ) {
+      return;
+    }
     const attempts = this.iceRestartAttempts.get(remoteUserId) || 0;
     const delay = Math.min(
       this.OFFER_RETRY_BASE_DELAY_MS * 2 ** attempts,
@@ -1318,7 +1373,7 @@ export class P2PManager extends WavedashManager {
     toUserId: UserId,
     message: {
       type: (typeof P2P_SIGNALING_MESSAGE_TYPE)[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
-      data: RTCSessionDescriptionInit | RTCIceCandidateInit;
+      data: P2PSessionDescriptionData | RTCIceCandidateInit;
     }
   ): Promise<void> {
     const connection = this.currentConnection;
@@ -1358,7 +1413,10 @@ export class P2PManager extends WavedashManager {
       await new Promise((resolve) =>
         setTimeout(
           resolve,
-          this.SIGNALING_SEND_BASE_DELAY_MS * 2 ** (attempt - 1)
+          Math.min(
+            this.SIGNALING_SEND_BASE_DELAY_MS * 2 ** (attempt - 1),
+            this.SIGNALING_SEND_MAX_DELAY_MS
+          )
         )
       );
       if (this.currentConnection !== connection) return;
@@ -1398,6 +1456,8 @@ export class P2PManager extends WavedashManager {
     this.iceRestartAttempts.clear();
     this.offerRetryTimers.forEach((timer) => clearTimeout(timer));
     this.offerRetryTimers.clear();
+    this.offersInFlight.clear();
+    this.currentOfferIds.clear();
     this.reconnectingPeers.clear();
     this.establishedPeers.clear();
     this.clearPacketDropTrackers();
