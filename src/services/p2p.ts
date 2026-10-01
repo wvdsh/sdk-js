@@ -916,7 +916,10 @@ export class P2PManager extends WavedashManager {
       logger.debug(
         `Peer ${remoteUserId} ICE connection state: ${pc.iceConnectionState}`
       );
-      if (pc.iceConnectionState === "connected") {
+      if (
+        pc.iceConnectionState === "connected" ||
+        pc.iceConnectionState === "completed"
+      ) {
         logger.debug(
           `  ICE connected to peer ${remoteUserId}, data channels should be available...`
         );
@@ -1021,6 +1024,15 @@ export class P2PManager extends WavedashManager {
 
       // Create and send a new offer with iceRestart flag
       const offer = await pc.createOffer({ iceRestart: true });
+      if (
+        pc.iceConnectionState === "connected" ||
+        pc.iceConnectionState === "completed"
+      ) {
+        logger.debug(
+          `Peer ${remoteUserId} recovered before ICE restart offer was sent, skipping`
+        );
+        return;
+      }
       await pc.setLocalDescription(offer);
 
       const offerData = {
