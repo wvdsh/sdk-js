@@ -11,37 +11,37 @@ import type { WavedashSDK } from "../index";
 import * as indexedDBUtils from "../utils/indexedDB";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
-import { RateLimitGate, TokenBucket } from "../utils/tokenBucket";
-import { api, REMOTE_STORAGE, UgcStorage } from "@wvdsh/api";
+import { api, UgcStorage } from "@wvdsh/api";
 import { ConvexError } from "convex/values";
 
 // Stable path used as the remote key prefix, replacing the per-build Unity persistentDataPath
 const WAVEDASH_PERSISTENT_DATA_PATH = "/idbfs/wavedash";
 
-const MINUTE_MS = 60 * 1000;
 // Matches ErrorCode.RateLimited on the backend
 const RATE_LIMITED_ERROR_CODE = "rate_limited";
-const MAX_RATE_LIMITED_RETRIES = 3;
 
 export class FileSystemManager extends WavedashManager {
   private remoteStorageOrigin: string | undefined;
 
-  // Mirrors the backend's per-minute getUploadUrl token bucket so games that
-  // save too often get delayed here instead of rejected there
-  private uploadUrlGate = new RateLimitGate(
-    [new TokenBucket(REMOTE_STORAGE.UPLOADS_PER_MINUTE, MINUTE_MS)],
-    (ms) =>
-      logger.warn(
-        `Remote file uploads are being throttled; waiting ${ms}ms. Upload less often to avoid delays.`
-      )
-  );
-  // Uploads still waiting for a rate limit token, by remote key. Repeat calls
-  // for the same file join the waiting upload — it reads the file once it
-  // runs, so it carries the newest content.
-  private throttledUploads = new Map<string, Promise<string>>();
+  // The backend rate limits getUploadUrl per user per game, so its
+  // retryAfter applies to every file. Requests normally run in parallel;
+  // once rate limited they line up here and go one at a time after the
+  // retryAfter, so the backlog doesn't hit the backend all at once. The
+  // queue is cleared when the backlog drains.
+  private rateLimitedUntil = 0;
+  private rateLimitedQueue: Promise<unknown> | undefined;
+  // Uploads that haven't minted their signed URL yet, by remote key. Repeat
+  // calls for the same file join the pending upload — it reads the file once
+  // it runs, so it carries the newest content.
+  private pendingUploads = new Map<string, Promise<string>>();
+  private destroyed = false;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
+  }
+
+  destroy(): void {
+    this.destroyed = true;
   }
 
   /**
@@ -93,29 +93,25 @@ export class FileSystemManager extends WavedashManager {
    */
   async uploadRemoteFile(filePath: string): Promise<string> {
     const remoteKey = this.toRemoteKey(filePath);
-    const throttled = this.throttledUploads.get(remoteKey);
-    if (throttled) return throttled;
+    const pending = this.pendingUploads.get(remoteKey);
+    if (pending) return pending;
 
-    let tokenAcquired!: () => void;
-    const acquired = new Promise<void>((r) => (tokenAcquired = r));
     const promise = (async () => {
-      const uploadUrl = await this.getUploadUrl(remoteKey, tokenAcquired);
+      let uploadUrl: string;
+      try {
+        uploadUrl = await this.getUploadUrl(remoteKey);
+      } finally {
+        // From here this upload may read the file, so later calls start
+        // their own
+        this.pendingUploads.delete(remoteKey);
+      }
       const success = await this.upload(uploadUrl, filePath);
       if (!success) {
         throw new Error(`Failed to upload file: ${filePath}`);
       }
       return filePath;
     })();
-    this.throttledUploads.set(remoteKey, promise);
-    // Once a token is in hand this upload may already have read the file, so
-    // later calls must start their own
-    const release = () => {
-      if (this.throttledUploads.get(remoteKey) === promise) {
-        this.throttledUploads.delete(remoteKey);
-      }
-    };
-    void acquired.then(release);
-    promise.catch(release);
+    this.pendingUploads.set(remoteKey, promise);
     return promise;
   }
 
@@ -410,35 +406,77 @@ export class FileSystemManager extends WavedashManager {
   // Private Methods
   // ================
 
-  // Mint a signed upload URL, waiting on the client-side rate limit first.
-  // If the server still rate limits us (another tab, a reload resetting our
-  // buckets), sync our buckets to its retryAfter and try again.
-  private async getUploadUrl(
-    remoteKey: string,
-    onTokenAcquired: () => void
-  ): Promise<string> {
-    for (let attempt = 0; ; attempt++) {
-      await this.uploadUrlGate.acquire();
-      onTokenAcquired();
+  private async getUploadUrl(remoteKey: string): Promise<string> {
+    if (!this.rateLimitedQueue) {
       try {
-        return await this.sdk.convexClient.mutation(
-          api.sdk.remoteFileStorage.getUploadUrl,
-          { path: remoteKey }
-        );
+        return await this.requestUploadUrl(remoteKey);
       } catch (error) {
-        const data =
-          error instanceof ConvexError
-            ? (error.data as { code?: string; retryAfterMs?: number })
-            : undefined;
-        if (
-          data?.code !== RATE_LIMITED_ERROR_CODE ||
-          attempt >= MAX_RATE_LIMITED_RETRIES
-        ) {
-          throw error;
-        }
-        this.uploadUrlGate.drainFor(data.retryAfterMs ?? MINUTE_MS);
+        if (!this.noteRateLimit(error)) throw error;
       }
     }
+    return this.enqueueRateLimited(remoteKey);
+  }
+
+  private enqueueRateLimited(remoteKey: string): Promise<string> {
+    const turn = (this.rateLimitedQueue ?? Promise.resolve()).then(() =>
+      this.requestUploadUrlWhenAllowed(remoteKey)
+    );
+    const tail = turn.catch(() => undefined);
+    this.rateLimitedQueue = tail;
+    void tail.then(() => {
+      if (this.rateLimitedQueue === tail) this.rateLimitedQueue = undefined;
+    });
+    return turn;
+  }
+
+  // Wait out the backend's retryAfter, retrying until it lets us through
+  private async requestUploadUrlWhenAllowed(
+    remoteKey: string
+  ): Promise<string> {
+    for (;;) {
+      const waitMs = this.rateLimitedUntil - Date.now();
+      if (waitMs > 0) {
+        await new Promise((resolve) => setTimeout(resolve, waitMs));
+      }
+      if (this.destroyed) {
+        throw new Error("Upload cancelled: session ended");
+      }
+      try {
+        return await this.requestUploadUrl(remoteKey);
+      } catch (error) {
+        if (!this.noteRateLimit(error)) throw error;
+      }
+    }
+  }
+
+  private requestUploadUrl(remoteKey: string): Promise<string> {
+    return this.sdk.convexClient.mutation(
+      api.sdk.remoteFileStorage.getUploadUrl,
+      { path: remoteKey }
+    );
+  }
+
+  // If the backend rate limited us, remember its retryAfter (it covers every
+  // file) and return true
+  private noteRateLimit(error: unknown): boolean {
+    const data =
+      error instanceof ConvexError
+        ? (error.data as { code?: string; retryAfterMs?: number })
+        : undefined;
+    if (
+      data?.code !== RATE_LIMITED_ERROR_CODE ||
+      typeof data.retryAfterMs !== "number"
+    ) {
+      return false;
+    }
+    this.rateLimitedUntil = Math.max(
+      this.rateLimitedUntil,
+      Date.now() + data.retryAfterMs
+    );
+    logger.warn(
+      `Remote file uploads are rate limited; retrying in ${data.retryAfterMs}ms. Upload less often.`
+    );
+    return true;
   }
 
   private getRemoteStorageOrigin(): string {
