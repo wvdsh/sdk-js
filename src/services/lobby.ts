@@ -124,14 +124,6 @@ export class LobbyManager extends WavedashManager {
     }));
   }
 
-  /**
-   * Latest lobby member list from the users subscription, for SDK-internal
-   * use. Returns null (without logging) if we're no longer in this lobby.
-   */
-  getLatestLobbyUsers(lobbyId: LobbyId): LobbyUser[] | null {
-    return this.lobbyId === lobbyId ? this.lobbyUsers : null;
-  }
-
   getHostId(lobbyId: LobbyId): UserId | null {
     if (this.lobbyId !== lobbyId) {
       logger.error("Must be a member of the lobby to access the host ID");

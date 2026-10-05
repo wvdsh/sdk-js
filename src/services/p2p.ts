@@ -79,12 +79,6 @@ export class P2PManager extends WavedashManager {
   // regardless of which peer drives the ICE restart.
   private reconnectingPeers = new Set<UserId>();
 
-  // Peers created on demand from an incoming offer that haven't appeared in a
-  // lobby member list yet. Our member list can lag behind the remote's offer,
-  // so a list update that's missing them doesn't mean they left; instead we
-  // check them against the latest lobby member list (reconcileUnconfirmedPeers).
-  private unconfirmedPeers = new Set<UserId>();
-
   // Peers for which we've emitted P2P_CONNECTION_ESTABLISHED. Prevents duplicate
   // emissions if both data channels happen to open concurrently, and is cleared
   // on peer disconnect so a rejoining peer gets a fresh ESTABLISHED event.
@@ -121,7 +115,6 @@ export class P2PManager extends WavedashManager {
   // Signaling state
   private unsubscribeFromSignalingMessages: (() => void) | null = null;
   private processedSignalingMessages = new Set<string>();
-  private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
   // Signaling messages are handled one at a time, in order. Subscription
   // callbacks can fire while a previous batch is still awaiting WebRTC calls,
   // and interleaving offer/answer handling on one RTCPeerConnection breaks it.
@@ -386,12 +379,45 @@ export class P2PManager extends WavedashManager {
     currentPeerUserIds.add(this.sdk.getUserId());
     const newPeerUserIds = new Set(members.map((member) => member.id));
 
+    // Clean up connections to users who left. Do this before any await: the
+    // caller passes the latest member list, and Convex delivers it together
+    // with any signaling message from the same moment, so every offer handled
+    // so far comes from someone in this list. A peer created on demand from
+    // an offer and missing here has really left.
+    for (const userId of Object.keys(
+      this.currentConnection.peers
+    ) as UserId[]) {
+      if (!newPeerUserIds.has(userId)) {
+        const peer = this.currentConnection.peers[userId];
+        logger.debug(`Peer left: ${peer.username} (${userId})`);
+
+        // Clean up WebRTC resources
+        const pc = this.peerConnections.get(userId);
+        if (pc) {
+          pc.close();
+          this.peerConnections.delete(userId);
+        }
+        this.untrackOpenChannels(userId);
+        this.reliableChannels.delete(userId);
+        this.unreliableChannels.delete(userId);
+        this.pendingIceCandidates.delete(userId);
+        this.iceRestartAttempts.delete(userId);
+        this.clearOfferRetry(userId);
+        this.offersInFlight.delete(userId);
+        this.currentOfferIds.delete(userId);
+        this.reconnectingPeers.delete(userId);
+        this.establishedPeers.delete(userId);
+
+        // Remove from peer list
+        delete this.currentConnection.peers[userId];
+      }
+    }
+
     // Find new users who joined
     const connectionsToCreate: UserId[] = [];
     for (const member of members) {
       if (member.id === this.sdk.getUserId()) continue;
 
-      this.unconfirmedPeers.delete(member.id);
       const existingPeer = this.currentConnection.peers[member.id];
       if (existingPeer) {
         // Update username if it was empty (from on-demand peer creation)
@@ -444,85 +470,7 @@ export class P2PManager extends WavedashManager {
       }
     }
 
-    // Clean up connections to users who left
-    let hasMissingUnconfirmedPeer = false;
-    for (const userId of Object.keys(
-      this.currentConnection.peers
-    ) as UserId[]) {
-      if (newPeerUserIds.has(userId)) continue;
-      if (this.unconfirmedPeers.has(userId)) {
-        hasMissingUnconfirmedPeer = true;
-        continue;
-      }
-      const peer = this.currentConnection.peers[userId];
-      logger.debug(`Peer left: ${peer.username} (${userId})`);
-      this.removePeer(userId);
-    }
-
-    // This list may just be lagging behind their offer, or they may have left
-    // before we ever saw them. Check the latest member list.
-    if (hasMissingUnconfirmedPeer) {
-      this.reconcileUnconfirmedPeers(this.currentConnection);
-    }
-
     return this.currentConnection;
-  }
-
-  private removePeer(userId: UserId): void {
-    // Clean up WebRTC resources
-    const pc = this.peerConnections.get(userId);
-    if (pc) {
-      pc.close();
-      this.peerConnections.delete(userId);
-    }
-    this.untrackOpenChannels(userId);
-    this.reliableChannels.delete(userId);
-    this.unreliableChannels.delete(userId);
-    this.pendingIceCandidates.delete(userId);
-    this.iceRestartAttempts.delete(userId);
-    this.clearOfferRetry(userId);
-    this.offersInFlight.delete(userId);
-    this.currentOfferIds.delete(userId);
-    this.reconnectingPeers.delete(userId);
-    this.establishedPeers.delete(userId);
-    this.unconfirmedPeers.delete(userId);
-
-    // Remove from peer list
-    if (this.currentConnection) {
-      delete this.currentConnection.peers[userId];
-    }
-  }
-
-  /**
-   * Check unconfirmed (offer-only) peers against the latest lobby member list.
-   * Peers in it are confirmed; peers not in it have left and are removed.
-   * Convex updates all subscriptions together at the same database timestamp,
-   * so by the time we're handling a peer's offer the users subscription
-   * already reflects their join (they join before they can send an offer).
-   * Only our queued handling of that list can lag, not the list itself.
-   */
-  private reconcileUnconfirmedPeers(connection: P2PConnection): void {
-    if (this.currentConnection !== connection) return;
-    if (this.unconfirmedPeers.size === 0) return;
-    const lobbyUsers = this.sdk.lobbyManager.getLatestLobbyUsers(
-      connection.lobbyId
-    );
-    if (!lobbyUsers) return;
-
-    const members = new Map(lobbyUsers.map((user) => [user.userId, user]));
-    for (const userId of [...this.unconfirmedPeers]) {
-      const member = members.get(userId);
-      if (member) {
-        this.unconfirmedPeers.delete(userId);
-        const peer = connection.peers[userId];
-        if (peer && !peer.username) peer.username = member.username;
-      } else {
-        logger.debug(
-          `Peer ${userId} sent an offer but is no longer in the lobby, removing`
-        );
-        this.removePeer(userId);
-      }
-    }
   }
 
   private async establishWebRTCConnections(
@@ -577,75 +525,45 @@ export class P2PManager extends WavedashManager {
     }
   }
 
-  private async processSignalingMessages(
+  private processSignalingMessages(
+    messages: P2PSignalingMessage[],
+    connection: P2PConnection
+  ): void {
+    if (messages.length === 0) return;
+    this.signalingQueue = this.signalingQueue.then(() =>
+      this.handleSignalingBatch(messages, connection)
+    );
+  }
+
+  private async handleSignalingBatch(
     messages: P2PSignalingMessage[],
     connection: P2PConnection
   ): Promise<void> {
-    if (messages.length === 0) return;
-
-    const newMessageIds: Id<"p2pSignalingMessages">[] = [];
-    const messagesToProcess: P2PSignalingMessage[] = [];
-
-    // Filter out messages we've already processed or are pending processing.
-    // Claim them as pending immediately so an overlapping callback can't
-    // handle the same message a second time.
-    for (const message of messages) {
-      if (
-        !this.processedSignalingMessages.has(message._id) &&
-        !this.pendingProcessedMessageIds.has(message._id)
-      ) {
-        messagesToProcess.push(message);
-        this.pendingProcessedMessageIds.add(message._id);
-      }
-      // Always include in batch to mark as processed
-      newMessageIds.push(message._id);
-    }
-
-    // Process only new messages, after any earlier batch has finished
     const handledMessageIds: Id<"p2pSignalingMessages">[] = [];
-    let stale = false;
-    const run = this.signalingQueue.then(async () => {
-      for (const message of messagesToProcess) {
-        if (this.currentConnection !== connection) {
-          stale = true;
-          return;
-        }
+    for (const message of messages) {
+      // Stop if the connection was torn down (e.g. a lobby rejoin). The rest
+      // stay unacknowledged so the new subscription still receives them.
+      if (this.currentConnection !== connection) break;
+      // Batches are snapshots that overlap; skip what an earlier one handled.
+      if (!this.processedSignalingMessages.has(message._id)) {
+        this.processedSignalingMessages.add(message._id);
         try {
           await this.handleSignalingMessage(message, connection);
-          this.processedSignalingMessages.add(message._id);
         } catch (error) {
           logger.error("Error handling signaling message:", error);
         }
-        handledMessageIds.push(message._id);
       }
-    });
-    this.signalingQueue = run;
-    await run;
-
-    // Mark messages as processed in batch. If the connection was torn down
-    // before we got to some of them (e.g. a lobby rejoin), acknowledge only
-    // what we actually handled so the new subscription still receives the rest.
-    const messageIdsToMark = stale ? handledMessageIds : newMessageIds;
-    try {
-      if (messageIdsToMark.length > 0) {
-        await this.sdk.convexClient.mutation(
-          api.sdk.p2pSignaling.markSignalingMessagesProcessed,
-          { messageIds: messageIdsToMark }
-        );
-      }
-    } catch (error) {
-      logger.error("Failed to mark signaling messages as processed:", error);
-    } finally {
-      // Release only the messages this call claimed; others may still be
-      // in flight in a later batch. After a teardown, disconnectP2P already
-      // cleared the pending set and a new connection may have reclaimed these
-      // IDs, so leave it alone.
-      if (this.currentConnection === connection) {
-        for (const message of messagesToProcess) {
-          this.pendingProcessedMessageIds.delete(message._id);
-        }
-      }
+      handledMessageIds.push(message._id);
     }
+
+    if (handledMessageIds.length === 0) return;
+    this.sdk.convexClient
+      .mutation(api.sdk.p2pSignaling.markSignalingMessagesProcessed, {
+        messageIds: handledMessageIds
+      })
+      .catch((error) => {
+        logger.error("Failed to mark signaling messages as processed:", error);
+      });
   }
 
   private async handleSignalingMessage(
@@ -670,7 +588,6 @@ export class P2PManager extends WavedashManager {
 
         // Add peer to connection if not already present
         if (!connection.peers[remoteUserId]) {
-          this.unconfirmedPeers.add(remoteUserId);
           connection.peers[remoteUserId] = {
             userId: remoteUserId,
             username: "" // Will be updated when member list arrives
@@ -689,10 +606,6 @@ export class P2PManager extends WavedashManager {
             `Failed to create on-demand peer connection for ${remoteUserId}`
           );
           return;
-        }
-
-        if (this.unconfirmedPeers.has(remoteUserId)) {
-          this.reconcileUnconfirmedPeers(connection);
         }
       } else {
         // For non-OFFER messages, we need the peer connection to exist first
@@ -1543,7 +1456,6 @@ export class P2PManager extends WavedashManager {
     this.currentConnection = null;
 
     this.processedSignalingMessages.clear();
-    this.pendingProcessedMessageIds.clear();
     this.pendingIceCandidates.clear();
     this.iceRestartAttempts.clear();
     this.offerRetryTimers.forEach((timer) => clearTimeout(timer));
@@ -1551,7 +1463,6 @@ export class P2PManager extends WavedashManager {
     this.offersInFlight.clear();
     this.currentOfferIds.clear();
     this.reconnectingPeers.clear();
-    this.unconfirmedPeers.clear();
     this.establishedPeers.clear();
     this.clearPacketDropTrackers();
 
