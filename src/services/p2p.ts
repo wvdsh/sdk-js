@@ -553,33 +553,48 @@ export class P2PManager extends WavedashManager {
     }
 
     // Process only new messages, after any earlier batch has finished
+    const handledMessageIds: Id<"p2pSignalingMessages">[] = [];
+    let stale = false;
     const run = this.signalingQueue.then(async () => {
       for (const message of messagesToProcess) {
-        if (this.currentConnection !== connection) return;
+        if (this.currentConnection !== connection) {
+          stale = true;
+          return;
+        }
         try {
           await this.handleSignalingMessage(message, connection);
           this.processedSignalingMessages.add(message._id);
         } catch (error) {
           logger.error("Error handling signaling message:", error);
         }
+        handledMessageIds.push(message._id);
       }
     });
     this.signalingQueue = run;
     await run;
 
-    // Mark all messages as processed in batch
+    // Mark messages as processed in batch. If the connection was torn down
+    // before we got to some of them (e.g. a lobby rejoin), acknowledge only
+    // what we actually handled so the new subscription still receives the rest.
+    const messageIdsToMark = stale ? handledMessageIds : newMessageIds;
     try {
-      await this.sdk.convexClient.mutation(
-        api.sdk.p2pSignaling.markSignalingMessagesProcessed,
-        { messageIds: newMessageIds }
-      );
+      if (messageIdsToMark.length > 0) {
+        await this.sdk.convexClient.mutation(
+          api.sdk.p2pSignaling.markSignalingMessagesProcessed,
+          { messageIds: messageIdsToMark }
+        );
+      }
     } catch (error) {
       logger.error("Failed to mark signaling messages as processed:", error);
     } finally {
       // Release only the messages this call claimed; others may still be
-      // in flight in a later batch.
-      for (const message of messagesToProcess) {
-        this.pendingProcessedMessageIds.delete(message._id);
+      // in flight in a later batch. After a teardown, disconnectP2P already
+      // cleared the pending set and a new connection may have reclaimed these
+      // IDs, so leave it alone.
+      if (this.currentConnection === connection) {
+        for (const message of messagesToProcess) {
+          this.pendingProcessedMessageIds.delete(message._id);
+        }
       }
     }
   }
