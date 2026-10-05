@@ -73,6 +73,7 @@ export class P2PManager extends WavedashManager {
   private readonly OFFER_RETRY_BASE_DELAY_MS = 15_000;
   private readonly OFFER_RETRY_MAX_DELAY_MS = 60_000;
   private readonly ICE_DISCONNECTED_GRACE_MS = 5_000;
+  private readonly UNCONFIRMED_PEER_GRACE_MS = 10_000;
 
   // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
   // Tracked on both active and passive sides so reconnect events stay symmetric
@@ -81,8 +82,9 @@ export class P2PManager extends WavedashManager {
 
   // Peers created on demand from an incoming offer that haven't appeared in a
   // lobby member list yet. Our member list can lag behind the remote's offer,
-  // so a list update that's missing them doesn't mean they left.
-  private unconfirmedPeers = new Set<UserId>();
+  // so a list update that's missing them doesn't mean they left. If no member
+  // list confirms them within UNCONFIRMED_PEER_GRACE_MS, they're removed.
+  private unconfirmedPeers = new Map<UserId, ReturnType<typeof setTimeout>>();
 
   // Peers for which we've emitted P2P_CONNECTION_ESTABLISHED. Prevents duplicate
   // emissions if both data channels happen to open concurrently, and is cleared
@@ -390,7 +392,7 @@ export class P2PManager extends WavedashManager {
     for (const member of members) {
       if (member.id === this.sdk.getUserId()) continue;
 
-      this.unconfirmedPeers.delete(member.id);
+      this.confirmPeer(member.id);
       const existingPeer = this.currentConnection.peers[member.id];
       if (existingPeer) {
         // Update username if it was empty (from on-demand peer creation)
@@ -450,30 +452,59 @@ export class P2PManager extends WavedashManager {
       if (!newPeerUserIds.has(userId) && !this.unconfirmedPeers.has(userId)) {
         const peer = this.currentConnection.peers[userId];
         logger.debug(`Peer left: ${peer.username} (${userId})`);
-
-        // Clean up WebRTC resources
-        const pc = this.peerConnections.get(userId);
-        if (pc) {
-          pc.close();
-          this.peerConnections.delete(userId);
-        }
-        this.untrackOpenChannels(userId);
-        this.reliableChannels.delete(userId);
-        this.unreliableChannels.delete(userId);
-        this.pendingIceCandidates.delete(userId);
-        this.iceRestartAttempts.delete(userId);
-        this.clearOfferRetry(userId);
-        this.offersInFlight.delete(userId);
-        this.currentOfferIds.delete(userId);
-        this.reconnectingPeers.delete(userId);
-        this.establishedPeers.delete(userId);
-
-        // Remove from peer list
-        delete this.currentConnection.peers[userId];
+        this.removePeer(userId);
       }
     }
 
     return this.currentConnection;
+  }
+
+  private removePeer(userId: UserId): void {
+    // Clean up WebRTC resources
+    const pc = this.peerConnections.get(userId);
+    if (pc) {
+      pc.close();
+      this.peerConnections.delete(userId);
+    }
+    this.untrackOpenChannels(userId);
+    this.reliableChannels.delete(userId);
+    this.unreliableChannels.delete(userId);
+    this.pendingIceCandidates.delete(userId);
+    this.iceRestartAttempts.delete(userId);
+    this.clearOfferRetry(userId);
+    this.offersInFlight.delete(userId);
+    this.currentOfferIds.delete(userId);
+    this.reconnectingPeers.delete(userId);
+    this.establishedPeers.delete(userId);
+    this.confirmPeer(userId);
+
+    // Remove from peer list
+    if (this.currentConnection) {
+      delete this.currentConnection.peers[userId];
+    }
+  }
+
+  private addUnconfirmedPeer(userId: UserId, connection: P2PConnection): void {
+    this.confirmPeer(userId);
+    this.unconfirmedPeers.set(
+      userId,
+      setTimeout(() => {
+        this.unconfirmedPeers.delete(userId);
+        if (this.currentConnection !== connection) return;
+        logger.debug(
+          `Peer ${userId} sent an offer but never appeared in the lobby member list, removing`
+        );
+        this.removePeer(userId);
+      }, this.UNCONFIRMED_PEER_GRACE_MS)
+    );
+  }
+
+  private confirmPeer(userId: UserId): void {
+    const timer = this.unconfirmedPeers.get(userId);
+    if (timer) {
+      clearTimeout(timer);
+      this.unconfirmedPeers.delete(userId);
+    }
   }
 
   private async establishWebRTCConnections(
@@ -621,7 +652,7 @@ export class P2PManager extends WavedashManager {
 
         // Add peer to connection if not already present
         if (!connection.peers[remoteUserId]) {
-          this.unconfirmedPeers.add(remoteUserId);
+          this.addUnconfirmedPeer(remoteUserId, connection);
           connection.peers[remoteUserId] = {
             userId: remoteUserId,
             username: "" // Will be updated when member list arrives
@@ -1496,6 +1527,7 @@ export class P2PManager extends WavedashManager {
     this.offersInFlight.clear();
     this.currentOfferIds.clear();
     this.reconnectingPeers.clear();
+    this.unconfirmedPeers.forEach((timer) => clearTimeout(timer));
     this.unconfirmedPeers.clear();
     this.establishedPeers.clear();
     this.clearPacketDropTrackers();
