@@ -586,10 +586,14 @@ export class LobbyManager extends WavedashManager {
     }
 
     // Update P2P connections when lobby membership changes
-    // Serialize P2P updates to prevent race conditions from concurrent subscription callbacks
+    // Serialize P2P updates to prevent race conditions from concurrent subscription callbacks.
+    // Apply the latest list when the job runs, not the one captured here: a
+    // queued job can run after newer updates arrived, and applying its older
+    // list would drop peers that have since joined. Subscription updates
+    // arrive in order, so this.lobbyUsers is always the newest.
     if (this.lobbyId) {
       this.p2pUpdateQueue = this.p2pUpdateQueue
-        .then(() => this.updateP2PConnections(newUsers))
+        .then(() => this.updateP2PConnections(this.lobbyUsers))
         .catch((error) => {
           logger.error("Error in queued P2P update:", error);
         });
