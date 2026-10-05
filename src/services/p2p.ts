@@ -79,6 +79,11 @@ export class P2PManager extends WavedashManager {
   // regardless of which peer drives the ICE restart.
   private reconnectingPeers = new Set<UserId>();
 
+  // Peers created on demand from an incoming offer that haven't appeared in a
+  // lobby member list yet. Our member list can lag behind the remote's offer,
+  // so a list update that's missing them doesn't mean they left.
+  private unconfirmedPeers = new Set<UserId>();
+
   // Peers for which we've emitted P2P_CONNECTION_ESTABLISHED. Prevents duplicate
   // emissions if both data channels happen to open concurrently, and is cleared
   // on peer disconnect so a rejoining peer gets a fresh ESTABLISHED event.
@@ -116,6 +121,10 @@ export class P2PManager extends WavedashManager {
   private unsubscribeFromSignalingMessages: (() => void) | null = null;
   private processedSignalingMessages = new Set<string>();
   private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
+  // Signaling messages are handled one at a time, in order. Subscription
+  // callbacks can fire while a previous batch is still awaiting WebRTC calls,
+  // and interleaving offer/answer handling on one RTCPeerConnection breaks it.
+  private signalingQueue: Promise<void> = Promise.resolve();
 
   // Initialization lock to prevent duplicate concurrent initialization for the same lobby
   private initializationInProgress: Promise<P2PConnection> | null = null;
@@ -381,6 +390,7 @@ export class P2PManager extends WavedashManager {
     for (const member of members) {
       if (member.id === this.sdk.getUserId()) continue;
 
+      this.unconfirmedPeers.delete(member.id);
       const existingPeer = this.currentConnection.peers[member.id];
       if (existingPeer) {
         // Update username if it was empty (from on-demand peer creation)
@@ -437,7 +447,7 @@ export class P2PManager extends WavedashManager {
     for (const userId of Object.keys(
       this.currentConnection.peers
     ) as UserId[]) {
-      if (!newPeerUserIds.has(userId)) {
+      if (!newPeerUserIds.has(userId) && !this.unconfirmedPeers.has(userId)) {
         const peer = this.currentConnection.peers[userId];
         logger.debug(`Peer left: ${peer.username} (${userId})`);
 
@@ -527,48 +537,49 @@ export class P2PManager extends WavedashManager {
     const newMessageIds: Id<"p2pSignalingMessages">[] = [];
     const messagesToProcess: P2PSignalingMessage[] = [];
 
-    // Filter out messages we've already processed or are pending processing
+    // Filter out messages we've already processed or are pending processing.
+    // Claim them as pending immediately so an overlapping callback can't
+    // handle the same message a second time.
     for (const message of messages) {
       if (
         !this.processedSignalingMessages.has(message._id) &&
         !this.pendingProcessedMessageIds.has(message._id)
       ) {
         messagesToProcess.push(message);
+        this.pendingProcessedMessageIds.add(message._id);
       }
       // Always include in batch to mark as processed
       newMessageIds.push(message._id);
     }
 
-    // Process only new messages
-    for (const message of messagesToProcess) {
-      this.pendingProcessedMessageIds.add(message._id);
-
-      try {
-        await this.handleSignalingMessage(message, connection);
-        this.processedSignalingMessages.add(message._id);
-      } catch (error) {
-        logger.error("Error handling signaling message:", error);
+    // Process only new messages, after any earlier batch has finished
+    const run = this.signalingQueue.then(async () => {
+      for (const message of messagesToProcess) {
+        if (this.currentConnection !== connection) return;
+        try {
+          await this.handleSignalingMessage(message, connection);
+          this.processedSignalingMessages.add(message._id);
+        } catch (error) {
+          logger.error("Error handling signaling message:", error);
+        }
       }
-    }
+    });
+    this.signalingQueue = run;
+    await run;
 
     // Mark all messages as processed in batch
-    if (newMessageIds.length > 0) {
-      try {
-        await this.sdk.convexClient.mutation(
-          api.sdk.p2pSignaling.markSignalingMessagesProcessed,
-          { messageIds: newMessageIds }
-        );
-
-        // Remove from pending set after successful batch processing
-        for (const messageId of newMessageIds) {
-          this.pendingProcessedMessageIds.delete(messageId);
-        }
-      } catch (error) {
-        logger.error("Failed to mark signaling messages as processed:", error);
-        // Remove from pending set even on failure to avoid permanent blocking
-        for (const messageId of newMessageIds) {
-          this.pendingProcessedMessageIds.delete(messageId);
-        }
+    try {
+      await this.sdk.convexClient.mutation(
+        api.sdk.p2pSignaling.markSignalingMessagesProcessed,
+        { messageIds: newMessageIds }
+      );
+    } catch (error) {
+      logger.error("Failed to mark signaling messages as processed:", error);
+    } finally {
+      // Release only the messages this call claimed; others may still be
+      // in flight in a later batch.
+      for (const message of messagesToProcess) {
+        this.pendingProcessedMessageIds.delete(message._id);
       }
     }
   }
@@ -595,6 +606,7 @@ export class P2PManager extends WavedashManager {
 
         // Add peer to connection if not already present
         if (!connection.peers[remoteUserId]) {
+          this.unconfirmedPeers.add(remoteUserId);
           connection.peers[remoteUserId] = {
             userId: remoteUserId,
             username: "" // Will be updated when member list arrives
@@ -832,6 +844,10 @@ export class P2PManager extends WavedashManager {
   ): Promise<boolean> {
     const iceServers = await this.getIceServers();
     if (this.currentConnection !== connection) return false;
+    // Another path (an on-demand offer vs. a member list update) may have
+    // created this peer's pc while we awaited. Replacing it would orphan
+    // whatever offer/answer it is mid-way through.
+    if (this.peerConnections.has(remoteUserId)) return true;
     if (!iceServers) {
       logger.error(`No ICE servers available for peer ${remoteUserId}`);
       this.sdk.gameEventManager.notifyGame(
@@ -1147,9 +1163,14 @@ export class P2PManager extends WavedashManager {
           this.scheduleOfferRetry(remoteUserId, pc);
           return;
         }
-        logger.warn(
-          `Peer ${remoteUserId} not connected after ${delay}ms (signaling: ${pc.signalingState}, ICE: ${pc.iceConnectionState}), re-offering...`
-        );
+        // Warn on the first retry only; a peer that never answers would
+        // otherwise warn every OFFER_RETRY_MAX_DELAY_MS indefinitely.
+        const retryMessage = `Peer ${remoteUserId} not connected after ${delay}ms (signaling: ${pc.signalingState}, ICE: ${pc.iceConnectionState}), re-offering...`;
+        if (attempts === 0) {
+          logger.warn(retryMessage);
+        } else {
+          logger.debug(retryMessage);
+        }
         this.attemptIceRestart(remoteUserId, pc);
       }, delay)
     );
@@ -1460,6 +1481,7 @@ export class P2PManager extends WavedashManager {
     this.offersInFlight.clear();
     this.currentOfferIds.clear();
     this.reconnectingPeers.clear();
+    this.unconfirmedPeers.clear();
     this.establishedPeers.clear();
     this.clearPacketDropTrackers();
 
