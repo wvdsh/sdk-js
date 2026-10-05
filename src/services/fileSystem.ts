@@ -24,24 +24,16 @@ export class FileSystemManager extends WavedashManager {
   private remoteStorageOrigin: string | undefined;
 
   // The backend rate limits getUploadUrl per user per game, so its
-  // retryAfter applies to every file. Requests normally run in parallel;
-  // once rate limited they line up here and go one at a time after the
-  // retryAfter, so the backlog doesn't hit the backend all at once. The
-  // queue is cleared when the backlog drains.
+  // retryAfter applies to every file. Until it passes, uploads fail here
+  // instead of sending requests the backend will reject.
   private rateLimitedUntil = 0;
-  private rateLimitedQueue: Promise<unknown> | undefined;
   // Uploads that haven't minted their signed URL yet, by remote key. Repeat
   // calls for the same file join the pending upload — it reads the file once
   // it runs, so it carries the newest content.
   private pendingUploads = new Map<string, Promise<string>>();
-  private destroyed = false;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
-  }
-
-  destroy(): void {
-    this.destroyed = true;
   }
 
   /**
@@ -407,76 +399,33 @@ export class FileSystemManager extends WavedashManager {
   // ================
 
   private async getUploadUrl(remoteKey: string): Promise<string> {
-    if (!this.rateLimitedQueue) {
-      try {
-        return await this.requestUploadUrl(remoteKey);
-      } catch (error) {
-        if (!this.noteRateLimit(error)) throw error;
-      }
+    const waitMs = this.rateLimitedUntil - Date.now();
+    if (waitMs > 0) {
+      throw new Error(
+        `Upload rate limited; try again in ${Math.ceil(waitMs / 1000)}s. Upload less often.`
+      );
     }
-    return this.enqueueRateLimited(remoteKey);
-  }
-
-  private enqueueRateLimited(remoteKey: string): Promise<string> {
-    const turn = (this.rateLimitedQueue ?? Promise.resolve()).then(() =>
-      this.requestUploadUrlWhenAllowed(remoteKey)
-    );
-    const tail = turn.catch(() => undefined);
-    this.rateLimitedQueue = tail;
-    void tail.then(() => {
-      if (this.rateLimitedQueue === tail) this.rateLimitedQueue = undefined;
-    });
-    return turn;
-  }
-
-  // Wait out the backend's retryAfter, retrying until it lets us through
-  private async requestUploadUrlWhenAllowed(
-    remoteKey: string
-  ): Promise<string> {
-    for (;;) {
-      const waitMs = this.rateLimitedUntil - Date.now();
-      if (waitMs > 0) {
-        await new Promise((resolve) => setTimeout(resolve, waitMs));
+    try {
+      return await this.sdk.convexClient.mutation(
+        api.sdk.remoteFileStorage.getUploadUrl,
+        { path: remoteKey }
+      );
+    } catch (error) {
+      const data =
+        error instanceof ConvexError
+          ? (error.data as { code?: string; retryAfterMs?: number })
+          : undefined;
+      if (
+        data?.code === RATE_LIMITED_ERROR_CODE &&
+        typeof data.retryAfterMs === "number"
+      ) {
+        this.rateLimitedUntil = Math.max(
+          this.rateLimitedUntil,
+          Date.now() + data.retryAfterMs
+        );
       }
-      if (this.destroyed) {
-        throw new Error("Upload cancelled: session ended");
-      }
-      try {
-        return await this.requestUploadUrl(remoteKey);
-      } catch (error) {
-        if (!this.noteRateLimit(error)) throw error;
-      }
+      throw error;
     }
-  }
-
-  private requestUploadUrl(remoteKey: string): Promise<string> {
-    return this.sdk.convexClient.mutation(
-      api.sdk.remoteFileStorage.getUploadUrl,
-      { path: remoteKey }
-    );
-  }
-
-  // If the backend rate limited us, remember its retryAfter (it covers every
-  // file) and return true
-  private noteRateLimit(error: unknown): boolean {
-    const data =
-      error instanceof ConvexError
-        ? (error.data as { code?: string; retryAfterMs?: number })
-        : undefined;
-    if (
-      data?.code !== RATE_LIMITED_ERROR_CODE ||
-      typeof data.retryAfterMs !== "number"
-    ) {
-      return false;
-    }
-    this.rateLimitedUntil = Math.max(
-      this.rateLimitedUntil,
-      Date.now() + data.retryAfterMs
-    );
-    logger.warn(
-      `Remote file uploads are rate limited; retrying in ${data.retryAfterMs}ms. Upload less often.`
-    );
-    return true;
   }
 
   private getRemoteStorageOrigin(): string {
