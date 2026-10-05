@@ -601,6 +601,17 @@ export class P2PManager extends WavedashManager {
     // sends an offer before our updateP2PConnection has been called with them in the member list.
     if (!this.peerConnections.has(remoteUserId)) {
       if (message.messageType === P2P_SIGNALING_MESSAGE_TYPE.OFFER) {
+        // Don't resurrect a peer who has left: an offer of theirs may still be
+        // queued after we removed them, or left over from an earlier visit.
+        if (
+          !this.sdk.lobbyManager.isLobbyMember(connection.lobbyId, remoteUserId)
+        ) {
+          logger.debug(
+            `Ignoring offer from ${remoteUserId}, no longer in lobby ${connection.lobbyId}`
+          );
+          return;
+        }
+
         logger.debug(
           `Received offer from ${remoteUserId} before peer connection exists, creating on-demand`
         );
@@ -627,8 +638,9 @@ export class P2PManager extends WavedashManager {
           return;
         }
       } else {
-        // For non-OFFER messages, we need the peer connection to exist first
-        logger.warn(
+        // For non-OFFER messages, we need the peer connection to exist first.
+        // Expected when the peer left, or after we dropped their connection.
+        logger.debug(
           `No peer connection for user ${remoteUserId}, dropping ${message.messageType} message`
         );
         return;
