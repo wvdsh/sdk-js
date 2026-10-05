@@ -12,12 +12,25 @@ import * as indexedDBUtils from "../utils/indexedDB";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
 import { api, UgcStorage } from "@wvdsh/api";
+import { ConvexError } from "convex/values";
 
 // Stable path used as the remote key prefix, replacing the per-build Unity persistentDataPath
 const WAVEDASH_PERSISTENT_DATA_PATH = "/idbfs/wavedash";
 
+// Matches ErrorCode.RateLimited on the backend
+const RATE_LIMITED_ERROR_CODE = "rate_limited";
+
 export class FileSystemManager extends WavedashManager {
   private remoteStorageOrigin: string | undefined;
+
+  // The backend rate limits getUploadUrl per user per game, so its
+  // retryAfter applies to every file. Until it passes, uploads fail here
+  // instead of sending requests the backend will reject.
+  private rateLimitedUntil = 0;
+  // Uploads that haven't minted their signed URL yet, by remote key. Repeat
+  // calls for the same file join the pending upload — it reads the file once
+  // it runs, so it carries the newest content.
+  private pendingUploads = new Map<string, Promise<string>>();
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -71,15 +84,27 @@ export class FileSystemManager extends WavedashManager {
    * @returns The path of the remote file that the local file was uploaded to
    */
   async uploadRemoteFile(filePath: string): Promise<string> {
-    const uploadUrl = await this.sdk.convexClient.mutation(
-      api.sdk.remoteFileStorage.getUploadUrl,
-      { path: this.toRemoteKey(filePath) }
-    );
-    const success = await this.upload(uploadUrl, filePath);
-    if (!success) {
-      throw new Error(`Failed to upload file: ${filePath}`);
-    }
-    return filePath;
+    const remoteKey = this.toRemoteKey(filePath);
+    const pending = this.pendingUploads.get(remoteKey);
+    if (pending) return pending;
+
+    const promise = (async () => {
+      let uploadUrl: string;
+      try {
+        uploadUrl = await this.getUploadUrl(remoteKey);
+      } finally {
+        // From here this upload may read the file, so later calls start
+        // their own
+        this.pendingUploads.delete(remoteKey);
+      }
+      const success = await this.upload(uploadUrl, filePath);
+      if (!success) {
+        throw new Error(`Failed to upload file: ${filePath}`);
+      }
+      return filePath;
+    })();
+    this.pendingUploads.set(remoteKey, promise);
+    return promise;
   }
 
   /**
@@ -372,6 +397,36 @@ export class FileSystemManager extends WavedashManager {
   // ================
   // Private Methods
   // ================
+
+  private async getUploadUrl(remoteKey: string): Promise<string> {
+    const waitMs = this.rateLimitedUntil - Date.now();
+    if (waitMs > 0) {
+      throw new Error(
+        `Upload rate limited; try again in ${Math.ceil(waitMs / 1000)}s. Upload less often.`
+      );
+    }
+    try {
+      return await this.sdk.convexClient.mutation(
+        api.sdk.remoteFileStorage.getUploadUrl,
+        { path: remoteKey }
+      );
+    } catch (error) {
+      const data =
+        error instanceof ConvexError
+          ? (error.data as { code?: string; retryAfterMs?: number })
+          : undefined;
+      if (
+        data?.code === RATE_LIMITED_ERROR_CODE &&
+        typeof data.retryAfterMs === "number"
+      ) {
+        this.rateLimitedUntil = Math.max(
+          this.rateLimitedUntil,
+          Date.now() + data.retryAfterMs
+        );
+      }
+      throw error;
+    }
+  }
 
   private getRemoteStorageOrigin(): string {
     if (this.remoteStorageOrigin) {
