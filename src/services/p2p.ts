@@ -69,9 +69,10 @@ export class P2PManager extends WavedashManager {
   private readonly OFFER_RETRY_BASE_DELAY_MS = 15_000;
   private readonly OFFER_RETRY_MAX_DELAY_MS = 60_000;
   private readonly ICE_DISCONNECTED_GRACE_MS = 5_000;
-  private readonly SIGNALING_SEND_MAX_ATTEMPTS = 10;
-  private readonly SIGNALING_SEND_BASE_DELAY_MS = 500;
-  private readonly SIGNALING_SEND_MAX_DELAY_MS = 8_000;
+  // When each peer last stopped being connected (or started its first
+  // connection attempt). Cleared once ICE connects.
+  private connectingSince = new Map<UserId, number>();
+  private readonly CONNECTION_GIVE_UP_MS = 5 * 60_000;
 
   // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
   // Tracked on both active and passive sides so reconnect events stay symmetric
@@ -450,6 +451,7 @@ export class P2PManager extends WavedashManager {
         this.unreliableChannels.delete(userId);
         this.pendingIceCandidates.delete(userId);
         this.iceRestartAttempts.delete(userId);
+        this.connectingSince.delete(userId);
         this.clearOfferRetry(userId);
         this.offersInFlight.delete(userId);
         this.currentOfferIds.delete(userId);
@@ -794,6 +796,9 @@ export class P2PManager extends WavedashManager {
       `  Unreliable channel state: ${unreliableChannel?.readyState || "none"}`
     );
 
+    if (!this.connectingSince.has(remoteUserId)) {
+      this.connectingSince.set(remoteUserId, Date.now());
+    }
     this.offersInFlight.add(remoteUserId);
     try {
       const offer = await pc.createOffer();
@@ -963,6 +968,7 @@ export class P2PManager extends WavedashManager {
         );
         // Reset restart state on successful connection
         this.iceRestartAttempts.delete(remoteUserId);
+        this.connectingSince.delete(remoteUserId);
         this.clearOfferRetry(remoteUserId);
 
         // If we previously flagged this peer as reconnecting, notify the game
@@ -1053,6 +1059,11 @@ export class P2PManager extends WavedashManager {
       return;
     }
 
+    if (!this.connectingSince.has(remoteUserId)) {
+      this.connectingSince.set(remoteUserId, Date.now());
+    }
+    if (this.giveUpIfPastDeadline(remoteUserId, pc)) return;
+
     const attempts = (this.iceRestartAttempts.get(remoteUserId) || 0) + 1;
     this.iceRestartAttempts.set(remoteUserId, attempts);
     logger.debug(`ICE restart attempt ${attempts} for peer ${remoteUserId}`);
@@ -1130,6 +1141,7 @@ export class P2PManager extends WavedashManager {
         ) {
           return;
         }
+        if (this.giveUpIfPastDeadline(remoteUserId, pc)) return;
         if (
           pc.signalingState === "stable" &&
           pc.iceConnectionState === "checking"
@@ -1146,6 +1158,53 @@ export class P2PManager extends WavedashManager {
         this.attemptIceRestart(remoteUserId, pc);
       }, delay)
     );
+  }
+
+  /**
+   * Gives up on a peer that hasn't connected within CONNECTION_GIVE_UP_MS.
+   * Only reached on the active side (lower userId), which drives retries.
+   * @returns true if the connection was given up on
+   */
+  private giveUpIfPastDeadline(
+    remoteUserId: UserId,
+    pc: RTCPeerConnection
+  ): boolean {
+    const since = this.connectingSince.get(remoteUserId);
+    if (
+      since === undefined ||
+      Date.now() - since < this.CONNECTION_GIVE_UP_MS
+    ) {
+      return false;
+    }
+
+    logger.error(
+      `Peer ${remoteUserId} not connected after ${this.CONNECTION_GIVE_UP_MS}ms, giving up`
+    );
+    this.clearOfferRetry(remoteUserId);
+    this.connectingSince.delete(remoteUserId);
+    this.iceRestartAttempts.delete(remoteUserId);
+    // Clear reconnecting/established flags since we're reporting terminal
+    // failure instead. Any future recovery for this peer will count as a
+    // fresh ESTABLISHED.
+    this.reconnectingPeers.delete(remoteUserId);
+    this.establishedPeers.delete(remoteUserId);
+    const peer = this.currentConnection?.peers[remoteUserId];
+    if (peer) {
+      this.sdk.gameEventManager.notifyGame(
+        WavedashEvents.P2P_CONNECTION_FAILED,
+        {
+          userId: peer.userId,
+          username: peer.username,
+          error: "Peer did not connect within time limit"
+        } satisfies P2PConnectionFailedPayload
+      );
+    }
+    // Close the pc so the remote peer's channels close too — otherwise the
+    // passive peer (higher userId, which doesn't drive restarts) would be
+    // left with P2P_PEER_RECONNECTING and no terminal event. The resulting
+    // channel.onclose on both sides emits P2P_PEER_DISCONNECTED.
+    pc.close();
+    return true;
   }
 
   private clearOfferRetry(remoteUserId: UserId): void {
@@ -1381,45 +1440,28 @@ export class P2PManager extends WavedashManager {
       throw new Error("No active P2P connection for signaling");
     }
 
-    for (let attempt = 1; ; attempt++) {
-      try {
-        const { sent } = await this.sdk.convexClient.mutation(
-          api.sdk.p2pSignaling.sendSignalingMessage,
-          {
-            lobbyId: connection.lobbyId,
-            toUserId: toUserId,
-            messageType: message.type,
-            data: message.data as Record<string, string | number | null>
-          }
-        );
-        if (sent) {
-          logger.debug("Sent signaling message:", message.type);
-        } else {
-          logger.debug(
-            `Dropped ${message.type} signaling message, no longer a member of lobby ${connection.lobbyId}`
-          );
+    // No retry loop here: the Convex client queues and resends mutations
+    // across socket drops itself, so a rejection is a server error.
+    try {
+      const { sent } = await this.sdk.convexClient.mutation(
+        api.sdk.p2pSignaling.sendSignalingMessage,
+        {
+          lobbyId: connection.lobbyId,
+          toUserId: toUserId,
+          messageType: message.type,
+          data: message.data as Record<string, string | number | null>
         }
-        return;
-      } catch (error) {
-        if (attempt === this.SIGNALING_SEND_MAX_ATTEMPTS) {
-          logger.error("Failed to send signaling message:", error);
-          throw error;
-        }
-        logger.warn(
-          `Failed to send ${message.type} signaling message (attempt ${attempt}/${this.SIGNALING_SEND_MAX_ATTEMPTS}), retrying:`,
-          error
+      );
+      if (sent) {
+        logger.debug("Sent signaling message:", message.type);
+      } else {
+        logger.debug(
+          `Dropped ${message.type} signaling message, no longer a member of lobby ${connection.lobbyId}`
         );
       }
-      await new Promise((resolve) =>
-        setTimeout(
-          resolve,
-          Math.min(
-            this.SIGNALING_SEND_BASE_DELAY_MS * 2 ** (attempt - 1),
-            this.SIGNALING_SEND_MAX_DELAY_MS
-          )
-        )
-      );
-      if (this.currentConnection !== connection) return;
+    } catch (error) {
+      logger.error("Failed to send signaling message:", error);
+      throw error;
     }
   }
 
@@ -1454,6 +1496,7 @@ export class P2PManager extends WavedashManager {
     this.pendingProcessedMessageIds.clear();
     this.pendingIceCandidates.clear();
     this.iceRestartAttempts.clear();
+    this.connectingSince.clear();
     this.offerRetryTimers.forEach((timer) => clearTimeout(timer));
     this.offerRetryTimers.clear();
     this.offersInFlight.clear();
@@ -1492,7 +1535,13 @@ export class P2PManager extends WavedashManager {
 
   isBroadcastReady(): boolean {
     if (!this.currentConnection) return false;
-    return this.reliableChannels.size > 0 && this.unreliableChannels.size > 0;
+
+    const reliableReady =
+      !this.config.enableReliableChannel || this.reliableChannels.size > 0;
+    const unreliableReady =
+      !this.config.enableUnreliableChannel || this.unreliableChannels.size > 0;
+
+    return reliableReady && unreliableReady;
   }
 
   // Get status of all peer connections
