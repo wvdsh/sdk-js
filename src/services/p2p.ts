@@ -119,6 +119,11 @@ export class P2PManager extends WavedashManager {
   // callbacks can fire while a previous batch is still awaiting WebRTC calls,
   // and interleaving offer/answer handling on one RTCPeerConnection breaks it.
   private signalingQueue: Promise<void> = Promise.resolve();
+  // The message currently being handled. Promises from RTCPeerConnection
+  // calls that are pending when the pc is closed never settle (per spec), so
+  // closing the sender's pc releases the queue instead of wedging it forever.
+  private signalingInFlight: { userId: UserId; release: () => void } | null =
+    null;
 
   // Initialization lock to prevent duplicate concurrent initialization for the same lobby
   private initializationInProgress: Promise<P2PConnection> | null = null;
@@ -397,6 +402,9 @@ export class P2PManager extends WavedashManager {
           pc.close();
           this.peerConnections.delete(userId);
         }
+        if (this.signalingInFlight?.userId === userId) {
+          this.signalingInFlight.release();
+        }
         this.untrackOpenChannels(userId);
         this.reliableChannels.delete(userId);
         this.unreliableChannels.delete(userId);
@@ -547,10 +555,21 @@ export class P2PManager extends WavedashManager {
       // Batches are snapshots that overlap; skip what an earlier one handled.
       if (!this.processedSignalingMessages.has(message._id)) {
         this.processedSignalingMessages.add(message._id);
+        let inFlight!: { userId: UserId; release: () => void };
+        const released = new Promise<void>((release) => {
+          inFlight = { userId: message.fromUserId, release };
+        });
+        this.signalingInFlight = inFlight;
         try {
-          await this.handleSignalingMessage(message, connection);
+          await Promise.race([
+            this.handleSignalingMessage(message, connection),
+            released
+          ]);
         } catch (error) {
           logger.error("Error handling signaling message:", error);
+        } finally {
+          if (this.signalingInFlight === inFlight)
+            this.signalingInFlight = null;
         }
       }
       handledMessageIds.push(message._id);
@@ -582,6 +601,17 @@ export class P2PManager extends WavedashManager {
     // sends an offer before our updateP2PConnection has been called with them in the member list.
     if (!this.peerConnections.has(remoteUserId)) {
       if (message.messageType === P2P_SIGNALING_MESSAGE_TYPE.OFFER) {
+        // Don't resurrect a peer who has left: an offer of theirs may still be
+        // queued after we removed them, or left over from an earlier visit.
+        if (
+          !this.sdk.lobbyManager.isLobbyMember(connection.lobbyId, remoteUserId)
+        ) {
+          logger.debug(
+            `Ignoring offer from ${remoteUserId}, no longer in lobby ${connection.lobbyId}`
+          );
+          return;
+        }
+
         logger.debug(
           `Received offer from ${remoteUserId} before peer connection exists, creating on-demand`
         );
@@ -608,8 +638,9 @@ export class P2PManager extends WavedashManager {
           return;
         }
       } else {
-        // For non-OFFER messages, we need the peer connection to exist first
-        logger.warn(
+        // For non-OFFER messages, we need the peer connection to exist first.
+        // Expected when the peer left, or after we dropped their connection.
+        logger.debug(
           `No peer connection for user ${remoteUserId}, dropping ${message.messageType} message`
         );
         return;
@@ -1437,6 +1468,11 @@ export class P2PManager extends WavedashManager {
 
     this.disconnectCount++;
     this.stopSignalingMessageSubscription();
+    // Don't let the next connection queue behind a batch for this one; it may
+    // be waiting on a pc we're about to close.
+    this.signalingInFlight?.release();
+    this.signalingInFlight = null;
+    this.signalingQueue = Promise.resolve();
 
     (
       Object.entries(this.currentConnection.peers) as [UserId, P2PPeer][]

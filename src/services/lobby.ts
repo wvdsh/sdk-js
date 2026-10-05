@@ -124,6 +124,19 @@ export class LobbyManager extends WavedashManager {
     }));
   }
 
+  /**
+   * Whether a user is in the latest member list for a lobby we're in, for
+   * SDK-internal use. Convex delivers a lobby's member list together with
+   * any signaling message from the same moment, so this reflects anyone whose
+   * offer we've received, unless they've since left.
+   */
+  isLobbyMember(lobbyId: LobbyId, userId: UserId): boolean {
+    return (
+      this.lobbyId === lobbyId &&
+      this.lobbyUsers.some((user) => user.userId === userId)
+    );
+  }
+
   getHostId(lobbyId: LobbyId): UserId | null {
     if (this.lobbyId !== lobbyId) {
       logger.error("Must be a member of the lobby to access the host ID");
