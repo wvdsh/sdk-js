@@ -31,8 +31,8 @@ export class ExternalLinkManager extends WavedashManager {
 
   /**
    * Copy `url` to the player's clipboard and have the host show an in-game
-   * toast. Resolves `false` if the clipboard write failed. Must run inside a
-   * user gesture handler.
+   * toast. Resolves `false` if the clipboard write failed.
+   * Must run inside a user gesture handler.
    *
    * The write happens here rather than in the host because
    * `navigator.clipboard` only honours user activation raised in the calling
@@ -45,15 +45,16 @@ export class ExternalLinkManager extends WavedashManager {
       logger.warn(`copyLink("${url}") ignored — not an http(s) URL`);
       return false;
     }
+    const attributed = this.withAttribution(resolved);
     try {
-      await navigator.clipboard.writeText(resolved);
+      await navigator.clipboard.writeText(attributed);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.warn(`copyLink("${resolved}") failed to write the clipboard: ${message}`);
+      logger.warn(`copyLink("${attributed}") failed to write the clipboard: ${message}`);
       return false;
     }
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LINK_COPIED, {
-      url: resolved
+      url: attributed
     });
     return true;
   }
@@ -118,6 +119,19 @@ export class ExternalLinkManager extends WavedashManager {
     this.patchedOpen = null;
     this.clickHandler = null;
     super.destroy();
+  }
+
+  /**
+   * Standard campaign parameters (Urchin/GA). `referral` is the medium for
+   * traffic handed off from another product, as opposed to `cpc` or `email`.
+   * Source and medium are overwritten: this platform is who sent the visit.
+   * Campaign, term, and content describe the game's own link, so they stay.
+   */
+  private withAttribution(href: string): string {
+    const url = new URL(href);
+    url.searchParams.set("utm_source", "wavedash");
+    url.searchParams.set("utm_medium", "referral");
+    return url.href;
   }
 
   private resolveHttpUrl(url: string | URL | undefined): string | null {
