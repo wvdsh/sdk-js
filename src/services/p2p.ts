@@ -73,14 +73,6 @@ export class P2PManager extends WavedashManager {
   private readonly OFFER_RETRY_BASE_DELAY_MS = 15_000;
   private readonly OFFER_RETRY_MAX_DELAY_MS = 60_000;
   private readonly ICE_DISCONNECTED_GRACE_MS = 5_000;
-  // Armed when a peer starts connecting (first offer or ICE restart) and
-  // cleared once ICE connects. Independent of offers/retries, since an offer
-  // send can stay pending indefinitely while the Convex socket is down.
-  private connectionDeadlineTimers = new Map<
-    UserId,
-    ReturnType<typeof setTimeout>
-  >();
-  private readonly CONNECTION_GIVE_UP_MS = 5 * 60_000;
 
   // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
   // Tracked on both active and passive sides so reconnect events stay symmetric
@@ -460,7 +452,6 @@ export class P2PManager extends WavedashManager {
         this.unreliableChannels.delete(userId);
         this.pendingIceCandidates.delete(userId);
         this.iceRestartAttempts.delete(userId);
-        this.clearConnectionDeadline(userId);
         this.clearOfferRetry(userId);
         this.offersInFlight.delete(userId);
         this.currentOfferIds.delete(userId);
@@ -805,7 +796,6 @@ export class P2PManager extends WavedashManager {
       `  Unreliable channel state: ${unreliableChannel?.readyState || "none"}`
     );
 
-    this.armConnectionDeadline(remoteUserId, pc);
     this.offersInFlight.add(remoteUserId);
     try {
       const offer = await pc.createOffer();
@@ -978,7 +968,6 @@ export class P2PManager extends WavedashManager {
         );
         // Reset restart state on successful connection
         this.iceRestartAttempts.delete(remoteUserId);
-        this.clearConnectionDeadline(remoteUserId);
         this.clearOfferRetry(remoteUserId);
 
         // If we previously flagged this peer as reconnecting, notify the game
@@ -1048,7 +1037,6 @@ export class P2PManager extends WavedashManager {
     pc: RTCPeerConnection
   ): Promise<void> {
     if (this.peerConnections.get(remoteUserId) !== pc) return;
-    if (pc.signalingState === "closed") return;
 
     const currentUserId = this.sdk.getUserId();
 
@@ -1069,8 +1057,6 @@ export class P2PManager extends WavedashManager {
       );
       return;
     }
-
-    this.armConnectionDeadline(remoteUserId, pc);
 
     const attempts = (this.iceRestartAttempts.get(remoteUserId) || 0) + 1;
     this.iceRestartAttempts.set(remoteUserId, attempts);
@@ -1128,7 +1114,6 @@ export class P2PManager extends WavedashManager {
     pc: RTCPeerConnection
   ): void {
     if (this.peerConnections.get(remoteUserId) !== pc) return;
-    if (pc.signalingState === "closed") return;
     this.clearOfferRetry(remoteUserId);
     if (
       pc.iceConnectionState === "connected" ||
@@ -1168,69 +1153,6 @@ export class P2PManager extends WavedashManager {
         this.attemptIceRestart(remoteUserId, pc);
       }, delay)
     );
-  }
-
-  private armConnectionDeadline(
-    remoteUserId: UserId,
-    pc: RTCPeerConnection
-  ): void {
-    if (this.connectionDeadlineTimers.has(remoteUserId)) return;
-    this.connectionDeadlineTimers.set(
-      remoteUserId,
-      setTimeout(() => {
-        this.connectionDeadlineTimers.delete(remoteUserId);
-        if (this.peerConnections.get(remoteUserId) !== pc) return;
-        if (
-          pc.iceConnectionState === "connected" ||
-          pc.iceConnectionState === "completed"
-        ) {
-          return;
-        }
-        this.giveUpOnPeer(remoteUserId, pc);
-      }, this.CONNECTION_GIVE_UP_MS)
-    );
-  }
-
-  private clearConnectionDeadline(remoteUserId: UserId): void {
-    const timer = this.connectionDeadlineTimers.get(remoteUserId);
-    if (timer) {
-      clearTimeout(timer);
-      this.connectionDeadlineTimers.delete(remoteUserId);
-    }
-  }
-
-  /**
-   * Gives up on a peer that hasn't connected within CONNECTION_GIVE_UP_MS.
-   * Only reached on the active side (lower userId), which drives retries.
-   */
-  private giveUpOnPeer(remoteUserId: UserId, pc: RTCPeerConnection): void {
-    logger.error(
-      `Peer ${remoteUserId} not connected after ${this.CONNECTION_GIVE_UP_MS}ms, giving up`
-    );
-    this.clearOfferRetry(remoteUserId);
-    this.iceRestartAttempts.delete(remoteUserId);
-    // Clear reconnecting/established flags since we're reporting terminal
-    // failure instead. Any future recovery for this peer will count as a
-    // fresh ESTABLISHED.
-    this.reconnectingPeers.delete(remoteUserId);
-    this.establishedPeers.delete(remoteUserId);
-    const peer = this.currentConnection?.peers[remoteUserId];
-    if (peer) {
-      this.sdk.gameEventManager.notifyGame(
-        WavedashEvents.P2P_CONNECTION_FAILED,
-        {
-          userId: peer.userId,
-          username: peer.username,
-          error: "Peer did not connect within time limit"
-        } satisfies P2PConnectionFailedPayload
-      );
-    }
-    // Close the pc so the remote peer's channels close too — otherwise the
-    // passive peer (higher userId, which doesn't drive restarts) would be
-    // left with P2P_PEER_RECONNECTING and no terminal event. The resulting
-    // channel.onclose on both sides emits P2P_PEER_DISCONNECTED. A pending
-    // offer's finally won't reschedule retries on the closed pc.
-    pc.close();
   }
 
   private clearOfferRetry(remoteUserId: UserId): void {
@@ -1533,8 +1455,6 @@ export class P2PManager extends WavedashManager {
     this.pendingProcessedMessageIds.clear();
     this.pendingIceCandidates.clear();
     this.iceRestartAttempts.clear();
-    this.connectionDeadlineTimers.forEach((timer) => clearTimeout(timer));
-    this.connectionDeadlineTimers.clear();
     this.offerRetryTimers.forEach((timer) => clearTimeout(timer));
     this.offerRetryTimers.clear();
     this.offersInFlight.clear();
