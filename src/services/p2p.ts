@@ -73,7 +73,6 @@ export class P2PManager extends WavedashManager {
   private readonly OFFER_RETRY_BASE_DELAY_MS = 15_000;
   private readonly OFFER_RETRY_MAX_DELAY_MS = 60_000;
   private readonly ICE_DISCONNECTED_GRACE_MS = 5_000;
-  private readonly UNCONFIRMED_PEER_GRACE_MS = 10_000;
 
   // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
   // Tracked on both active and passive sides so reconnect events stay symmetric
@@ -82,9 +81,9 @@ export class P2PManager extends WavedashManager {
 
   // Peers created on demand from an incoming offer that haven't appeared in a
   // lobby member list yet. Our member list can lag behind the remote's offer,
-  // so a list update that's missing them doesn't mean they left. If no member
-  // list confirms them within UNCONFIRMED_PEER_GRACE_MS, they're removed.
-  private unconfirmedPeers = new Map<UserId, ReturnType<typeof setTimeout>>();
+  // so a list update that's missing them doesn't mean they left; instead we
+  // check them against the latest lobby member list (reconcileUnconfirmedPeers).
+  private unconfirmedPeers = new Set<UserId>();
 
   // Peers for which we've emitted P2P_CONNECTION_ESTABLISHED. Prevents duplicate
   // emissions if both data channels happen to open concurrently, and is cleared
@@ -392,7 +391,7 @@ export class P2PManager extends WavedashManager {
     for (const member of members) {
       if (member.id === this.sdk.getUserId()) continue;
 
-      this.confirmPeer(member.id);
+      this.unconfirmedPeers.delete(member.id);
       const existingPeer = this.currentConnection.peers[member.id];
       if (existingPeer) {
         // Update username if it was empty (from on-demand peer creation)
@@ -446,14 +445,24 @@ export class P2PManager extends WavedashManager {
     }
 
     // Clean up connections to users who left
+    let hasMissingUnconfirmedPeer = false;
     for (const userId of Object.keys(
       this.currentConnection.peers
     ) as UserId[]) {
-      if (!newPeerUserIds.has(userId) && !this.unconfirmedPeers.has(userId)) {
-        const peer = this.currentConnection.peers[userId];
-        logger.debug(`Peer left: ${peer.username} (${userId})`);
-        this.removePeer(userId);
+      if (newPeerUserIds.has(userId)) continue;
+      if (this.unconfirmedPeers.has(userId)) {
+        hasMissingUnconfirmedPeer = true;
+        continue;
       }
+      const peer = this.currentConnection.peers[userId];
+      logger.debug(`Peer left: ${peer.username} (${userId})`);
+      this.removePeer(userId);
+    }
+
+    // This list may just be lagging behind their offer, or they may have left
+    // before we ever saw them. Check the latest member list.
+    if (hasMissingUnconfirmedPeer) {
+      this.reconcileUnconfirmedPeers(this.currentConnection);
     }
 
     return this.currentConnection;
@@ -476,7 +485,7 @@ export class P2PManager extends WavedashManager {
     this.currentOfferIds.delete(userId);
     this.reconnectingPeers.delete(userId);
     this.establishedPeers.delete(userId);
-    this.confirmPeer(userId);
+    this.unconfirmedPeers.delete(userId);
 
     // Remove from peer list
     if (this.currentConnection) {
@@ -484,26 +493,35 @@ export class P2PManager extends WavedashManager {
     }
   }
 
-  private addUnconfirmedPeer(userId: UserId, connection: P2PConnection): void {
-    this.confirmPeer(userId);
-    this.unconfirmedPeers.set(
-      userId,
-      setTimeout(() => {
+  /**
+   * Check unconfirmed (offer-only) peers against the latest lobby member list.
+   * Peers in it are confirmed; peers not in it have left and are removed.
+   * Convex updates all subscriptions together at the same database timestamp,
+   * so by the time we're handling a peer's offer the users subscription
+   * already reflects their join (they join before they can send an offer).
+   * Only our queued handling of that list can lag, not the list itself.
+   */
+  private reconcileUnconfirmedPeers(connection: P2PConnection): void {
+    if (this.currentConnection !== connection) return;
+    if (this.unconfirmedPeers.size === 0) return;
+    const lobbyUsers = this.sdk.lobbyManager.getLatestLobbyUsers(
+      connection.lobbyId
+    );
+    if (!lobbyUsers) return;
+
+    const members = new Map(lobbyUsers.map((user) => [user.userId, user]));
+    for (const userId of [...this.unconfirmedPeers]) {
+      const member = members.get(userId);
+      if (member) {
         this.unconfirmedPeers.delete(userId);
-        if (this.currentConnection !== connection) return;
+        const peer = connection.peers[userId];
+        if (peer && !peer.username) peer.username = member.username;
+      } else {
         logger.debug(
-          `Peer ${userId} sent an offer but never appeared in the lobby member list, removing`
+          `Peer ${userId} sent an offer but is no longer in the lobby, removing`
         );
         this.removePeer(userId);
-      }, this.UNCONFIRMED_PEER_GRACE_MS)
-    );
-  }
-
-  private confirmPeer(userId: UserId): void {
-    const timer = this.unconfirmedPeers.get(userId);
-    if (timer) {
-      clearTimeout(timer);
-      this.unconfirmedPeers.delete(userId);
+      }
     }
   }
 
@@ -652,7 +670,7 @@ export class P2PManager extends WavedashManager {
 
         // Add peer to connection if not already present
         if (!connection.peers[remoteUserId]) {
-          this.addUnconfirmedPeer(remoteUserId, connection);
+          this.unconfirmedPeers.add(remoteUserId);
           connection.peers[remoteUserId] = {
             userId: remoteUserId,
             username: "" // Will be updated when member list arrives
@@ -671,6 +689,10 @@ export class P2PManager extends WavedashManager {
             `Failed to create on-demand peer connection for ${remoteUserId}`
           );
           return;
+        }
+
+        if (this.unconfirmedPeers.has(remoteUserId)) {
+          this.reconcileUnconfirmedPeers(connection);
         }
       } else {
         // For non-OFFER messages, we need the peer connection to exist first
@@ -890,6 +912,8 @@ export class P2PManager extends WavedashManager {
   ): Promise<boolean> {
     const iceServers = await this.getIceServers();
     if (this.currentConnection !== connection) return false;
+    // The peer may have been removed (left the lobby) while we awaited.
+    if (!connection.peers[remoteUserId]) return false;
     // Another path (an on-demand offer vs. a member list update) may have
     // created this peer's pc while we awaited. Replacing it would orphan
     // whatever offer/answer it is mid-way through.
@@ -1527,7 +1551,6 @@ export class P2PManager extends WavedashManager {
     this.offersInFlight.clear();
     this.currentOfferIds.clear();
     this.reconnectingPeers.clear();
-    this.unconfirmedPeers.forEach((timer) => clearTimeout(timer));
     this.unconfirmedPeers.clear();
     this.establishedPeers.clear();
     this.clearPacketDropTrackers();

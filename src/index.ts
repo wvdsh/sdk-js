@@ -134,7 +134,7 @@ class WavedashSDK extends EventTarget {
   PurchaseType = PURCHASE_TYPE;
   FulfillPurchaseStatus = FULFILL_PURCHASE_STATUS;
 
-  protected lobbyManager: LobbyManager;
+  lobbyManager: LobbyManager;
   protected statsManager: StatsManager;
   protected heartbeatManager: HeartbeatManager;
   protected ugcManager: UGCManager;
