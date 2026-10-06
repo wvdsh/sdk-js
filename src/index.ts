@@ -1120,7 +1120,7 @@ class WavedashSDK extends EventTarget {
     // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
     if (toUserId && !this.p2pManager.isPeerReady(toUserId)) {
       return false;
-    } else if (!toUserId && !this.p2pManager.isBroadcastReady()) {
+    } else if (!toUserId && !this.p2pManager.isBroadcastReady(reliable)) {
       return false;
     }
     return this.p2pManager.sendP2PMessage(
@@ -1147,7 +1147,7 @@ class WavedashSDK extends EventTarget {
     payloadSize: number = payload.length
   ): boolean {
     // HOT PATH: direct call to avoid apiCallSync overhead (logger, formatResponse)
-    if (!this.p2pManager.isBroadcastReady()) {
+    if (!this.p2pManager.isBroadcastReady(reliable)) {
       return false;
     }
     return this.p2pManager.sendP2PMessage(

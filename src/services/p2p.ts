@@ -71,6 +71,9 @@ export class P2PManager extends WavedashManager {
   private readonly MAX_ICE_RESTART_ATTEMPTS = 6;
   private readonly ICE_RESTART_BASE_TIMEOUT_MS = 5_000;
   private readonly ICE_RESTART_MAX_TIMEOUT_MS = 30_000;
+  // "disconnected" usually recovers by itself or becomes "failed", but neither
+  // is guaranteed; after this long we treat it like "failed".
+  private readonly ICE_DISCONNECTED_GRACE_MS = 20_000;
   // The offer each peer's answer must match; a late answer to a superseded
   // restart offer is ignored rather than applied to the newer one.
   private currentOfferIds = new Map<UserId, string>();
@@ -381,18 +384,7 @@ export class P2PManager extends WavedashManager {
         logger.debug(`Peer left: ${peer.username} (${userId})`);
 
         // Clean up WebRTC resources
-        const pc = this.peerConnections.get(userId);
-        if (pc) {
-          pc.close();
-          this.peerConnections.delete(userId);
-        }
-        this.reliableChannels.delete(userId);
-        this.unreliableChannels.delete(userId);
-        this.pendingIceCandidates.delete(userId);
-        this.iceRestartAttempts.delete(userId);
-        this.iceRestartInProgress.delete(userId);
-        this.clearIceRestartTimer(userId);
-        this.currentOfferIds.delete(userId);
+        this.dropPeerConnection(userId);
         this.reconnectingPeers.delete(userId);
         this.establishedPeers.delete(userId);
 
@@ -411,6 +403,13 @@ export class P2PManager extends WavedashManager {
         // Update username if it was empty (from on-demand peer creation)
         if (!existingPeer.username && member.username) {
           existingPeer.username = member.username;
+        }
+        // Still here, but we gave up on (or lost) the connection: try afresh
+        if (!this.peerConnections.has(member.id)) {
+          logger.debug(
+            `Reconnecting to peer ${member.id} with a new connection`
+          );
+          connectionsToCreate.push(member.id);
         }
       } else {
         logger.debug(`Adding new peer: ${member.username} (${member.id})`);
@@ -983,23 +982,7 @@ export class P2PManager extends WavedashManager {
           `ICE connection to peer ${remoteUserId} failed, will retry in 500ms...`
         );
 
-        // Notify the game that this peer is in a reconnecting state. Fired on
-        // both sides of the connection so games get a symmetric signal even
-        // though only one peer drives the ICE restart. Guarded so we only
-        // emit once per disconnect/reconnect cycle.
-        if (!this.reconnectingPeers.has(remoteUserId)) {
-          this.reconnectingPeers.add(remoteUserId);
-          const peer = this.currentConnection?.peers[remoteUserId];
-          if (peer) {
-            this.sdk.gameEventManager.notifyGame(
-              WavedashEvents.P2P_PEER_RECONNECTING,
-              {
-                userId: peer.userId,
-                username: peer.username
-              } satisfies P2PPeerReconnectingPayload
-            );
-          }
-        }
+        this.markPeerReconnecting(remoteUserId);
 
         setTimeout(() => {
           if (pc.iceConnectionState === "failed") {
@@ -1010,10 +993,23 @@ export class P2PManager extends WavedashManager {
           }
         }, 500);
       } else if (pc.iceConnectionState === "disconnected") {
-        // Disconnected state may recover on its own, but log it
+        // Disconnected state may recover on its own; if it lingers, restart
         logger.debug(
-          `ICE connection to peer ${remoteUserId} disconnected, may recover...`
+          `ICE connection to peer ${remoteUserId} disconnected, restarting ICE if not recovered in ${this.ICE_DISCONNECTED_GRACE_MS}ms...`
         );
+
+        setTimeout(() => {
+          if (
+            this.peerConnections.get(remoteUserId) === pc &&
+            pc.iceConnectionState === "disconnected"
+          ) {
+            logger.warn(
+              `ICE connection to peer ${remoteUserId} still disconnected after ${this.ICE_DISCONNECTED_GRACE_MS}ms, attempting ICE restart...`
+            );
+            this.markPeerReconnecting(remoteUserId);
+            this.attemptIceRestart(remoteUserId, pc);
+          }
+        }, this.ICE_DISCONNECTED_GRACE_MS);
       }
     };
 
@@ -1082,8 +1078,10 @@ export class P2PManager extends WavedashManager {
       // Close the pc so the remote peer's channels close too — otherwise the
       // passive peer (higher userId, which doesn't drive restarts) would be
       // left with P2P_PEER_RECONNECTING and no terminal event. The resulting
-      // channel.onclose on both sides emits P2P_PEER_DISCONNECTED.
-      pc.close();
+      // channel.onclose on both sides emits P2P_PEER_DISCONNECTED and has
+      // the passive peer drop its side too. Both keep the peer as a member,
+      // so the next lobby member update starts a fresh connection.
+      this.dropPeerConnection(remoteUserId);
       return;
     }
 
@@ -1157,6 +1155,44 @@ export class P2PManager extends WavedashManager {
     }
   }
 
+  private markPeerReconnecting(remoteUserId: UserId): void {
+    // Notify the game that this peer is in a reconnecting state. Fired on
+    // both sides of the connection so games get a symmetric signal even
+    // though only one peer drives the ICE restart. Guarded so we only
+    // emit once per disconnect/reconnect cycle.
+    if (this.reconnectingPeers.has(remoteUserId)) return;
+    this.reconnectingPeers.add(remoteUserId);
+    const peer = this.currentConnection?.peers[remoteUserId];
+    if (peer) {
+      this.sdk.gameEventManager.notifyGame(
+        WavedashEvents.P2P_PEER_RECONNECTING,
+        {
+          userId: peer.userId,
+          username: peer.username
+        } satisfies P2PPeerReconnectingPayload
+      );
+    }
+  }
+
+  /**
+   * Close and forget a peer's connection and everything tied to it, but keep
+   * them as a member: a later member update (or their offer) connects afresh.
+   * Channel maps are cleared before closing, so the closing channels'
+   * onclose handlers see they're no longer current.
+   */
+  private dropPeerConnection(remoteUserId: UserId): void {
+    const pc = this.peerConnections.get(remoteUserId);
+    this.peerConnections.delete(remoteUserId);
+    this.reliableChannels.delete(remoteUserId);
+    this.unreliableChannels.delete(remoteUserId);
+    this.pendingIceCandidates.delete(remoteUserId);
+    this.iceRestartAttempts.delete(remoteUserId);
+    this.iceRestartInProgress.delete(remoteUserId);
+    this.clearIceRestartTimer(remoteUserId);
+    this.currentOfferIds.delete(remoteUserId);
+    pc?.close();
+  }
+
   private setupDataChannelHandlers(
     channel: RTCDataChannel,
     remoteUserId: UserId,
@@ -1214,6 +1250,15 @@ export class P2PManager extends WavedashManager {
       // Idempotent: safe to call for each channel close on the same peer.
       this.establishedPeers.delete(remoteUserId);
       this.reconnectingPeers.delete(remoteUserId);
+      // A channel of the current connection closing means the connection is
+      // dead (e.g. the other side gave up and closed it): drop our side too,
+      // so a fresh connection can replace it rather than reusing this one.
+      if (
+        this.reliableChannels.get(remoteUserId) === channel ||
+        this.unreliableChannels.get(remoteUserId) === channel
+      ) {
+        this.dropPeerConnection(remoteUserId);
+      }
       const peer = this.currentConnection?.peers[remoteUserId];
       if (peer) {
         this.sdk.gameEventManager.notifyGame(
@@ -1445,9 +1490,13 @@ export class P2PManager extends WavedashManager {
     return reliableReady && unreliableReady;
   }
 
-  isBroadcastReady(): boolean {
+  // Check if a broadcast on the selected transport could reach a peer: that
+  // channel type must be enabled and we must have a channel of it to someone.
+  isBroadcastReady(reliable: boolean): boolean {
     if (!this.currentConnection) return false;
-    return this.reliableChannels.size > 0 && this.unreliableChannels.size > 0;
+    return reliable
+      ? this.config.enableReliableChannel && this.reliableChannels.size > 0
+      : this.config.enableUnreliableChannel && this.unreliableChannels.size > 0;
   }
 
   // Get status of all peer connections
