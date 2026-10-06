@@ -5,7 +5,6 @@
  */
 
 import throttle from "lodash.throttle";
-import { ConvexError } from "convex/values";
 import type {
   Lobby,
   LobbyVisibility,
@@ -42,18 +41,12 @@ import {
 import { WavedashManager } from "./manager";
 import { getAvatarUrl } from "../utils/cdn";
 import { logger } from "../utils/logger";
+import { getErrorMessage } from "../utils/errors";
 import { hasParentFrame } from "../utils/parentOrigin";
 
-/**
- * Whether a Convex error is the backend's "User is not a member of this lobby".
- * Production deployments redact the message of server errors, so match on the
- * ConvexError payload and only fall back to the message (dev deployments).
- */
+/** Whether a Convex error is the backend's "User is not a member of this lobby". */
 function isNotLobbyMemberError(error: unknown): boolean {
-  if (error instanceof ConvexError && typeof error.data === "string") {
-    return error.data.includes("not a member");
-  }
-  return error instanceof Error && error.message.includes("not a member");
+  return getErrorMessage(error).includes("not a member");
 }
 
 export class LobbyManager extends WavedashManager {
