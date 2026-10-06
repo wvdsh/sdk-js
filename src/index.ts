@@ -38,6 +38,7 @@ import type {
   UGCId
 } from "./types";
 import { getAvatarUrl } from "./utils/cdn";
+import { getErrorMessage } from "./utils/errors";
 import { takeFocus } from "./utils/focus";
 import { IFrameMessenger } from "./utils/iframeMessenger";
 import { LOG_LEVEL, logger } from "./utils/logger";
@@ -533,7 +534,7 @@ class WavedashSDK extends EventTarget {
       const data = await this.ensureGameplayJwt();
       return this._formatResponse({ success: true, data });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       logger.error("getUserJwt", message);
       return this._formatResponse({ success: false, data: null, message });
     }
@@ -1582,7 +1583,7 @@ class WavedashSDK extends EventTarget {
       const data = await (manager[method] as AnyFn)(...args);
       return this._formatResponse({ success: true, data });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = getErrorMessage(error);
       logger.error(method, message);
       return this._formatResponse({ success: false, data: null, message });
     }
