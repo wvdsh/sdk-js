@@ -5,6 +5,7 @@
  */
 
 import throttle from "lodash.throttle";
+import { ConvexError } from "convex/values";
 import type {
   Lobby,
   LobbyVisibility,
@@ -42,6 +43,18 @@ import { WavedashManager } from "./manager";
 import { getAvatarUrl } from "../utils/cdn";
 import { logger } from "../utils/logger";
 import { hasParentFrame } from "../utils/parentOrigin";
+
+/**
+ * Whether a Convex error is the backend's "User is not a member of this lobby".
+ * Production deployments redact the message of server errors, so match on the
+ * ConvexError payload and only fall back to the message (dev deployments).
+ */
+function isNotLobbyMemberError(error: unknown): boolean {
+  if (error instanceof ConvexError && typeof error.data === "string") {
+    return error.data.includes("not a member");
+  }
+  return error instanceof Error && error.message.includes("not a member");
+}
 
 export class LobbyManager extends WavedashManager {
   // Track current lobby state
@@ -231,13 +244,13 @@ export class LobbyManager extends WavedashManager {
       );
       return false;
     }
-    try {
-      // Fire and forget, not awaiting the result
-      this.sdk.convexClient.mutation(api.sdk.gameLobby.sendMessage, args);
-    } catch (error) {
-      logger.error(`Error sending lobby message: ${error}`);
-      return false;
-    }
+    // Fire and forget, not awaiting the result
+    this.sdk.convexClient
+      .mutation(api.sdk.gameLobby.sendMessage, args)
+      .catch((error) => {
+        logger.error(`Error sending lobby message: ${error}`);
+        this.handleLobbyMutationError(lobbyId, error);
+      });
 
     return true;
   }
@@ -311,7 +324,7 @@ export class LobbyManager extends WavedashManager {
     // Error handler for subscription failures (e.g., kicked from lobby).
     const onLobbySubscriptionError = (error: Error) => {
       logger.error(`Lobby subscription error: ${error.message}`);
-      if (error.message.includes("not a member")) {
+      if (isNotLobbyMemberError(error)) {
         this.handleLobbyKicked(LobbyKickedReason.KICKED);
       }
       // Other errors could just be transient, keep the lobby membership alive until we actually receive a "not a member" error.
@@ -396,6 +409,18 @@ export class LobbyManager extends WavedashManager {
       lobbyId,
       reason
     } satisfies LobbyKickedPayload);
+  }
+
+  /**
+   * A lobby mutation failing with "not a member" means the server already
+   * removed us. Treat it as a kick so we stop querying and mutating the lobby,
+   * in case the subscription errors haven't arrived (or were missed).
+   * Ignored when the mutation targeted a lobby other than the current one.
+   */
+  private handleLobbyMutationError(lobbyId: LobbyId, error: unknown): void {
+    if (this.lobbyId === lobbyId && isNotLobbyMemberError(error)) {
+      this.handleLobbyKicked(LobbyKickedReason.KICKED);
+    }
   }
 
   /**
@@ -509,15 +534,14 @@ export class LobbyManager extends WavedashManager {
     if (this.lobbyId === null) return;
     if (Object.keys(this.pendingMetadataUpdates).length === 0) return;
 
+    const lobbyId = this.lobbyId;
     const updates = this.pendingMetadataUpdates;
     this.pendingMetadataUpdates = {};
     this.inFlightMetadataUpdate = this.sdk.convexClient
-      .mutation(api.sdk.gameLobby.setLobbyMetadata, {
-        lobbyId: this.lobbyId,
-        updates
-      })
+      .mutation(api.sdk.gameLobby.setLobbyMetadata, { lobbyId, updates })
       .catch((error) => {
         logger.error("Error updating lobby metadata:", error);
+        this.handleLobbyMutationError(lobbyId, error);
       })
       .finally(() => {
         this.inFlightMetadataUpdate = null;
