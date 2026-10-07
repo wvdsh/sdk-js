@@ -34,13 +34,25 @@ type P2PTurnCredentials = FunctionReturnType<
 
 type P2PSessionDescriptionData = RTCSessionDescriptionInit & {
   offerId?: string;
+  // Set by SDKs that accept P2PIceCandidateBatchData; older ones omit it
+  acceptsCandidateBatches?: boolean;
+};
+
+// Several ICE candidates in one signaling message. Only sent to peers whose
+// offer/answer set acceptsCandidateBatches: older SDKs expect a single
+// RTCIceCandidateInit per message.
+type P2PIceCandidateBatchData = {
+  candidates: string; // JSON-encoded RTCIceCandidateInit[]
 };
 
 type P2PSignalingMessage = Omit<
   FunctionReturnType<typeof api.sdk.p2pSignaling.getSignalingMessages>[0],
   "data"
 > & {
-  data: P2PSessionDescriptionData | RTCIceCandidateInit;
+  data:
+    | P2PSessionDescriptionData
+    | RTCIceCandidateInit
+    | P2PIceCandidateBatchData;
 };
 
 // Default P2P configuration
@@ -69,14 +81,29 @@ export class P2PManager extends WavedashManager {
   // recovered when this fires, the next attempt goes out (or we give up).
   private iceRestartTimers = new Map<UserId, ReturnType<typeof setTimeout>>();
   private readonly MAX_ICE_RESTART_ATTEMPTS = 6;
-  private readonly ICE_RESTART_BASE_TIMEOUT_MS = 5_000;
+  // Signaling round trips can take well over 5s in a busy lobby, and each
+  // attempt that times out first replaces an offer whose answer is on its way.
+  private readonly ICE_RESTART_BASE_TIMEOUT_MS = 15_000;
   private readonly ICE_RESTART_MAX_TIMEOUT_MS = 30_000;
+  // When ICE last reached "connected" per peer. Restart attempts only reset
+  // once a connection has held this long, so a link that keeps dropping right
+  // after recovering still runs out of attempts instead of restarting forever.
+  private iceConnectedAt = new Map<UserId, number>();
+  private readonly ICE_STABLE_RESET_MS = 60_000;
   // "disconnected" usually recovers by itself or becomes "failed", but neither
   // is guaranteed; after this long we treat it like "failed".
   private readonly ICE_DISCONNECTED_GRACE_MS = 20_000;
   // The offer each peer's answer must match; a late answer to a superseded
   // restart offer is ignored rather than applied to the newer one.
   private currentOfferIds = new Map<UserId, string>();
+
+  // Peers whose last offer/answer said they accept ICE candidate batches.
+  // Each of their candidates waits only while a previous send to them is
+  // still in flight, then goes out with whatever else piled up meanwhile.
+  // Everyone else gets one message per candidate, as before.
+  private candidateBatchPeers = new Set<UserId>();
+  private queuedIceCandidates = new Map<UserId, RTCIceCandidateInit[]>();
+  private iceCandidateSendsInFlight = new Set<UserId>();
 
   // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
   // Tracked on both active and passive sides so reconnect events stay symmetric
@@ -625,6 +652,7 @@ export class P2PManager extends WavedashManager {
         logger.debug(`Processing offer from peer ${remoteUserId}:`);
 
         const offerData = message.data as P2PSessionDescriptionData;
+        this.updateCandidateBatching(remoteUserId, offerData);
         await pc.setRemoteDescription(
           new RTCSessionDescription({
             type: offerData.type,
@@ -644,7 +672,8 @@ export class P2PManager extends WavedashManager {
         const answerData = {
           type: answer.type,
           sdp: answer.sdp,
-          offerId: offerData.offerId
+          offerId: offerData.offerId,
+          acceptsCandidateBatches: true
         };
 
         await this.sendSignalingMessage(remoteUserId, {
@@ -672,6 +701,7 @@ export class P2PManager extends WavedashManager {
           );
           break;
         }
+        this.updateCandidateBatching(remoteUserId, answerData);
         await pc.setRemoteDescription(
           new RTCSessionDescription({
             type: answerData.type,
@@ -685,17 +715,31 @@ export class P2PManager extends WavedashManager {
       }
 
       case P2P_SIGNALING_MESSAGE_TYPE.ICE_CANDIDATE: {
-        const iceData = message.data as RTCIceCandidateInit;
-        // Buffer candidates if remote description not yet set (race condition fix)
-        if (!pc.remoteDescription) {
-          const pending = this.pendingIceCandidates.get(remoteUserId) || [];
-          pending.push(iceData);
-          this.pendingIceCandidates.set(remoteUserId, pending);
-          logger.debug(
-            `Buffered ICE candidate for ${remoteUserId} (remote description not yet set, ${pending.length} buffered)`
-          );
-        } else {
-          await pc.addIceCandidate(new RTCIceCandidate(iceData));
+        const data = message.data as
+          | RTCIceCandidateInit
+          | P2PIceCandidateBatchData;
+        const candidates: RTCIceCandidateInit[] =
+          "candidates" in data ? JSON.parse(data.candidates) : [data];
+        for (const iceData of candidates) {
+          // Buffer candidates if remote description not yet set (race condition fix)
+          if (!pc.remoteDescription) {
+            const pending = this.pendingIceCandidates.get(remoteUserId) || [];
+            pending.push(iceData);
+            this.pendingIceCandidates.set(remoteUserId, pending);
+            logger.debug(
+              `Buffered ICE candidate for ${remoteUserId} (remote description not yet set, ${pending.length} buffered)`
+            );
+          } else {
+            // One bad candidate shouldn't cost us the rest of its batch
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(iceData));
+            } catch (error) {
+              logger.warn(
+                `Failed to add ICE candidate for ${remoteUserId}:`,
+                error
+              );
+            }
+          }
         }
         break;
       }
@@ -801,7 +845,8 @@ export class P2PManager extends WavedashManager {
     const offerData = {
       type: offer.type,
       sdp: offer.sdp,
-      offerId
+      offerId,
+      acceptsCandidateBatches: true
     };
 
     await this.sendSignalingMessage(remoteUserId, {
@@ -906,6 +951,11 @@ export class P2PManager extends WavedashManager {
           usernameFragment: event.candidate.usernameFragment
         };
 
+        if (this.candidateBatchPeers.has(remoteUserId)) {
+          this.queueIceCandidate(remoteUserId, candidateData);
+          return;
+        }
+
         this.sendSignalingMessage(remoteUserId, {
           type: P2P_SIGNALING_MESSAGE_TYPE.ICE_CANDIDATE,
           data: candidateData
@@ -956,8 +1006,11 @@ export class P2PManager extends WavedashManager {
         logger.debug(
           `  ICE connected to peer ${remoteUserId}, data channels should be available...`
         );
-        // Reset restart state on successful connection
-        this.iceRestartAttempts.delete(remoteUserId);
+        // End the restart in progress. Attempts reset in attemptIceRestart,
+        // once we know whether this connection held long enough.
+        if (!this.iceConnectedAt.has(remoteUserId)) {
+          this.iceConnectedAt.set(remoteUserId, Date.now());
+        }
         this.iceRestartInProgress.delete(remoteUserId);
         this.clearIceRestartTimer(remoteUserId);
 
@@ -1023,6 +1076,56 @@ export class P2PManager extends WavedashManager {
     return true;
   }
 
+  private updateCandidateBatching(
+    remoteUserId: UserId,
+    description: P2PSessionDescriptionData
+  ): void {
+    if (description.acceptsCandidateBatches) {
+      this.candidateBatchPeers.add(remoteUserId);
+    } else {
+      this.candidateBatchPeers.delete(remoteUserId);
+    }
+  }
+
+  private queueIceCandidate(
+    remoteUserId: UserId,
+    candidate: RTCIceCandidateInit
+  ): void {
+    const queued = this.queuedIceCandidates.get(remoteUserId);
+    if (queued) {
+      queued.push(candidate);
+    } else {
+      this.queuedIceCandidates.set(remoteUserId, [candidate]);
+    }
+    if (!this.iceCandidateSendsInFlight.has(remoteUserId)) {
+      this.sendQueuedIceCandidates(remoteUserId);
+    }
+  }
+
+  /**
+   * Send everything queued for a peer as one message, then repeat for
+   * whatever was queued while that send was in flight, until none is left.
+   */
+  private async sendQueuedIceCandidates(remoteUserId: UserId): Promise<void> {
+    this.iceCandidateSendsInFlight.add(remoteUserId);
+    try {
+      let batch = this.queuedIceCandidates.get(remoteUserId);
+      while (batch) {
+        this.queuedIceCandidates.delete(remoteUserId);
+        await this.sendSignalingMessage(remoteUserId, {
+          type: P2P_SIGNALING_MESSAGE_TYPE.ICE_CANDIDATE,
+          data: { candidates: JSON.stringify(batch) }
+        });
+        batch = this.queuedIceCandidates.get(remoteUserId);
+      }
+    } catch {
+      // Already logged by sendSignalingMessage. Anything still queued goes
+      // out with the next candidate.
+    } finally {
+      this.iceCandidateSendsInFlight.delete(remoteUserId);
+    }
+  }
+
   /**
    * Attempt to restart ICE when connection fails.
    * Only the peer with the lower userId initiates the restart to avoid conflicts.
@@ -1050,6 +1153,17 @@ export class P2PManager extends WavedashManager {
         `ICE restart already in progress for peer ${remoteUserId}, skipping`
       );
       return;
+    }
+
+    // Start counting afresh only if the last connection held for a while;
+    // one that dropped soon after recovering keeps using up attempts.
+    const connectedAt = this.iceConnectedAt.get(remoteUserId);
+    this.iceConnectedAt.delete(remoteUserId);
+    if (
+      connectedAt !== undefined &&
+      Date.now() - connectedAt >= this.ICE_STABLE_RESET_MS
+    ) {
+      this.iceRestartAttempts.delete(remoteUserId);
     }
 
     // Check restart attempt count
@@ -1087,37 +1201,48 @@ export class P2PManager extends WavedashManager {
 
     this.iceRestartAttempts.set(remoteUserId, attempts + 1);
     this.iceRestartInProgress.add(remoteUserId);
-    logger.debug(
-      `ICE restart attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS} for peer ${remoteUserId}`
-    );
 
-    try {
-      // Trigger ICE restart - this invalidates current ICE candidates and gathers new ones
-      pc.restartIce();
-
-      // Create and send a new offer with iceRestart flag
-      const offer = await pc.createOffer({ iceRestart: true });
-      await pc.setLocalDescription(offer);
-
-      const offerId = crypto.randomUUID();
-      this.currentOfferIds.set(remoteUserId, offerId);
-      const offerData = {
-        type: offer.type,
-        sdp: offer.sdp,
-        offerId
-      };
-
-      await this.sendSignalingMessage(remoteUserId, {
-        type: P2P_SIGNALING_MESSAGE_TYPE.OFFER,
-        data: offerData
-      });
-
-      logger.debug(`ICE restart offer sent to peer ${remoteUserId}`);
-    } catch (error) {
-      logger.error(
-        `Failed to initiate ICE restart for peer ${remoteUserId}:`,
-        error
+    if (pc.signalingState === "have-local-offer") {
+      // Our last offer hasn't been answered yet. The peer is most likely just
+      // behind on signaling, and a new offer would throw away the answer on
+      // its way, so give it another round (still counting toward the limit).
+      logger.debug(
+        `Offer to peer ${remoteUserId} still unanswered, waiting before restarting ICE (attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS})`
       );
+    } else {
+      logger.debug(
+        `ICE restart attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS} for peer ${remoteUserId}`
+      );
+
+      try {
+        // Trigger ICE restart - this invalidates current ICE candidates and gathers new ones
+        pc.restartIce();
+
+        // Create and send a new offer with iceRestart flag
+        const offer = await pc.createOffer({ iceRestart: true });
+        await pc.setLocalDescription(offer);
+
+        const offerId = crypto.randomUUID();
+        this.currentOfferIds.set(remoteUserId, offerId);
+        const offerData = {
+          type: offer.type,
+          sdp: offer.sdp,
+          offerId,
+          acceptsCandidateBatches: true
+        };
+
+        await this.sendSignalingMessage(remoteUserId, {
+          type: P2P_SIGNALING_MESSAGE_TYPE.OFFER,
+          data: offerData
+        });
+
+        logger.debug(`ICE restart offer sent to peer ${remoteUserId}`);
+      } catch (error) {
+        logger.error(
+          `Failed to initiate ICE restart for peer ${remoteUserId}:`,
+          error
+        );
+      }
     }
 
     // If this attempt hasn't brought ICE back (the offer went unanswered, or
@@ -1189,7 +1314,10 @@ export class P2PManager extends WavedashManager {
     this.iceRestartAttempts.delete(remoteUserId);
     this.iceRestartInProgress.delete(remoteUserId);
     this.clearIceRestartTimer(remoteUserId);
+    this.iceConnectedAt.delete(remoteUserId);
     this.currentOfferIds.delete(remoteUserId);
+    this.candidateBatchPeers.delete(remoteUserId);
+    this.queuedIceCandidates.delete(remoteUserId);
     pc?.close();
   }
 
@@ -1400,7 +1528,10 @@ export class P2PManager extends WavedashManager {
     toUserId: UserId,
     message: {
       type: (typeof P2P_SIGNALING_MESSAGE_TYPE)[keyof typeof P2P_SIGNALING_MESSAGE_TYPE];
-      data: RTCSessionDescriptionInit | RTCIceCandidateInit;
+      data:
+        | RTCSessionDescriptionInit
+        | RTCIceCandidateInit
+        | P2PIceCandidateBatchData;
     }
   ): Promise<void> {
     if (!this.currentConnection) {
@@ -1414,7 +1545,7 @@ export class P2PManager extends WavedashManager {
           lobbyId: this.currentConnection.lobbyId,
           toUserId: toUserId,
           messageType: message.type,
-          data: message.data as Record<string, string | number | null>
+          data: message.data as Record<string, string | number | boolean | null>
         }
       );
       logger.debug("Sent signaling message:", message.type);
@@ -1457,7 +1588,10 @@ export class P2PManager extends WavedashManager {
     this.iceRestartInProgress.clear();
     this.iceRestartTimers.forEach((timer) => clearTimeout(timer));
     this.iceRestartTimers.clear();
+    this.iceConnectedAt.clear();
     this.currentOfferIds.clear();
+    this.candidateBatchPeers.clear();
+    this.queuedIceCandidates.clear();
     this.reconnectingPeers.clear();
     this.establishedPeers.clear();
     this.clearPacketDropTrackers();
