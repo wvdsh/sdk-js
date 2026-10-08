@@ -81,15 +81,12 @@ export class P2PManager extends WavedashManager {
   // recovered when this fires, the next attempt goes out (or we give up).
   private iceRestartTimers = new Map<UserId, ReturnType<typeof setTimeout>>();
   private readonly MAX_ICE_RESTART_ATTEMPTS = 6;
-  // Signaling round trips can take well over 5s in a busy lobby, and each
-  // attempt that times out first replaces an offer whose answer is on its way.
-  private readonly ICE_RESTART_BASE_TIMEOUT_MS = 15_000;
+  // How long an attempt gets to bring ICE back before the next one (doubling
+  // per attempt, up to the max): room for an answer plus connectivity checks
+  // over a TURN relay. An answer slower than this isn't lost: an unanswered
+  // offer is resent as-is rather than replaced, so its answer still applies.
+  private readonly ICE_RESTART_BASE_TIMEOUT_MS = 10_000;
   private readonly ICE_RESTART_MAX_TIMEOUT_MS = 30_000;
-  // When ICE last reached "connected" per peer. Restart attempts only reset
-  // once a connection has held this long, so a link that keeps dropping right
-  // after recovering still runs out of attempts instead of restarting forever.
-  private iceConnectedAt = new Map<UserId, number>();
-  private readonly ICE_STABLE_RESET_MS = 60_000;
   // "disconnected" usually recovers by itself or becomes "failed", but neither
   // is guaranteed; after this long we treat it like "failed".
   private readonly ICE_DISCONNECTED_GRACE_MS = 20_000;
@@ -97,13 +94,27 @@ export class P2PManager extends WavedashManager {
   // restart offer is ignored rather than applied to the newer one.
   private currentOfferIds = new Map<UserId, string>();
 
+  // An unanswered offer is resent, and each copy arrives as its own message,
+  // possibly handled alongside another copy. Copies share an offerId, which
+  // these track per connection so a copy never renegotiates concurrently with
+  // another ("wrong state" errors): the offer we're answering, the last one we
+  // answered, and whether we're mid-way through applying an answer.
+  private answeringOffers = new WeakMap<RTCPeerConnection, string>();
+  private answeredOffers = new WeakMap<RTCPeerConnection, string>();
+  private applyingAnswers = new WeakSet<RTCPeerConnection>();
+
   // Peers whose last offer/answer said they accept ICE candidate batches.
   // Each of their candidates waits only while a previous send to them is
   // still in flight, then goes out with whatever else piled up meanwhile.
-  // Everyone else gets one message per candidate, as before.
+  // Everyone else gets one message per candidate, as before. Queues and sends
+  // belong to a peer connection, so a replacement connection to the same peer
+  // never waits on (or gets sent by) the old one's send.
   private candidateBatchPeers = new Set<UserId>();
-  private queuedIceCandidates = new Map<UserId, RTCIceCandidateInit[]>();
-  private iceCandidateSendsInFlight = new Set<UserId>();
+  private queuedIceCandidates = new Map<
+    RTCPeerConnection,
+    RTCIceCandidateInit[]
+  >();
+  private iceCandidateSendsInFlight = new Set<RTCPeerConnection>();
 
   // Peers for which we've emitted P2P_PEER_RECONNECTING but not yet RECONNECTED.
   // Tracked on both active and passive sides so reconnect events stay symmetric
@@ -649,37 +660,97 @@ export class P2PManager extends WavedashManager {
         // Receiving an offer means peer is handling connection/restart - clear our restart state
         this.iceRestartInProgress.delete(remoteUserId);
 
+        const offerData = message.data as P2PSessionDescriptionData;
+        const { offerId } = offerData;
+
+        if (offerId !== undefined && this.answeringOffers.get(pc) === offerId) {
+          logger.debug(
+            `Ignoring copy of offer ${offerId} from peer ${remoteUserId}, already answering it`
+          );
+          // A resent copy carries every candidate the peer had gathered by
+          // then, which this copy may not have: add them, in case some of their
+          // own messages were lost. Queued behind the first copy's
+          // setRemoteDescription, so they land on its credentials.
+          await this.addRemoteIceCandidates(
+            remoteUserId,
+            pc,
+            this.candidatesInSdp(offerData.sdp ?? "")
+          );
+          break;
+        }
+        if (
+          offerId !== undefined &&
+          this.answeredOffers.get(pc) === offerId &&
+          pc.signalingState === "stable" &&
+          pc.localDescription?.type === "answer"
+        ) {
+          // The peer resent an offer we already answered, so our answer most
+          // likely never reached it: send the same answer again, as-is
+          logger.debug(
+            `Resending answer to offer ${offerId} from peer ${remoteUserId}`
+          );
+          this.updateCandidateBatching(remoteUserId, offerData);
+          // Same as above: the copy may carry candidates we never received
+          await this.addRemoteIceCandidates(
+            remoteUserId,
+            pc,
+            this.candidatesInSdp(offerData.sdp ?? "")
+          );
+          const answerData: P2PSessionDescriptionData = {
+            type: "answer",
+            sdp: pc.localDescription.sdp,
+            offerId,
+            acceptsCandidateBatches: true
+          };
+          await this.sendSignalingMessage(remoteUserId, {
+            type: P2P_SIGNALING_MESSAGE_TYPE.ANSWER,
+            data: answerData
+          });
+          break;
+        }
+
         logger.debug(`Processing offer from peer ${remoteUserId}:`);
 
-        const offerData = message.data as P2PSessionDescriptionData;
-        this.updateCandidateBatching(remoteUserId, offerData);
-        await pc.setRemoteDescription(
-          new RTCSessionDescription({
-            type: offerData.type,
-            sdp: offerData.sdp
-          })
-        );
+        if (offerId !== undefined) this.answeringOffers.set(pc, offerId);
+        try {
+          this.updateCandidateBatching(remoteUserId, offerData);
+          await pc.setRemoteDescription(
+            new RTCSessionDescription({
+              type: offerData.type,
+              sdp: offerData.sdp
+            })
+          );
 
-        // Flush any buffered ICE candidates now that remote description is set
-        await this.flushPendingIceCandidates(remoteUserId, pc);
+          // Flush any buffered ICE candidates now that remote description is set
+          await this.flushPendingIceCandidates(remoteUserId, pc);
 
-        const answer = await pc.createAnswer();
-        await pc.setLocalDescription(answer);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          if (offerId !== undefined) {
+            this.answeredOffers.set(pc, offerId);
+          } else {
+            this.answeredOffers.delete(pc);
+          }
 
-        logger.debug(`  Answer created, waiting for ondatachannel events...`);
+          logger.debug(`  Answer created, waiting for ondatachannel events...`);
 
-        // Convert RTCSessionDescription to plain object for Convex
-        const answerData = {
-          type: answer.type,
-          sdp: answer.sdp,
-          offerId: offerData.offerId,
-          acceptsCandidateBatches: true
-        };
+          // Convert RTCSessionDescription to plain object for Convex
+          const answerData = {
+            type: answer.type,
+            sdp: answer.sdp,
+            offerId,
+            acceptsCandidateBatches: true
+          };
 
-        await this.sendSignalingMessage(remoteUserId, {
-          type: P2P_SIGNALING_MESSAGE_TYPE.ANSWER,
-          data: answerData
-        });
+          await this.sendSignalingMessage(remoteUserId, {
+            type: P2P_SIGNALING_MESSAGE_TYPE.ANSWER,
+            data: answerData
+          });
+        } finally {
+          if (this.answeringOffers.get(pc) === offerId) {
+            this.answeringOffers.delete(pc);
+          }
+        }
         break;
       }
 
@@ -701,16 +772,31 @@ export class P2PManager extends WavedashManager {
           );
           break;
         }
-        this.updateCandidateBatching(remoteUserId, answerData);
-        await pc.setRemoteDescription(
-          new RTCSessionDescription({
-            type: answerData.type,
-            sdp: answerData.sdp
-          })
-        );
+        // The peer answers every copy of an offer we resent, and once one
+        // answer is applied the rest are ignored anyway (state "stable").
+        // Skipping them while it's still being applied closes the gap where
+        // two pass the check above and the second fails with "wrong state".
+        if (this.applyingAnswers.has(pc)) {
+          logger.debug(
+            `Ignoring copy of answer from peer ${remoteUserId}, already applying one`
+          );
+          break;
+        }
+        this.applyingAnswers.add(pc);
+        try {
+          this.updateCandidateBatching(remoteUserId, answerData);
+          await pc.setRemoteDescription(
+            new RTCSessionDescription({
+              type: answerData.type,
+              sdp: answerData.sdp
+            })
+          );
 
-        // Flush any buffered ICE candidates now that remote description is set
-        await this.flushPendingIceCandidates(remoteUserId, pc);
+          // Flush any buffered ICE candidates now that remote description is set
+          await this.flushPendingIceCandidates(remoteUserId, pc);
+        } finally {
+          this.applyingAnswers.delete(pc);
+        }
         break;
       }
 
@@ -718,35 +804,72 @@ export class P2PManager extends WavedashManager {
         const data = message.data as
           | RTCIceCandidateInit
           | P2PIceCandidateBatchData;
-        const candidates: RTCIceCandidateInit[] =
-          "candidates" in data ? JSON.parse(data.candidates) : [data];
-        for (const iceData of candidates) {
-          // Buffer candidates if remote description not yet set (race condition fix)
-          if (!pc.remoteDescription) {
-            const pending = this.pendingIceCandidates.get(remoteUserId) || [];
-            pending.push(iceData);
-            this.pendingIceCandidates.set(remoteUserId, pending);
-            logger.debug(
-              `Buffered ICE candidate for ${remoteUserId} (remote description not yet set, ${pending.length} buffered)`
-            );
-          } else {
-            // One bad candidate shouldn't cost us the rest of its batch
-            try {
-              await pc.addIceCandidate(new RTCIceCandidate(iceData));
-            } catch (error) {
-              logger.warn(
-                `Failed to add ICE candidate for ${remoteUserId}:`,
-                error
-              );
-            }
-          }
-        }
+        await this.addRemoteIceCandidates(
+          remoteUserId,
+          pc,
+          "candidates" in data ? JSON.parse(data.candidates) : [data]
+        );
         break;
       }
 
       default:
         logger.warn("Unknown signaling message type:", message.messageType);
     }
+  }
+
+  /**
+   * Add a peer's ICE candidates, buffering them until its remote description
+   * is set. Each is added on its own, so one bad candidate doesn't cost the
+   * rest; re-adding one the pc already has is a harmless no-op.
+   */
+  private async addRemoteIceCandidates(
+    remoteUserId: UserId,
+    pc: RTCPeerConnection,
+    candidates: RTCIceCandidateInit[]
+  ): Promise<void> {
+    for (const iceData of candidates) {
+      // Buffer candidates if remote description not yet set (race condition fix)
+      if (!pc.remoteDescription) {
+        const pending = this.pendingIceCandidates.get(remoteUserId) || [];
+        pending.push(iceData);
+        this.pendingIceCandidates.set(remoteUserId, pending);
+        logger.debug(
+          `Buffered ICE candidate for ${remoteUserId} (remote description not yet set, ${pending.length} buffered)`
+        );
+      } else {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(iceData));
+        } catch (error) {
+          logger.warn(
+            `Failed to add ICE candidate for ${remoteUserId}:`,
+            error
+          );
+        }
+      }
+    }
+  }
+
+  /**
+   * The candidates inside an SDP (a=candidate lines), as the peer would have
+   * trickled them. Each carries its section's ICE ufrag, so a browser rejects
+   * it (rather than applying it to other credentials) if that SDP is no longer
+   * the pc's remote description by the time it's added.
+   */
+  private candidatesInSdp(sdp: string): RTCIceCandidateInit[] {
+    const [session, ...mediaSections] = sdp.split(/\r?\n(?=m=)/);
+    const ufragIn = (section: string) =>
+      /^a=ice-ufrag:(\S+)/m.exec(section)?.[1];
+    return mediaSections.flatMap((section, sdpMLineIndex) => {
+      const usernameFragment = ufragIn(section) ?? ufragIn(session) ?? null;
+      return section
+        .split(/\r?\n/)
+        .filter((line) => line.startsWith("a=candidate:"))
+        .map((line) => ({
+          candidate: line.slice("a=".length),
+          sdpMLineIndex,
+          usernameFragment
+        }));
+    });
   }
 
   /**
@@ -842,6 +965,10 @@ export class P2PManager extends WavedashManager {
     // Convert RTCSessionDescription to plain object for Convex
     const offerId = crypto.randomUUID();
     this.currentOfferIds.set(remoteUserId, offerId);
+    // Nothing else would notice a lost offer or answer (or a send that fails
+    // below): if ICE hasn't connected by then, the retry resends this offer
+    // or restarts ICE, same as for a dropped connection.
+    this.scheduleIceRetry(remoteUserId, pc, this.ICE_RESTART_BASE_TIMEOUT_MS);
     const offerData = {
       type: offer.type,
       sdp: offer.sdp,
@@ -952,7 +1079,7 @@ export class P2PManager extends WavedashManager {
         };
 
         if (this.candidateBatchPeers.has(remoteUserId)) {
-          this.queueIceCandidate(remoteUserId, candidateData);
+          this.queueIceCandidate(remoteUserId, pc, candidateData);
           return;
         }
 
@@ -1006,11 +1133,8 @@ export class P2PManager extends WavedashManager {
         logger.debug(
           `  ICE connected to peer ${remoteUserId}, data channels should be available...`
         );
-        // End the restart in progress. Attempts reset in attemptIceRestart,
-        // once we know whether this connection held long enough.
-        if (!this.iceConnectedAt.has(remoteUserId)) {
-          this.iceConnectedAt.set(remoteUserId, Date.now());
-        }
+        // Reset restart state on successful connection
+        this.iceRestartAttempts.delete(remoteUserId);
         this.iceRestartInProgress.delete(remoteUserId);
         this.clearIceRestartTimer(remoteUserId);
 
@@ -1089,40 +1213,45 @@ export class P2PManager extends WavedashManager {
 
   private queueIceCandidate(
     remoteUserId: UserId,
+    pc: RTCPeerConnection,
     candidate: RTCIceCandidateInit
   ): void {
-    const queued = this.queuedIceCandidates.get(remoteUserId);
+    const queued = this.queuedIceCandidates.get(pc);
     if (queued) {
       queued.push(candidate);
     } else {
-      this.queuedIceCandidates.set(remoteUserId, [candidate]);
+      this.queuedIceCandidates.set(pc, [candidate]);
     }
-    if (!this.iceCandidateSendsInFlight.has(remoteUserId)) {
-      this.sendQueuedIceCandidates(remoteUserId);
+    if (!this.iceCandidateSendsInFlight.has(pc)) {
+      this.sendQueuedIceCandidates(remoteUserId, pc);
     }
   }
 
   /**
-   * Send everything queued for a peer as one message, then repeat for
-   * whatever was queued while that send was in flight, until none is left.
+   * Send everything queued for a peer connection as one message, then repeat
+   * for whatever was queued while that send was in flight, until none is left
+   * or the connection has been replaced.
    */
-  private async sendQueuedIceCandidates(remoteUserId: UserId): Promise<void> {
-    this.iceCandidateSendsInFlight.add(remoteUserId);
+  private async sendQueuedIceCandidates(
+    remoteUserId: UserId,
+    pc: RTCPeerConnection
+  ): Promise<void> {
+    this.iceCandidateSendsInFlight.add(pc);
     try {
-      let batch = this.queuedIceCandidates.get(remoteUserId);
-      while (batch) {
-        this.queuedIceCandidates.delete(remoteUserId);
+      let batch = this.queuedIceCandidates.get(pc);
+      while (batch && this.peerConnections.get(remoteUserId) === pc) {
+        this.queuedIceCandidates.delete(pc);
         await this.sendSignalingMessage(remoteUserId, {
           type: P2P_SIGNALING_MESSAGE_TYPE.ICE_CANDIDATE,
           data: { candidates: JSON.stringify(batch) }
         });
-        batch = this.queuedIceCandidates.get(remoteUserId);
+        batch = this.queuedIceCandidates.get(pc);
       }
     } catch {
       // Already logged by sendSignalingMessage. Anything still queued goes
       // out with the next candidate.
     } finally {
-      this.iceCandidateSendsInFlight.delete(remoteUserId);
+      this.iceCandidateSendsInFlight.delete(pc);
     }
   }
 
@@ -1153,17 +1282,6 @@ export class P2PManager extends WavedashManager {
         `ICE restart already in progress for peer ${remoteUserId}, skipping`
       );
       return;
-    }
-
-    // Start counting afresh only if the last connection held for a while;
-    // one that dropped soon after recovering keeps using up attempts.
-    const connectedAt = this.iceConnectedAt.get(remoteUserId);
-    this.iceConnectedAt.delete(remoteUserId);
-    if (
-      connectedAt !== undefined &&
-      Date.now() - connectedAt >= this.ICE_STABLE_RESET_MS
-    ) {
-      this.iceRestartAttempts.delete(remoteUserId);
     }
 
     // Check restart attempt count
@@ -1201,20 +1319,30 @@ export class P2PManager extends WavedashManager {
 
     this.iceRestartAttempts.set(remoteUserId, attempts + 1);
     this.iceRestartInProgress.add(remoteUserId);
+    logger.debug(
+      `ICE restart attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS} for peer ${remoteUserId}`
+    );
 
-    if (pc.signalingState === "have-local-offer") {
-      // Our last offer hasn't been answered yet. The peer is most likely just
-      // behind on signaling, and a new offer would throw away the answer on
-      // its way, so give it another round (still counting toward the limit).
-      logger.debug(
-        `Offer to peer ${remoteUserId} still unanswered, waiting before restarting ICE (attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS})`
-      );
-    } else {
-      logger.debug(
-        `ICE restart attempt ${attempts + 1}/${this.MAX_ICE_RESTART_ATTEMPTS} for peer ${remoteUserId}`
-      );
+    try {
+      if (pc.signalingState === "have-local-offer") {
+        // Our last offer was never answered. Send the same offer again rather
+        // than a new one: an answer that's merely slow still applies, a peer
+        // that already has it just answers again, and there's no new round of
+        // ICE gathering. The SDP now also carries every candidate gathered
+        // since, in case those messages were lost along with it.
+        const offerData: P2PSessionDescriptionData = {
+          type: "offer",
+          sdp: pc.localDescription!.sdp,
+          offerId: this.currentOfferIds.get(remoteUserId),
+          acceptsCandidateBatches: true
+        };
+        await this.sendSignalingMessage(remoteUserId, {
+          type: P2P_SIGNALING_MESSAGE_TYPE.OFFER,
+          data: offerData
+        });
 
-      try {
+        logger.debug(`Unanswered offer resent to peer ${remoteUserId}`);
+      } else {
         // Trigger ICE restart - this invalidates current ICE candidates and gathers new ones
         pc.restartIce();
 
@@ -1237,21 +1365,36 @@ export class P2PManager extends WavedashManager {
         });
 
         logger.debug(`ICE restart offer sent to peer ${remoteUserId}`);
-      } catch (error) {
-        logger.error(
-          `Failed to initiate ICE restart for peer ${remoteUserId}:`,
-          error
-        );
       }
+    } catch (error) {
+      logger.error(
+        `Failed to initiate ICE restart for peer ${remoteUserId}:`,
+        error
+      );
     }
 
     // If this attempt hasn't brought ICE back (the offer went unanswered, or
     // ICE stalled without reaching "failed" again), make the next one.
-    this.clearIceRestartTimer(remoteUserId);
-    const timeout = Math.min(
-      this.ICE_RESTART_BASE_TIMEOUT_MS * 2 ** attempts,
-      this.ICE_RESTART_MAX_TIMEOUT_MS
+    this.scheduleIceRetry(
+      remoteUserId,
+      pc,
+      Math.min(
+        this.ICE_RESTART_BASE_TIMEOUT_MS * 2 ** attempts,
+        this.ICE_RESTART_MAX_TIMEOUT_MS
+      )
     );
+  }
+
+  /**
+   * Make the next ICE restart attempt (or give up) if ICE to this peer still
+   * isn't connected after `timeout`. Replaces any retry already scheduled.
+   */
+  private scheduleIceRetry(
+    remoteUserId: UserId,
+    pc: RTCPeerConnection,
+    timeout: number
+  ): void {
+    this.clearIceRestartTimer(remoteUserId);
     this.iceRestartTimers.set(
       remoteUserId,
       setTimeout(() => {
@@ -1264,7 +1407,7 @@ export class P2PManager extends WavedashManager {
           return;
         }
         logger.debug(
-          `ICE restart for peer ${remoteUserId} didn't recover after ${timeout}ms, retrying`
+          `ICE to peer ${remoteUserId} not connected after ${timeout}ms, retrying`
         );
         this.iceRestartInProgress.delete(remoteUserId);
         this.attemptIceRestart(remoteUserId, pc);
@@ -1314,10 +1457,9 @@ export class P2PManager extends WavedashManager {
     this.iceRestartAttempts.delete(remoteUserId);
     this.iceRestartInProgress.delete(remoteUserId);
     this.clearIceRestartTimer(remoteUserId);
-    this.iceConnectedAt.delete(remoteUserId);
     this.currentOfferIds.delete(remoteUserId);
     this.candidateBatchPeers.delete(remoteUserId);
-    this.queuedIceCandidates.delete(remoteUserId);
+    if (pc) this.queuedIceCandidates.delete(pc);
     pc?.close();
   }
 
@@ -1326,6 +1468,10 @@ export class P2PManager extends WavedashManager {
     remoteUserId: UserId,
     type: "reliable" | "unreliable"
   ): void {
+    // Firefox defaults to "blob" (Chrome and Safari to "arraybuffer"), and
+    // enqueueMessage reads ArrayBuffers
+    channel.binaryType = "arraybuffer";
+
     channel.onopen = () => {
       logger.debug(`${type} data channel opened with peer ${remoteUserId}`);
 
@@ -1588,7 +1734,6 @@ export class P2PManager extends WavedashManager {
     this.iceRestartInProgress.clear();
     this.iceRestartTimers.forEach((timer) => clearTimeout(timer));
     this.iceRestartTimers.clear();
-    this.iceConnectedAt.clear();
     this.currentOfferIds.clear();
     this.candidateBatchPeers.clear();
     this.queuedIceCandidates.clear();
