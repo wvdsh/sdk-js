@@ -655,7 +655,7 @@ export class LobbyManager extends WavedashManager {
    * @param newUsers - The updated list of lobby users
    */
   private async updateP2PConnections(newUsers: LobbyUser[]): Promise<void> {
-    if (!this.lobbyId) {
+    if (!this.lobbyId || !this.sdk.p2pManager.isMeshEnabled()) {
       return;
     }
 

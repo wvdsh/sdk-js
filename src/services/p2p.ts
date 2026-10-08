@@ -296,11 +296,26 @@ export class P2PManager extends WavedashManager {
   // Connection Setup
   // ================
 
+  // With both channel types disabled there's nothing a connection could carry,
+  // so the game gets no mesh at all: no signaling, no TURN credentials, no
+  // peer connections. For games that network some other way (e.g. a
+  // dedicated server), where a mesh across a large lobby is pure overhead.
+  isMeshEnabled(): boolean {
+    return (
+      this.config.enableReliableChannel || this.config.enableUnreliableChannel
+    );
+  }
+
   async initializeP2PForCurrentLobby(
     lobbyId: LobbyId,
     members: SDKUser[]
-  ): Promise<P2PConnection> {
+  ): Promise<P2PConnection | null> {
     this.ensureInitialized();
+
+    if (!this.isMeshEnabled()) {
+      logger.debug("P2P channels disabled, skipping P2P setup for lobby");
+      return null;
+    }
 
     // If we already have a connection for this lobby, update it
     if (this.currentConnection && this.currentConnection.lobbyId === lobbyId) {
