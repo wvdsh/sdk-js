@@ -411,6 +411,8 @@ export interface P2PMessage {
 
 // P2P Configuration
 export interface P2PConfig {
+  // Disabling both channels opts the game out of P2P entirely: lobbies never
+  // set up a peer mesh (no signaling or WebRTC connections). Default: both on.
   enableReliableChannel: boolean;
   enableUnreliableChannel: boolean;
   messageSize?: number; // Max bytes per message slot. Default: 2048. Must be > 44, capped at 65536.
