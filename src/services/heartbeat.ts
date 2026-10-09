@@ -262,6 +262,13 @@ export class HeartbeatManager extends WavedashManager {
     if (document.visibilityState === "visible") {
       this.start();
     } else {
+      if (this.heartbeatInterval !== null) {
+        this.sdk.convexClient
+          .mutation(api.sdk.presence.lastHeartbeat, {})
+          .catch((error: unknown) => {
+            logger.error(`Last heartbeat failed: ${error}`);
+          });
+      }
       this.stop();
     }
   };
