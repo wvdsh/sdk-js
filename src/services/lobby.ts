@@ -625,14 +625,17 @@ export class LobbyManager extends WavedashManager {
       this.lobbyMessagesCursor === null
         ? { lobbyId }
         : { lobbyId, after: this.lobbyMessagesCursor },
-      this.processMessageUpdates,
+      (messages) => this.processMessageUpdates(lobbyId, messages),
       this.onLobbySubscriptionError
     );
 
     unsubscribePrevious?.();
   }
 
-  private processMessageUpdates = (messages: LobbyMessage[]): void => {
+  private processMessageUpdates(
+    lobbyId: LobbyId,
+    messages: LobbyMessage[]
+  ): void {
     // Results are in commit order. Skip anything at or before the cursor: a
     // result computed for an older cursor can still arrive after it advanced.
     const cursor = this.lobbyMessagesCursor;
@@ -645,7 +648,7 @@ export class LobbyManager extends WavedashManager {
     // Advance before notifying: a listener may leave the lobby synchronously,
     // and its cleanup must get the last word on the cursor and subscription.
     this.lobbyMessagesCursor = newMessages[newMessages.length - 1].commitTs;
-    this.subscribeToLobbyMessages(this.lobbyId!);
+    this.subscribeToLobbyMessages(lobbyId);
 
     for (const { commitTs: _commitTs, ...message } of newMessages) {
       this.sdk.gameEventManager.notifyGame(
@@ -653,7 +656,7 @@ export class LobbyManager extends WavedashManager {
         message satisfies LobbyMessagePayload
       );
     }
-  };
+  }
 
   private processInviteUpdates = (invites: LobbyInvite[]): void => {
     for (const invite of invites) {
