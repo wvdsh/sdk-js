@@ -104,7 +104,7 @@ export type LobbyUser = WithPublicIds<
   FunctionReturnType<typeof api.sdk.gameLobby.lobbyUsers>[0]
 >;
 export type LobbyMessage = WithPublicIds<
-  FunctionReturnType<typeof api.sdk.gameLobby.lobbyMessages>[0]
+  FunctionReturnType<typeof api.sdk.gameLobby.syncLobbyMessages>[0]
 >;
 export type Lobby = WithPublicIds<
   FunctionReturnType<typeof api.sdk.gameLobby.listAvailable>[0]
@@ -250,8 +250,11 @@ export interface LobbyUsersUpdatedPayload extends LobbyUser {
 /** Payload for LobbyDataUpdated event - the full lobby metadata */
 export type LobbyDataUpdatedPayload = Record<string, string | number | boolean>;
 
-/** Payload for LobbyMessage event - a message received in the lobby */
-export type LobbyMessagePayload = LobbyMessage;
+/**
+ * Payload for LobbyMessage event - a message received in the lobby. commitTs
+ * is the SDK's sync cursor (a bigint, which engine bridges can't JSON-encode).
+ */
+export type LobbyMessagePayload = Omit<LobbyMessage, "commitTs">;
 
 /** Payload for LobbyInvite event - an invite to join a lobby */
 export type LobbyInvitePayload = LobbyInvite;
