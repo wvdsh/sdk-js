@@ -6,7 +6,6 @@
 
 import type { FunctionReturnType } from "convex/server";
 import type {
-  Id,
   P2PPeer,
   P2PConnection,
   P2PMessage,
@@ -156,8 +155,9 @@ export class P2PManager extends WavedashManager {
 
   // Signaling state
   private unsubscribeFromSignalingMessages: (() => void) | null = null;
-  private processedSignalingMessages = new Set<string>();
-  private pendingProcessedMessageIds = new Set<Id<"p2pSignalingMessages">>();
+  // commitTs of the last signaling message delivered this lobby session. Set
+  // from the join, kept across disconnectP2P so a re-init doesn't replay.
+  private signalingCursor: bigint | null = null;
 
   // Initialization lock to prevent duplicate concurrent initialization for the same lobby
   private initializationInProgress: Promise<P2PConnection> | null = null;
@@ -530,6 +530,14 @@ export class P2PManager extends WavedashManager {
     await this.establishPeerConnections(connection);
   }
 
+  /**
+   * Start a new signaling session (on lobby join): only messages committed
+   * after `joinCommitTs` are delivered.
+   */
+  setSignalingCursor(joinCommitTs: bigint): void {
+    this.signalingCursor = joinCommitTs;
+  }
+
   private subscribeToSignalingMessages(connection: P2PConnection): void {
     // Create a promise that resolves when we receive the first subscription callback
     // This indicates the subscription is active and ready to receive messages
@@ -537,25 +545,33 @@ export class P2PManager extends WavedashManager {
       this.signalingSubscriptionReadyResolver = resolve;
     });
 
-    let firstCallbackReceived = false;
+    this.subscribeToSignalingMessagesAfterCursor(connection);
+  }
 
-    // Subscribe to real-time signaling message updates
+  /**
+   * (Re)subscribe from the current cursor, so each query only reads and sends
+   * messages newer than what we've already handled.
+   */
+  private subscribeToSignalingMessagesAfterCursor(
+    connection: P2PConnection
+  ): void {
+    const unsubscribePrevious = this.unsubscribeFromSignalingMessages;
+
     this.unsubscribeFromSignalingMessages = this.sdk.convexClient.onUpdate(
       api.sdk.p2pSignaling.getSignalingMessages,
-      { lobbyId: connection.lobbyId },
+      { lobbyId: connection.lobbyId, after: this.signalingCursor! },
       (messages) => {
         // Mark subscription as ready on first callback
-        if (!firstCallbackReceived) {
-          firstCallbackReceived = true;
-          this.signalingSubscriptionReadyResolver?.();
-          this.signalingSubscriptionReadyResolver = null;
-        }
+        this.signalingSubscriptionReadyResolver?.();
+        this.signalingSubscriptionReadyResolver = null;
 
         if (messages) {
           this.processSignalingMessages(messages, connection);
         }
       }
     );
+
+    unsubscribePrevious?.();
   }
 
   private stopSignalingMessageSubscription(): void {
@@ -569,51 +585,24 @@ export class P2PManager extends WavedashManager {
     messages: P2PSignalingMessage[],
     connection: P2PConnection
   ): Promise<void> {
-    if (messages.length === 0) return;
+    // Results are in commit order. Skip anything at or before the cursor: a
+    // result computed for an older cursor can still arrive after it advanced.
+    const newMessages = messages.filter(
+      (message) => message.commitTs > this.signalingCursor!
+    );
+    if (newMessages.length === 0) return;
 
-    const newMessageIds: Id<"p2pSignalingMessages">[] = [];
-    const messagesToProcess: P2PSignalingMessage[] = [];
+    // Claim them right away by advancing the cursor before any await:
+    // subscription callbacks overlap, and an unclaimed message could be
+    // handled twice meanwhile.
+    this.signalingCursor = newMessages[newMessages.length - 1].commitTs;
+    this.subscribeToSignalingMessagesAfterCursor(connection);
 
-    // Filter out messages we've already processed or are pending processing.
-    // Claim them right away: subscription callbacks overlap, and a message
-    // claimed only when its turn comes can be handled twice meanwhile.
-    for (const message of messages) {
-      if (
-        !this.processedSignalingMessages.has(message._id) &&
-        !this.pendingProcessedMessageIds.has(message._id)
-      ) {
-        messagesToProcess.push(message);
-        this.pendingProcessedMessageIds.add(message._id);
-      }
-      // Always include in batch to mark as processed
-      newMessageIds.push(message._id);
-    }
-
-    // Process only new messages
-    for (const message of messagesToProcess) {
+    for (const message of newMessages) {
       try {
         await this.handleSignalingMessage(message, connection);
-        this.processedSignalingMessages.add(message._id);
       } catch (error) {
         logger.error("Error handling signaling message:", error);
-      }
-    }
-
-    // Mark all messages as processed in batch
-    if (newMessageIds.length > 0) {
-      try {
-        await this.sdk.convexClient.mutation(
-          api.sdk.p2pSignaling.markSignalingMessagesProcessed,
-          { messageIds: newMessageIds }
-        );
-      } catch (error) {
-        logger.error("Failed to mark signaling messages as processed:", error);
-      } finally {
-        // Release only what this call claimed; an overlapping call may still
-        // be handling the rest.
-        for (const message of messagesToProcess) {
-          this.pendingProcessedMessageIds.delete(message._id);
-        }
       }
     }
   }
@@ -1742,8 +1731,6 @@ export class P2PManager extends WavedashManager {
 
     this.currentConnection = null;
 
-    this.processedSignalingMessages.clear();
-    this.pendingProcessedMessageIds.clear();
     this.pendingIceCandidates.clear();
     this.iceRestartAttempts.clear();
     this.iceRestartInProgress.clear();

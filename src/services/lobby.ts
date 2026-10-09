@@ -22,7 +22,6 @@ import type {
   LobbyJoinResponse,
   UserId,
   LobbyId,
-  LobbyMessageId,
   LobbyInviteId
 } from "../types";
 import {
@@ -59,7 +58,8 @@ export class LobbyManager extends WavedashManager {
   private lobbyHostId: UserId | null = null;
   private lobbyMetadata: Record<string, unknown> = {};
   private pendingMetadataUpdates: Record<string, LobbyDataUpdate> = {};
-  private recentMessageIds: LobbyMessageId[] = [];
+  // commitTs of the last lobby message emitted; null until the first one
+  private lobbyMessagesCursor: bigint | null = null;
   private maybeBeingDeletedLobbyIds: Set<LobbyId> = new Set();
   private resetMaybeBeingDeletedLobbyIdTimeouts: Map<LobbyId, number> =
     new Map();
@@ -310,26 +310,13 @@ export class LobbyManager extends WavedashManager {
     this.lobbyHostId = response.hostId;
     this.lobbyUsers = response.users;
     this.lobbyMetadata = response.metadata;
+    this.sdk.p2pManager.setSignalingCursor(response.joinCommitTs);
 
     // Cache initial lobby users for avatar lookups
     this.sdk.friendsManager.cacheUsers(response.users);
 
-    // Error handler for subscription failures (e.g., kicked from lobby).
-    const onLobbySubscriptionError = (error: Error) => {
-      logger.error(`Lobby subscription error: ${error.message}`);
-      if (isNotLobbyMemberError(error)) {
-        this.handleLobbyKicked(LobbyKickedReason.KICKED);
-      }
-      // Other errors could just be transient, keep the lobby membership alive until we actually receive a "not a member" error.
-    };
-
     // Subscribe to lobby messages
-    this.unsubscribeLobbyMessages = this.sdk.convexClient.onUpdate(
-      api.sdk.gameLobby.lobbyMessages,
-      { lobbyId: response.lobbyId },
-      this.processMessageUpdates,
-      onLobbySubscriptionError
-    );
+    this.subscribeToLobbyMessages(response.lobbyId);
 
     // Subscribe to lobby metadata
     this.unsubscribeLobbyData = this.sdk.convexClient.onUpdate(
@@ -342,7 +329,7 @@ export class LobbyManager extends WavedashManager {
           lobbyMetadata satisfies LobbyDataUpdatedPayload
         );
       },
-      onLobbySubscriptionError
+      this.onLobbySubscriptionError
     );
 
     // Subscribe to lobby users
@@ -350,7 +337,7 @@ export class LobbyManager extends WavedashManager {
       api.sdk.gameLobby.lobbyUsers,
       { lobbyId: response.lobbyId },
       this.processUserUpdates,
-      onLobbySubscriptionError
+      this.onLobbySubscriptionError
     );
 
     // Initialize P2P connections immediately with the users from join response
@@ -472,7 +459,7 @@ export class LobbyManager extends WavedashManager {
     this.lobbyUsers = [];
     this.lobbyHostId = null;
     this.lobbyMetadata = {};
-    this.recentMessageIds = [];
+    this.lobbyMessagesCursor = null;
 
     // Reset the P2P update queue to prevent stale operations
     this.p2pUpdateQueue = Promise.resolve();
@@ -617,17 +604,53 @@ export class LobbyManager extends WavedashManager {
     }
   };
 
-  private processMessageUpdates = (newMessages: LobbyMessage[]): void => {
-    for (const message of newMessages) {
-      if (!this.recentMessageIds.includes(message.messageId)) {
-        this.recentMessageIds.push(message.messageId);
-        this.sdk.gameEventManager.notifyGame(
-          WavedashEvents.LOBBY_MESSAGE,
-          message satisfies LobbyMessagePayload
-        );
-      }
+  // Error handler for subscription failures (e.g., kicked from lobby).
+  private onLobbySubscriptionError = (error: Error): void => {
+    logger.error(`Lobby subscription error: ${error.message}`);
+    if (isNotLobbyMemberError(error)) {
+      this.handleLobbyKicked(LobbyKickedReason.KICKED);
     }
-    this.recentMessageIds = newMessages.map((message) => message.messageId);
+    // Other errors could just be transient, keep the lobby membership alive until we actually receive a "not a member" error.
+  };
+
+  /**
+   * (Re)subscribe to lobby messages from the current cursor: the latest 10
+   * until we've emitted one, then only messages committed after the last.
+   */
+  private subscribeToLobbyMessages(lobbyId: LobbyId): void {
+    const unsubscribePrevious = this.unsubscribeLobbyMessages;
+
+    this.unsubscribeLobbyMessages = this.sdk.convexClient.onUpdate(
+      api.sdk.gameLobby.syncLobbyMessages,
+      this.lobbyMessagesCursor === null
+        ? { lobbyId }
+        : { lobbyId, after: this.lobbyMessagesCursor },
+      this.processMessageUpdates,
+      this.onLobbySubscriptionError
+    );
+
+    unsubscribePrevious?.();
+  }
+
+  private processMessageUpdates = (messages: LobbyMessage[]): void => {
+    // Results are in commit order. Skip anything at or before the cursor: a
+    // result computed for an older cursor can still arrive after it advanced.
+    const cursor = this.lobbyMessagesCursor;
+    const newMessages =
+      cursor === null
+        ? messages
+        : messages.filter((message) => message.commitTs > cursor);
+    if (newMessages.length === 0) return;
+
+    for (const { commitTs: _commitTs, ...message } of newMessages) {
+      this.sdk.gameEventManager.notifyGame(
+        WavedashEvents.LOBBY_MESSAGE,
+        message satisfies LobbyMessagePayload
+      );
+    }
+
+    this.lobbyMessagesCursor = newMessages[newMessages.length - 1].commitTs;
+    this.subscribeToLobbyMessages(this.lobbyId!);
   };
 
   private processInviteUpdates = (invites: LobbyInvite[]): void => {
