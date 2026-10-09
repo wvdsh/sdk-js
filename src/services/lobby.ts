@@ -642,15 +642,17 @@ export class LobbyManager extends WavedashManager {
         : messages.filter((message) => message.commitTs > cursor);
     if (newMessages.length === 0) return;
 
+    // Advance before notifying: a listener may leave the lobby synchronously,
+    // and its cleanup must get the last word on the cursor and subscription.
+    this.lobbyMessagesCursor = newMessages[newMessages.length - 1].commitTs;
+    this.subscribeToLobbyMessages(this.lobbyId!);
+
     for (const { commitTs: _commitTs, ...message } of newMessages) {
       this.sdk.gameEventManager.notifyGame(
         WavedashEvents.LOBBY_MESSAGE,
         message satisfies LobbyMessagePayload
       );
     }
-
-    this.lobbyMessagesCursor = newMessages[newMessages.length - 1].commitTs;
-    this.subscribeToLobbyMessages(this.lobbyId!);
   };
 
   private processInviteUpdates = (invites: LobbyInvite[]): void => {
