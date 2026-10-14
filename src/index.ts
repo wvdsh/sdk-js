@@ -146,6 +146,7 @@ class WavedashSDK extends EventTarget {
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
   gameCloudId: SDKConfig["gameCloudId"];
+  pageViewId: SDKConfig["pageViewId"];
   fileSystemManager: FileSystemManager;
   authManager: AuthManager;
   convexClient: ConvexClient;
@@ -170,6 +171,7 @@ class WavedashSDK extends EventTarget {
       expectAuth: true
     });
     this.gameCloudId = sdkConfig.gameCloudId;
+    this.pageViewId = sdkConfig.pageViewId;
     this.iframeMessenger = iframeMessenger; // AuthManager posts to parent through this, keep it above
     this.authManager = new AuthManager(this);
     this.wavedashUser = sdkConfig.wavedashUser;

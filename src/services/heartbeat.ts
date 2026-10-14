@@ -9,7 +9,6 @@
 import {
   api,
   DeviceFingerprint,
-  GameplayAttribution,
   HEARTBEAT,
   IFRAME_MESSAGE_TYPE
 } from "@wvdsh/api";
@@ -31,10 +30,9 @@ const INPUT_LISTENER_OPTS: AddEventListenerOptions = {
 
 export class HeartbeatManager extends WavedashManager {
   private deviceFingerprint: DeviceFingerprint | undefined = undefined;
-  private attribution: GameplayAttribution | undefined = undefined;
   // Always resolves — never rejects. Best-effort: the backend stamps whatever
-  // fingerprint/attribution is present on the first heartbeat into the gameplaySession
-  private sessionMetadataReady: Promise<void>;
+  // fingerprint is present on the first heartbeat into the gameplaySession metadata
+  private deviceFingerprintReady: Promise<void>;
   private testConnectionInterval: ReturnType<typeof setInterval> | null = null;
   private heartbeatInterval: ReturnType<typeof setInterval> | null = null;
   private gamepadPollInterval: ReturnType<typeof setInterval> | null = null;
@@ -84,24 +82,16 @@ export class HeartbeatManager extends WavedashManager {
       this.pollGamepads();
     }, this.GAMEPAD_POLL_INTERVAL_MS);
 
-    // No parent to ask in standalone — leave the fingerprint and attribution undefined.
-    this.sessionMetadataReady = !hasParentFrame()
+    // No parent to ask in standalone — leave the fingerprint undefined.
+    this.deviceFingerprintReady = !hasParentFrame()
       ? Promise.resolve()
-      : Promise.all([
-          this.sdk.iframeMessenger
-            .requestFromParent(IFRAME_MESSAGE_TYPE.GET_DEVICE_FINGERPRINT)
-            .then((fingerprint) => {
-              this.deviceFingerprint = fingerprint;
-            })
-            // Keep sessionMetadataReady resolvable on parent error.
-            .catch(() => {}),
-          this.sdk.iframeMessenger
-            .requestFromParent(IFRAME_MESSAGE_TYPE.GET_GAMEPLAY_ATTRIBUTION)
-            .then((attribution) => {
-              this.attribution = attribution;
-            })
-            .catch(() => {})
-        ]).then(() => {});
+      : this.sdk.iframeMessenger
+          .requestFromParent(IFRAME_MESSAGE_TYPE.GET_DEVICE_FINGERPRINT)
+          .then((fingerprint) => {
+            this.deviceFingerprint = fingerprint;
+          })
+          // Keep deviceFingerprintReady resolvable on parent error.
+          .catch(() => {});
 
     // Don't .start() here, loadComplete() will trigger the first call to start()
   }
@@ -126,9 +116,9 @@ export class HeartbeatManager extends WavedashManager {
     if (this.heartbeatInterval !== null) return;
 
     if (this.isFirstTick) {
-      // Defer the very first heartbeat until the device fingerprint and
-      // attribution have arrived from the parent
-      void this.sessionMetadataReady.then(() => {
+      // Defer the very first heartbeat until the device fingerprint has
+      // arrived from the parent
+      void this.deviceFingerprintReady.then(() => {
         // isFirstTick is flipped to false by tickHeartbeat the first time it
         // runs, so repeat start() calls during the pending window all queue a
         // callback but only the first to execute does any work.
@@ -177,7 +167,7 @@ export class HeartbeatManager extends WavedashManager {
       await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
         data,
         deviceFingerprint: this.deviceFingerprint,
-        attribution: this.attribution
+        pageViewId: this.sdk.pageViewId
       });
       return true;
     } catch (error) {
@@ -253,7 +243,7 @@ export class HeartbeatManager extends WavedashManager {
           ? {
               data: this.cachedPresenceData,
               deviceFingerprint: this.deviceFingerprint,
-              attribution: this.attribution
+              pageViewId: this.sdk.pageViewId
             }
           : {})
       })
