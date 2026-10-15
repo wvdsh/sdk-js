@@ -699,11 +699,7 @@ export class LobbyManager extends WavedashManager {
       const wavedashUsers: SDKUser[] = newUsers.map((lobbyUser: LobbyUser) => ({
         id: lobbyUser.userId,
         username: lobbyUser.username,
-        avatarUrl: lobbyUser.userAvatarUrl,
-        language:
-          "language" in lobbyUser && typeof lobbyUser.language === "string"
-            ? lobbyUser.language
-            : "en"
+        avatarUrl: lobbyUser.userAvatarUrl
       }));
 
       await this.sdk.p2pManager.initializeP2PForCurrentLobby(

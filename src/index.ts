@@ -145,6 +145,7 @@ class WavedashSDK extends EventTarget {
 
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
+  private readonly userLanguage: string;
   gameCloudId: SDKConfig["gameCloudId"];
   pageViewId: SDKConfig["pageViewId"];
   fileSystemManager: FileSystemManager;
@@ -175,6 +176,10 @@ class WavedashSDK extends EventTarget {
     this.iframeMessenger = iframeMessenger; // AuthManager posts to parent through this, keep it above
     this.authManager = new AuthManager(this);
     this.wavedashUser = sdkConfig.wavedashUser;
+    this.userLanguage =
+      "userLanguage" in sdkConfig && typeof sdkConfig.userLanguage === "string"
+        ? sdkConfig.userLanguage
+        : "en";
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
     this.swMessenger = new SwMessenger();
@@ -500,8 +505,7 @@ class WavedashSDK extends EventTarget {
   getUser(): SDKUser {
     return this._formatResponse({
       ...this.wavedashUser,
-      avatarUrl: getAvatarUrl(this.wavedashUser.avatarUrl, this.uploadsHost),
-      language: this.getUserLanguage()
+      avatarUrl: getAvatarUrl(this.wavedashUser.avatarUrl, this.uploadsHost)
     });
   }
 
@@ -526,13 +530,7 @@ class WavedashSDK extends EventTarget {
   }
 
   getUserLanguage(): string {
-    if (
-      "language" in this.wavedashUser &&
-      typeof this.wavedashUser.language === "string"
-    ) {
-      return this.wavedashUser.language;
-    }
-    return "en";
+    return this.userLanguage;
   }
 
   /**
