@@ -144,7 +144,7 @@ class WavedashSDK extends EventTarget {
   friendsManager: FriendsManager;
 
   config: WavedashConfig | null = null;
-  wavedashUser: SDKUser & { defaultLanguage?: string | null };
+  wavedashUser: SDKUser & { language?: string | null };
   gameCloudId: SDKConfig["gameCloudId"];
   pageViewId: SDKConfig["pageViewId"];
   fileSystemManager: FileSystemManager;
@@ -525,7 +525,7 @@ class WavedashSDK extends EventTarget {
   }
 
   getUserLanguage(): string {
-    return this.wavedashUser.defaultLanguage ?? "en";
+    return this.wavedashUser.language ?? "en";
   }
 
   /**
