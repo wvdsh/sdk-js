@@ -144,7 +144,7 @@ class WavedashSDK extends EventTarget {
   friendsManager: FriendsManager;
 
   config: WavedashConfig | null = null;
-  wavedashUser: SDKConfig["wavedashUser"];
+  wavedashUser: SDKUser;
   gameCloudId: SDKConfig["gameCloudId"];
   pageViewId: SDKConfig["pageViewId"];
   fileSystemManager: FileSystemManager;
@@ -500,7 +500,8 @@ class WavedashSDK extends EventTarget {
   getUser(): SDKUser {
     return this._formatResponse({
       ...this.wavedashUser,
-      avatarUrl: getAvatarUrl(this.wavedashUser.avatarUrl, this.uploadsHost)
+      avatarUrl: getAvatarUrl(this.wavedashUser.avatarUrl, this.uploadsHost),
+      language: this.getUserLanguage()
     });
   }
 
