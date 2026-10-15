@@ -144,7 +144,7 @@ class WavedashSDK extends EventTarget {
   friendsManager: FriendsManager;
 
   config: WavedashConfig | null = null;
-  wavedashUser: SDKUser & { language?: string | null };
+  wavedashUser: SDKUser & { language?: string };
   gameCloudId: SDKConfig["gameCloudId"];
   pageViewId: SDKConfig["pageViewId"];
   fileSystemManager: FileSystemManager;
