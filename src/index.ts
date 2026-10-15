@@ -145,6 +145,7 @@ class WavedashSDK extends EventTarget {
 
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
+  private readonly userLanguage: string;
   gameCloudId: SDKConfig["gameCloudId"];
   pageViewId: SDKConfig["pageViewId"];
   fileSystemManager: FileSystemManager;
@@ -175,6 +176,10 @@ class WavedashSDK extends EventTarget {
     this.iframeMessenger = iframeMessenger; // AuthManager posts to parent through this, keep it above
     this.authManager = new AuthManager(this);
     this.wavedashUser = sdkConfig.wavedashUser;
+    this.userLanguage =
+      "userLanguage" in sdkConfig && typeof sdkConfig.userLanguage === "string"
+        ? sdkConfig.userLanguage
+        : "en";
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
     this.swMessenger = new SwMessenger();
@@ -522,6 +527,10 @@ class WavedashSDK extends EventTarget {
 
   getUserId(): UserId {
     return this.wavedashUser.id;
+  }
+
+  getUserLanguage(): string {
+    return this.userLanguage;
   }
 
   /**
