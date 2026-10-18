@@ -315,6 +315,10 @@ export class LobbyManager extends WavedashManager {
     // Cache initial lobby users for avatar lookups
     this.sdk.friendsManager.cacheUsers(response.users);
 
+    if (response.entitlementsShared) {
+      this.sdk.paidContentManager.watchSharedEntitlements();
+    }
+
     // Subscribe to lobby messages
     this.subscribeToLobbyMessages(response.lobbyId);
 
