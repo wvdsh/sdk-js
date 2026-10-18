@@ -126,7 +126,7 @@ export class LobbyManager extends WavedashManager {
     }
     return this.lobbyUsers.map((user) => ({
       ...user,
-      userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk.uploadsHost)
+      userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk)
     }));
   }
 
@@ -363,7 +363,10 @@ export class LobbyManager extends WavedashManager {
     this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_JOINED, {
       lobbyId: response.lobbyId,
       hostId: response.hostId,
-      users: response.users,
+      users: response.users.map((user) => ({
+        ...user,
+        userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk)
+      })),
       metadata: response.metadata
     } satisfies LobbyJoinedPayload);
 
@@ -558,10 +561,7 @@ export class LobbyManager extends WavedashManager {
           WavedashEvents.LOBBY_USERS_UPDATED,
           {
             ...user,
-            userAvatarUrl: getAvatarUrl(
-              user.userAvatarUrl,
-              this.sdk.uploadsHost
-            ),
+            userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk),
             changeType: LobbyUserChangeType.JOINED
           } satisfies LobbyUsersUpdatedPayload
         );
@@ -582,10 +582,7 @@ export class LobbyManager extends WavedashManager {
           WavedashEvents.LOBBY_USERS_UPDATED,
           {
             ...user,
-            userAvatarUrl: getAvatarUrl(
-              user.userAvatarUrl,
-              this.sdk.uploadsHost
-            ),
+            userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk),
             isHost: false,
             changeType: LobbyUserChangeType.LEFT
           } satisfies LobbyUsersUpdatedPayload
@@ -666,10 +663,13 @@ export class LobbyManager extends WavedashManager {
     for (const invite of invites) {
       if (!this.seenInviteIds.has(invite.notificationId)) {
         this.seenInviteIds.add(invite.notificationId);
-        this.sdk.gameEventManager.notifyGame(
-          WavedashEvents.LOBBY_INVITE,
-          invite satisfies LobbyInvitePayload
-        );
+        this.sdk.gameEventManager.notifyGame(WavedashEvents.LOBBY_INVITE, {
+          ...invite,
+          sender: {
+            ...invite.sender,
+            avatarUrl: getAvatarUrl(invite.sender.avatarUrl, this.sdk)
+          }
+        } satisfies LobbyInvitePayload);
       }
     }
     // Update seen IDs to match current invites (remove stale ones)
