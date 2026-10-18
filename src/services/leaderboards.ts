@@ -69,7 +69,10 @@ export class LeaderboardManager extends WavedashManager {
           ...result.entry,
           userId: this.sdk.wavedashUser.id,
           username: this.sdk.wavedashUser.username,
-          userAvatarUrl: getAvatarUrl(this.sdk.wavedashUser.avatarUrl, this.sdk)
+          userAvatarUrl: getAvatarUrl(
+            this.sdk.wavedashUser.avatarUrl,
+            this.sdk.uploadsHost
+          )
         }
       : null;
 
@@ -95,7 +98,7 @@ export class LeaderboardManager extends WavedashManager {
     this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
     return result.entries.map((entry) => ({
       ...entry,
-      userAvatarUrl: getAvatarUrl(entry.userAvatarUrl, this.sdk)
+      userAvatarUrl: getAvatarUrl(entry.userAvatarUrl, this.sdk.uploadsHost)
     }));
   }
 
@@ -116,7 +119,7 @@ export class LeaderboardManager extends WavedashManager {
     this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
     return result.entries.map((entry) => ({
       ...entry,
-      userAvatarUrl: getAvatarUrl(entry.userAvatarUrl, this.sdk)
+      userAvatarUrl: getAvatarUrl(entry.userAvatarUrl, this.sdk.uploadsHost)
     }));
   }
 
@@ -143,7 +146,10 @@ export class LeaderboardManager extends WavedashManager {
       // User info
       userId: this.sdk.wavedashUser.id,
       username: this.sdk.wavedashUser.username,
-      userAvatarUrl: getAvatarUrl(this.sdk.wavedashUser.avatarUrl, this.sdk)
+      userAvatarUrl: getAvatarUrl(
+        this.sdk.wavedashUser.avatarUrl,
+        this.sdk.uploadsHost
+      )
     };
   }
 

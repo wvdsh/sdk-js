@@ -164,7 +164,6 @@ class WavedashSDK extends EventTarget {
   private setupWarningTimeout: ReturnType<typeof setTimeout> | null = null;
   ugcHost: string;
   uploadsHost: string;
-  staticHost: string;
 
   constructor(sdkConfig: SDKConfig) {
     super();
@@ -178,7 +177,6 @@ class WavedashSDK extends EventTarget {
     this.wavedashUser = sdkConfig.wavedashUser;
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
-    this.staticHost = sdkConfig.staticHost;
     this.swMessenger = new SwMessenger();
     // Before the other managers: lobby syncs its id through this one.
     this.launchParamManager = new LaunchParamManager(
@@ -502,7 +500,7 @@ class WavedashSDK extends EventTarget {
   getUser(): SDKUser {
     return this._formatResponse({
       ...this.wavedashUser,
-      avatarUrl: getAvatarUrl(this.wavedashUser.avatarUrl, this)
+      avatarUrl: getAvatarUrl(this.wavedashUser.avatarUrl, this.uploadsHost)
     });
   }
 
