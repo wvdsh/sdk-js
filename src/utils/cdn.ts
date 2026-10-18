@@ -6,7 +6,9 @@ export function getAvatarUrl(
   r2KeyOrUrl: string | undefined,
   hosts: Pick<WavedashSDK, "uploadsHost" | "staticHost">,
   size: number = AvatarSize.MEDIUM
-): string {
+): string | undefined {
+  // Native app builds before WVDSH-2436 don't send staticHost
+  if (!r2KeyOrUrl && !hosts.staticHost) return undefined;
   const [r2Key, host] = r2KeyOrUrl
     ? [r2KeyOrUrl, hosts.uploadsHost]
     : ["images/default-avatar.png", hosts.staticHost];
