@@ -42,7 +42,7 @@ export class FriendsManager extends WavedashManager {
     if (!user) {
       return null;
     }
-    return getAvatarUrl(user.avatarR2Key, this.sdk.uploadsHost, size);
+    return getAvatarUrl(user.avatarR2Key, this.sdk, size);
   }
 
   /**
@@ -76,7 +76,7 @@ export class FriendsManager extends WavedashManager {
     this.cacheUsers(friends);
     return friends.map((friend) => ({
       ...friend,
-      avatarUrl: getAvatarUrl(friend.avatarUrl, this.sdk.uploadsHost)
+      avatarUrl: getAvatarUrl(friend.avatarUrl, this.sdk)
     }));
   }
 

@@ -126,7 +126,7 @@ export class LobbyManager extends WavedashManager {
     }
     return this.lobbyUsers.map((user) => ({
       ...user,
-      userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk.uploadsHost)
+      userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk)
     }));
   }
 
@@ -365,7 +365,7 @@ export class LobbyManager extends WavedashManager {
       hostId: response.hostId,
       users: response.users.map((user) => ({
         ...user,
-        userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk.uploadsHost)
+        userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk)
       })),
       metadata: response.metadata
     } satisfies LobbyJoinedPayload);
@@ -561,10 +561,7 @@ export class LobbyManager extends WavedashManager {
           WavedashEvents.LOBBY_USERS_UPDATED,
           {
             ...user,
-            userAvatarUrl: getAvatarUrl(
-              user.userAvatarUrl,
-              this.sdk.uploadsHost
-            ),
+            userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk),
             changeType: LobbyUserChangeType.JOINED
           } satisfies LobbyUsersUpdatedPayload
         );
@@ -585,10 +582,7 @@ export class LobbyManager extends WavedashManager {
           WavedashEvents.LOBBY_USERS_UPDATED,
           {
             ...user,
-            userAvatarUrl: getAvatarUrl(
-              user.userAvatarUrl,
-              this.sdk.uploadsHost
-            ),
+            userAvatarUrl: getAvatarUrl(user.userAvatarUrl, this.sdk),
             isHost: false,
             changeType: LobbyUserChangeType.LEFT
           } satisfies LobbyUsersUpdatedPayload
@@ -673,10 +667,7 @@ export class LobbyManager extends WavedashManager {
           ...invite,
           sender: {
             ...invite.sender,
-            avatarUrl: getAvatarUrl(
-              invite.sender.avatarUrl,
-              this.sdk.uploadsHost
-            )
+            avatarUrl: getAvatarUrl(invite.sender.avatarUrl, this.sdk)
           }
         } satisfies LobbyInvitePayload);
       }
