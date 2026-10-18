@@ -1,13 +1,16 @@
 import { AvatarSize } from "../constants";
+import type { WavedashSDK } from "../index";
 
 /** Single builder for avatar URLs so every avatar is served cdn-cgi resized. */
 export function getAvatarUrl(
   r2KeyOrUrl: string | undefined,
-  host: string,
+  hosts: Pick<WavedashSDK, "uploadsHost" | "staticHost">,
   size: number = AvatarSize.MEDIUM
-): string | undefined {
-  if (!r2KeyOrUrl) return undefined;
-  return getCdnImageUrl(r2KeyOrUrl, host, {
+): string {
+  const [r2Key, host] = r2KeyOrUrl
+    ? [r2KeyOrUrl, hosts.uploadsHost]
+    : ["images/default-avatar.png", hosts.staticHost];
+  return getCdnImageUrl(r2Key, host, {
     width: size,
     height: size,
     fit: "cover",
