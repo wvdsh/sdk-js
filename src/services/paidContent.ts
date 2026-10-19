@@ -32,6 +32,7 @@ export class PaidContentManager extends WavedashManager {
   // Serializes entitlement checks so one purchase triggers one JWT refresh.
   private entitlementChecks: Promise<void> = Promise.resolve();
   private unsubscribePurchases: (() => void) | null = null;
+  private unsubscribeEntitlements: (() => void) | null = null;
   private destroyed = false;
 
   constructor(sdk: WavedashSDK) {
@@ -113,10 +114,18 @@ export class PaidContentManager extends WavedashManager {
 
   /** Force-refresh the gameplay JWT only if its `ents` lacks any of these identifiers. */
   private ensureJwtEntitles(contentIdentifiers: string[]): Promise<void> {
+    return this.refreshJwtUnless((entitlements) =>
+      contentIdentifiers.every((id) => entitlements.includes(id))
+    );
+  }
+
+  private refreshJwtUnless(
+    satisfied: (entitlements: string[]) => boolean
+  ): Promise<void> {
     const check = async () => {
       const jwt = await this.sdk.ensureGameplayJwt();
       const entitlements = readJwtClaim<string[]>(jwt, "ents") ?? [];
-      if (contentIdentifiers.every((id) => entitlements.includes(id))) return;
+      if (satisfied(entitlements)) return;
       await this.sdk.ensureGameplayJwt(true);
     };
     const result = this.entitlementChecks.then(check, check);
@@ -124,13 +133,38 @@ export class PaidContentManager extends WavedashManager {
     return result;
   }
 
+  watchSharedEntitlements(): void {
+    if (this.destroyed || this.unsubscribeEntitlements) return;
+    this.unsubscribeEntitlements = this.sdk.convexClient.onUpdate(
+      api.sdk.paidContent.listEntitlements,
+      {},
+      (expected) => {
+        this.refreshJwtUnless(
+          (entitlements) =>
+            entitlements.length === expected.length &&
+            expected.every((id) => entitlements.includes(id))
+        ).catch((err) => {
+          logger.error(
+            "Failed to refresh gameplay JWT for shared entitlements",
+            err
+          );
+        });
+      },
+      (error) => {
+        logger.error(`Entitlements subscription error: ${error}`);
+      }
+    );
+  }
+
   async isEntitled(contentIdentifier: string): Promise<boolean> {
+    await this.entitlementChecks;
     const jwt = await this.sdk.ensureGameplayJwt();
     const entitlements = readJwtClaim<string[]>(jwt, "ents") ?? [];
     return entitlements.includes(contentIdentifier);
   }
 
   async getEntitlements(): Promise<string[]> {
+    await this.entitlementChecks;
     const jwt = await this.sdk.ensureGameplayJwt();
     const entitlements = readJwtClaim<string[]>(jwt, "ents") ?? [];
     return entitlements;
@@ -229,6 +263,8 @@ export class PaidContentManager extends WavedashManager {
     this.destroyed = true;
     this.unsubscribePurchases?.();
     this.unsubscribePurchases = null;
+    this.unsubscribeEntitlements?.();
+    this.unsubscribeEntitlements = null;
     this.restorePointerLock?.();
     this.restorePointerLock = undefined;
     this.restoreGamepads?.();

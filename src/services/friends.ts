@@ -31,7 +31,7 @@ export class FriendsManager extends WavedashManager {
    * @param userId - The user ID to get the avatar URL for
    * @param size - Pixel size for width and height. Use a value from
    *   `AvatarSize` (SMALL=64, MEDIUM=128, LARGE=256) or any custom pixel size.
-   * @returns CDN URL with size transformation, or null if user not cached or has no avatar
+   * @returns CDN URL with size transformation (Wavedash default avatar if none is set), or null if user not cached
    */
   getUserAvatarUrl(
     userId: UserId,
@@ -39,10 +39,10 @@ export class FriendsManager extends WavedashManager {
   ): string | null {
     const user =
       this.userCache.get(userId) ?? this.leaderboardPageUserCache.get(userId);
-    if (!user?.avatarR2Key) {
+    if (!user) {
       return null;
     }
-    return getAvatarUrl(user.avatarR2Key, this.sdk.uploadsHost, size) ?? null;
+    return getAvatarUrl(user.avatarR2Key, this.sdk, size) ?? null;
   }
 
   /**
@@ -76,7 +76,7 @@ export class FriendsManager extends WavedashManager {
     this.cacheUsers(friends);
     return friends.map((friend) => ({
       ...friend,
-      avatarUrl: getAvatarUrl(friend.avatarUrl, this.sdk.uploadsHost)
+      avatarUrl: getAvatarUrl(friend.avatarUrl, this.sdk)
     }));
   }
 
