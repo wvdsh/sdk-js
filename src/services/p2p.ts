@@ -24,7 +24,7 @@ import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
-import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKUser } from "@wvdsh/api";
+import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKPeer } from "@wvdsh/api";
 
 // Internal P2P signaling/TURN types — not part of the public SDK surface.
 type P2PTurnCredentials = FunctionReturnType<
@@ -308,7 +308,7 @@ export class P2PManager extends WavedashManager {
 
   async initializeP2PForCurrentLobby(
     lobbyId: LobbyId,
-    members: SDKUser[]
+    members: SDKPeer[]
   ): Promise<P2PConnection | null> {
     this.ensureInitialized();
 
@@ -353,7 +353,7 @@ export class P2PManager extends WavedashManager {
    */
   private async doInitializeP2P(
     lobbyId: LobbyId,
-    members: SDKUser[]
+    members: SDKPeer[]
   ): Promise<P2PConnection> {
     const connection: P2PConnection = {
       lobbyId,
@@ -412,7 +412,7 @@ export class P2PManager extends WavedashManager {
   }
 
   private async updateP2PConnection(
-    members: SDKUser[]
+    members: SDKPeer[]
   ): Promise<P2PConnection> {
     if (!this.currentConnection) {
       throw new Error("No existing P2P connection to update");

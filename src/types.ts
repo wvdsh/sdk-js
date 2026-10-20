@@ -11,6 +11,7 @@ import {
   LobbyKickedReason as LobbyKickedReasonConst,
   LobbyUserChangeType as LobbyUserChangeTypeConst,
   P2PPacketDropReason as P2PPacketDropReasonConst,
+  LANGUAGE_CODE,
   LOBBY_VISIBILITY,
   LEADERBOARD_SORT_ORDER,
   LEADERBOARD_DISPLAY_TYPE,
@@ -22,6 +23,7 @@ import {
 } from "./constants";
 
 // Type unions derived from the SDK's runtime constants.
+export type LanguageCode = (typeof LANGUAGE_CODE)[keyof typeof LANGUAGE_CODE];
 export type LobbyVisibility =
   (typeof LOBBY_VISIBILITY)[keyof typeof LOBBY_VISIBILITY];
 export type LeaderboardSortOrder =

@@ -2,6 +2,7 @@ import { ConvexClient } from "convex/browser";
 import {
   AvatarSize,
   GAME_ENGINE,
+  LANGUAGE_CODE,
   LEADERBOARD_DISPLAY_TYPE,
   LEADERBOARD_SORT_ORDER,
   LOBBY_VISIBILITY,
@@ -32,6 +33,7 @@ import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
 import type {
   WavedashEventMap,
+  LanguageCode,
   UserId,
   LobbyId,
   LeaderboardId,
@@ -123,6 +125,7 @@ class WavedashSDK extends EventTarget {
 
   // Expose constants for easy access `Wavedash.LobbyVisibility.PUBLIC` etc.
   Events = WavedashEvents;
+  LanguageCode = LANGUAGE_CODE;
   LobbyVisibility = LOBBY_VISIBILITY;
   LeaderboardSortOrder = LEADERBOARD_SORT_ORDER;
   LeaderboardDisplayType = LEADERBOARD_DISPLAY_TYPE;
@@ -145,7 +148,6 @@ class WavedashSDK extends EventTarget {
 
   config: WavedashConfig | null = null;
   wavedashUser: SDKUser;
-  private readonly userLanguage: string;
   gameCloudId: SDKConfig["gameCloudId"];
   pageViewId: SDKConfig["pageViewId"];
   fileSystemManager: FileSystemManager;
@@ -177,10 +179,6 @@ class WavedashSDK extends EventTarget {
     this.iframeMessenger = iframeMessenger; // AuthManager posts to parent through this, keep it above
     this.authManager = new AuthManager(this);
     this.wavedashUser = sdkConfig.wavedashUser;
-    this.userLanguage =
-      "userLanguage" in sdkConfig && typeof sdkConfig.userLanguage === "string"
-        ? sdkConfig.userLanguage
-        : "en";
     this.ugcHost = sdkConfig.ugcHost;
     this.uploadsHost = sdkConfig.uploadsHost;
     this.staticHost = sdkConfig.staticHost;
@@ -531,8 +529,8 @@ class WavedashSDK extends EventTarget {
     return this.wavedashUser.id;
   }
 
-  getUserLanguage(): string {
-    return this.userLanguage;
+  getUserLanguage(): LanguageCode {
+    return this.wavedashUser.language;
   }
 
   /**
