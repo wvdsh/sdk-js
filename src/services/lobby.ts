@@ -35,7 +35,7 @@ import {
   api,
   IFRAME_MESSAGE_TYPE,
   LAUNCH_PARAM_PREFIX,
-  SDKUser
+  SDKPeer
 } from "@wvdsh/api";
 import { WavedashManager } from "./manager";
 import { getAvatarUrl } from "../utils/cdn";
@@ -700,7 +700,7 @@ export class LobbyManager extends WavedashManager {
       }
 
       // Convert to WavedashUser format
-      const wavedashUsers: SDKUser[] = newUsers.map((lobbyUser: LobbyUser) => ({
+      const wavedashUsers: SDKPeer[] = newUsers.map((lobbyUser: LobbyUser) => ({
         id: lobbyUser.userId,
         username: lobbyUser.username,
         avatarUrl: lobbyUser.userAvatarUrl

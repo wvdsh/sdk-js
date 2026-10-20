@@ -43,6 +43,7 @@ export const AvatarSize = {
 // single source of truth. Names stay in SCREAMING_SNAKE_CASE to avoid
 // colliding with the same-named PascalCase type aliases in `./types`.
 export {
+  LANGUAGE_CODE,
   LOBBY_VISIBILITY,
   LEADERBOARD_SORT_ORDER,
   LEADERBOARD_DISPLAY_TYPE,

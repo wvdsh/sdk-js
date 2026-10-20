@@ -2,6 +2,7 @@ import { ConvexClient } from "convex/browser";
 import {
   AvatarSize,
   GAME_ENGINE,
+  LANGUAGE_CODE,
   LEADERBOARD_DISPLAY_TYPE,
   LEADERBOARD_SORT_ORDER,
   LOBBY_VISIBILITY,
@@ -32,6 +33,7 @@ import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
 import type {
   WavedashEventMap,
+  LanguageCode,
   UserId,
   LobbyId,
   LeaderboardId,
@@ -123,6 +125,7 @@ class WavedashSDK extends EventTarget {
 
   // Expose constants for easy access `Wavedash.LobbyVisibility.PUBLIC` etc.
   Events = WavedashEvents;
+  LanguageCode = LANGUAGE_CODE;
   LobbyVisibility = LOBBY_VISIBILITY;
   LeaderboardSortOrder = LEADERBOARD_SORT_ORDER;
   LeaderboardDisplayType = LEADERBOARD_DISPLAY_TYPE;
@@ -524,6 +527,10 @@ class WavedashSDK extends EventTarget {
 
   getUserId(): UserId {
     return this.wavedashUser.id;
+  }
+
+  getUserLanguage(): LanguageCode {
+    return this.wavedashUser.language;
   }
 
   /**
