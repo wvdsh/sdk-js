@@ -213,12 +213,16 @@ export class LobbyManager extends WavedashManager {
 
   // TODO: Implement more query filters (IP distance, arbitrary key/value matching, etc)
   async listAvailableLobbies(friendsOnly: boolean = false): Promise<Lobby[]> {
-    const lobbies = await this.lobbyListCache.get(friendsOnly, () => {
-      const filters = friendsOnly ? { friendsOnly } : undefined;
-      return this.sdk.convexClient.query(api.sdk.gameLobby.listAvailable, {
-        filters
-      });
-    });
+    const lobbies = await this.lobbyListCache.get(friendsOnly, () =>
+      friendsOnly
+        ? this.sdk.convexClient.query(api.sdk.gameLobby.listAvailable, {
+            filters: { friendsOnly }
+          })
+        : // Reads nothing player-specific, so every player shares one cached result
+          this.sdk.convexClient.query(api.sdk.gameLobby.listPublicLobbies, {
+            gameCloudId: this.sdk.gameCloudId
+          })
+    );
     // Filter on every return, cached or not: the maybe-deleted set changes independently
     const filteredLobbies = lobbies.filter(
       (lobby) => !this.maybeBeingDeletedLobbyIds.has(lobby.lobbyId)
