@@ -25,10 +25,15 @@ type CreatedLeaderboard = Leaderboard & { created: boolean };
 export class LeaderboardManager extends WavedashManager {
   // How long entry reads are reused. Uploads invalidate them immediately.
   private static readonly ENTRIES_CACHE_TTL_MS = 2_000;
+  // How long a cached handle's totalEntries is served by getLeaderboard /
+  // getOrCreateLeaderboard before they refetch. Entry reads and uploads refresh it.
+  private static readonly HANDLE_CACHE_TTL_MS = 30_000;
 
   // Cache leaderboards to return totalEntries synchronously without a network call
   private leaderboardCache: Map<LeaderboardId, Leaderboard> = new Map();
-  // A leaderboard's id never changes, so each name is looked up once per session
+  // When each cached leaderboard's totalEntries last came from the backend
+  private totalEntriesUpdatedAt: Map<LeaderboardId, number> = new Map();
+  // A leaderboard's id never changes, so names map to ids for the whole session
   private leaderboardIdsByName: Map<string, LeaderboardId> = new Map();
   // In-flight dedupe only (TTL 0); resolved handles live in the maps above
   private pendingGetLeaderboard = new PromiseCache<string, Leaderboard>(0);
@@ -206,13 +211,22 @@ export class LeaderboardManager extends WavedashManager {
     const { id, totalEntries } = leaderboard;
     // Store only the Leaderboard fields, getOrCreate's `created` is per call
     this.leaderboardCache.set(id, { id, name: leaderboard.name, totalEntries });
+    this.totalEntriesUpdatedAt.set(id, Date.now());
     this.leaderboardIdsByName.set(name, id);
   }
 
-  /** A copy of the cached leaderboard for a name, with the latest totalEntries */
+  /**
+   * A copy of the cached leaderboard for a name, or null if its totalEntries
+   * is older than HANDLE_CACHE_TTL_MS so the caller refetches it
+   */
   private getCachedLeaderboardByName(name: string): Leaderboard | null {
     const id = this.leaderboardIdsByName.get(name);
-    const leaderboard = id && this.leaderboardCache.get(id);
+    if (!id) return null;
+    const updatedAt = this.totalEntriesUpdatedAt.get(id) ?? 0;
+    if (Date.now() - updatedAt >= LeaderboardManager.HANDLE_CACHE_TTL_MS) {
+      return null;
+    }
+    const leaderboard = this.leaderboardCache.get(id);
     return leaderboard ? { ...leaderboard } : null;
   }
 
@@ -256,6 +270,7 @@ export class LeaderboardManager extends WavedashManager {
         ...cachedLeaderboard,
         totalEntries
       });
+      this.totalEntriesUpdatedAt.set(leaderboardId, Date.now());
     }
   }
 }

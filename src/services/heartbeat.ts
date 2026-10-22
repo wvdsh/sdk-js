@@ -189,19 +189,25 @@ export class HeartbeatManager extends WavedashManager {
     // Only the latest update may record what was sent, so an older one
     // resolving late can't make us skip a change that is still pending
     const seq = ++this.presenceUpdateSeq;
+    // Snapshot so the caller mutating `data` later can't change what
+    // reestablish heartbeats resend or what we dedupe against
     const sentData = { ...data };
     this.lastSentPresenceData = null;
     try {
-      this.cachedPresenceData = data;
-      await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
-        data,
-        deviceFingerprint: this.deviceFingerprint,
-        pageViewId: this.sdk.pageViewId
-      });
-      if (seq === this.presenceUpdateSeq) {
+      this.cachedPresenceData = sentData;
+      const accepted = await this.sdk.convexClient.mutation(
+        api.sdk.presence.heartbeat,
+        {
+          data: sentData,
+          deviceFingerprint: this.deviceFingerprint,
+          pageViewId: this.sdk.pageViewId
+        }
+      );
+      // A rejected update must stay retryable, so only record accepted ones
+      if (accepted && seq === this.presenceUpdateSeq) {
         this.lastSentPresenceData = sentData;
       }
-      return true;
+      return accepted;
     } catch (error) {
       logger.error(`Error updating presence: ${error}`);
       return false;
