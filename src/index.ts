@@ -29,6 +29,7 @@ import { LobbyManager } from "./services/lobby";
 import type { WavedashManager } from "./services/manager";
 import { P2PManager } from "./services/p2p";
 import { PaidContentManager } from "./services/paidContent";
+import { ScreenCaptureManager } from "./services/screenCapture";
 import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
 import type {
@@ -160,6 +161,7 @@ class WavedashSDK extends EventTarget {
   p2pManager: P2PManager;
   fullscreenManager: FullscreenManager;
   audioManager: AudioManager;
+  screenCaptureManager: ScreenCaptureManager;
   paidContentManager: PaidContentManager;
   externalLinkManager: ExternalLinkManager;
   launchParamManager: LaunchParamManager;
@@ -199,6 +201,11 @@ class WavedashSDK extends EventTarget {
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
     this.audioManager = new AudioManager(this, sdkConfig.initialVolume);
+    // Depends on audioManager for the capture audio tap.
+    this.screenCaptureManager = new ScreenCaptureManager(
+      this,
+      sdkConfig.recordingHotkey
+    );
     this.paidContentManager = new PaidContentManager(this);
     this.externalLinkManager = new ExternalLinkManager(this);
 
@@ -218,6 +225,9 @@ class WavedashSDK extends EventTarget {
       this.friendsManager,
       this.gameEventManager,
       this.fullscreenManager,
+      // Out of construction order: an in-flight recording must start flushing
+      // while the audio graph its capture tap rides is still shimmed.
+      this.screenCaptureManager,
       this.audioManager,
       this.paidContentManager,
       this.externalLinkManager
