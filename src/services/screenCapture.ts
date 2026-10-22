@@ -100,12 +100,14 @@ const CAPTURE_FPS = 60;
 /** Ask the recorder to flush a chunk every second so memory stays bounded. */
 const TIMESLICE_MS = 1_000;
 /**
- * Recording resolution cap (long edge). A high-DPI canvas can be well past
- * 1080p; encoding that steals frame time from the game for little gain.
+ * Recording resolution cap (long edge): 900p. A smooth 60fps matters more
+ * than resolution for gameplay clips, and at 1080p60 the copy + encode can't
+ * keep up on typical laptops — every pixel also steals frame time from the
+ * game itself.
  */
-const MAX_CAPTURE_EDGE = 1920;
-/** ~13 MB/min — comfortably above what canvas content needs at 1080p60. */
-const VIDEO_BITS_PER_SECOND = 14_000_000;
+const MAX_CAPTURE_EDGE = 1600;
+/** ~75 MB/min — comfortably above what 900p60 game footage needs. */
+const VIDEO_BITS_PER_SECOND = 10_000_000;
 
 // Preference order: H.264+AAC in MP4 first — same instant, transcode-free
 // pipeline, but the file is shareable everywhere (QuickTime, iOS, X/Twitter,
@@ -436,9 +438,7 @@ export class ScreenCaptureManager extends WavedashManager {
     video.srcObject = sourceStream;
     video.play().catch(() => {});
 
-    let frame = 0;
     const draw = (): void => {
-      frame = requestAnimationFrame(draw);
       const vw = video.videoWidth;
       const vh = video.videoHeight;
       if (!vw || !vh) return;
@@ -449,14 +449,35 @@ export class ScreenCaptureManager extends WavedashManager {
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(video, (width - dw) / 2, (height - dh) / 2, dw, dh);
     };
-    frame = requestAnimationFrame(draw);
+
+    // Copy once per new game frame where supported, so the clip neither
+    // repeats nor skips frames the way an unsynced rAF loop does; rAF
+    // elsewhere (older Firefox).
+    let cancelDraws: () => void;
+    if (typeof video.requestVideoFrameCallback === "function") {
+      let handle = 0;
+      const onFrame = (): void => {
+        draw();
+        handle = video.requestVideoFrameCallback(onFrame);
+      };
+      handle = video.requestVideoFrameCallback(onFrame);
+      cancelDraws = () => video.cancelVideoFrameCallback(handle);
+    } else {
+      let handle = 0;
+      const onFrame = (): void => {
+        draw();
+        handle = requestAnimationFrame(onFrame);
+      };
+      handle = requestAnimationFrame(onFrame);
+      cancelDraws = () => cancelAnimationFrame(handle);
+    }
 
     return {
       stream: output.captureStream(CAPTURE_FPS),
       width,
       height,
       dispose: () => {
-        cancelAnimationFrame(frame);
+        cancelDraws();
         video.pause();
         video.srcObject = null;
         for (const track of sourceStream.getTracks()) track.stop();
