@@ -10,15 +10,16 @@ import { WavedashManager } from "./manager";
  */
 export const SCREEN_CAPTURE_MESSAGE_TYPE = {
   /**
-   * Parent → SDK: desired recording state, `{ isRecording, recordingId? }`. Broadcast
-   * like VOLUME_CHANGED/FULLSCREEN_CHANGED — we start/stop capture to match,
-   * and a broadcast that already matches our state is a no-op.
+   * Parent → SDK: desired recording state, `{ isRecording, recordingId? }`.
+   * Broadcast like VOLUME_CHANGED/FULLSCREEN_CHANGED — we start/stop capture
+   * to match, and a broadcast that already matches our state is a no-op.
    */
   RECORDING_CHANGED: "RecordingChanged",
   /**
-   * SDK → Parent: recording result. On success carries the recording Blob
-   * (`{ success: true, blob, mimeType, width, height, durationMs }`),
-   * on failure `{ success: false, error }`. The Blob rides postMessage's
+   * SDK → Parent: recording result, echoing the start's `recordingId`. On
+   * success carries the recording Blob (`{ success: true, recordingId, blob,
+   * mimeType, width, height, durationMs }`), on failure `{ success: false,
+   * recordingId, error, reason? }`. The Blob rides postMessage's
    * structured clone, which hands over a reference to the same immutable
    * backing data — not a byte-by-byte copy — so this is cheap even for a
    * long clip.
@@ -85,7 +86,6 @@ interface FixedSizeCapture {
 interface ActiveRecording {
   recorder: MediaRecorder;
   chunks: Blob[];
-  stream: MediaStream;
   mimeType: string | null;
   capture: FixedSizeCapture;
   audioTap: { tracks: MediaStreamTrack[]; dispose: () => void } | null;
@@ -106,14 +106,6 @@ const TIMESLICE_MS = 1_000;
 const MAX_CAPTURE_EDGE = 1920;
 /** ~13 MB/min — comfortably above what canvas content needs at 1080p60. */
 const VIDEO_BITS_PER_SECOND = 14_000_000;
-
-const RENDERING_CONTEXT_TYPES = new Set([
-  "2d",
-  "webgl",
-  "webgl2",
-  "webgpu",
-  "experimental-webgl"
-]);
 
 // Preference order: H.264+AAC in MP4 first — same instant, transcode-free
 // pipeline, but the file is shareable everywhere (QuickTime, iOS, X/Twitter,
@@ -170,14 +162,10 @@ function errorMessage(error: unknown): string {
  *   duration — the SDK records until RecordingChanged isRecording:false
  *   arrives, then posts the resulting Blob back as RecordingComplete.
  *
- * Canvas discovery mirrors the audio shims' philosophy: wrap
- * `HTMLCanvasElement.prototype.getContext` to see every canvas the game
- * renders to (including offscreen/detached ones at creation time), then pick
- * the largest connected one when recording starts. A DOM query is the
- * fallback for canvases created before the SDK loaded.
+ * The game's canvas is found when recording starts: the largest one in the
+ * document (see pickCanvas).
  */
 export class ScreenCaptureManager extends WavedashManager {
-  private canvases: HTMLCanvasElement[] = [];
   private active: ActiveRecording | null = null;
   // The previous recorder's flush, while in flight. A start that arrives
   // meanwhile is parked in pendingStart and runs once the flush finishes, so
@@ -185,14 +173,10 @@ export class ScreenCaptureManager extends WavedashManager {
   private stopping: Promise<void> | null = null;
   private pendingStart: RecordingChangedMessage | null = null;
   private hotkey: string | null;
-  private originalGetContext:
-    | typeof HTMLCanvasElement.prototype.getContext
-    | null = null;
 
   constructor(sdk: WavedashSDK, recordingHotkey?: string) {
     super(sdk);
     this.hotkey = recordingHotkey || null;
-    this.installCanvasTracking();
     this.sdk.iframeMessenger.addEventListener(
       SCREEN_CAPTURE_MESSAGE_TYPE.RECORDING_CHANGED as IFrameMessageType,
       this.handleRecordingChanged as IFrameMessageListener
@@ -205,10 +189,6 @@ export class ScreenCaptureManager extends WavedashManager {
       // Capture phase, so we see it before game handlers registered on window.
       window.addEventListener("keydown", this.handleKeyDown, true);
     }
-  }
-
-  isRecording(): boolean {
-    return this.active !== null;
   }
 
   private handleRecordingChanged = (data: RecordingChangedMessage): void => {
@@ -314,7 +294,6 @@ export class ScreenCaptureManager extends WavedashManager {
     const active: ActiveRecording = {
       recorder,
       chunks,
-      stream,
       mimeType,
       capture,
       audioTap,
@@ -367,7 +346,7 @@ export class ScreenCaptureManager extends WavedashManager {
       }
     });
 
-    for (const track of active.stream.getTracks()) track.stop();
+    for (const track of active.capture.stream.getTracks()) track.stop();
     active.capture.dispose();
     active.audioTap?.dispose();
 
@@ -446,11 +425,7 @@ export class ScreenCaptureManager extends WavedashManager {
     const output = document.createElement("canvas");
     output.width = width;
     output.height = height;
-    // Native getContext, so our own canvas never lands in `canvases`.
-    const getContext = this.originalGetContext ?? output.getContext;
-    const ctx = getContext.call(output, "2d", {
-      alpha: false
-    }) as CanvasRenderingContext2D | null;
+    const ctx = output.getContext("2d", { alpha: false });
     if (!ctx) throw new Error("2D context unavailable");
 
     const sourceStream = source.captureStream(CAPTURE_FPS);
@@ -490,57 +465,23 @@ export class ScreenCaptureManager extends WavedashManager {
   }
 
   /**
-   * Largest connected canvas wins — games often allocate small scratch
+   * Largest canvas in the document wins — games often allocate small scratch
    * canvases for text measurement or sprite baking, while the main render
-   * target dominates the viewport. Canvases that got their context before the
-   * SDK loaded never hit the getContext shim, so DOM canvases are candidates
-   * too.
+   * target dominates the viewport. Detached canvases aren't on screen, so
+   * they're never candidates (nor are ones inside shadow roots).
    */
   private pickCanvas(): HTMLCanvasElement | null {
-    const candidates = new Set(this.canvases);
-    if (typeof document !== "undefined") {
-      document.querySelectorAll("canvas").forEach((c) => candidates.add(c));
-    }
+    if (typeof document === "undefined") return null;
     let best: HTMLCanvasElement | null = null;
     let bestArea = 0;
-    for (const canvas of candidates) {
-      if (!canvas.isConnected) continue;
+    document.querySelectorAll("canvas").forEach((canvas) => {
       const area = (canvas.width || 0) * (canvas.height || 0);
       if (area > bestArea) {
         bestArea = area;
         best = canvas;
       }
-    }
+    });
     return best;
-  }
-
-  private installCanvasTracking(): void {
-    if (typeof HTMLCanvasElement === "undefined") return;
-    const original = HTMLCanvasElement.prototype.getContext;
-    this.originalGetContext = original;
-    ((manager) => {
-      HTMLCanvasElement.prototype.getContext = function (
-        this: HTMLCanvasElement,
-        ...args: [string, unknown?]
-      ) {
-        const ctx = (
-          original as (
-            this: HTMLCanvasElement,
-            ...a: [string, unknown?]
-          ) => RenderingContext | null
-        ).apply(this, args);
-        const type = args[0];
-        if (ctx && typeof type === "string") {
-          if (
-            RENDERING_CONTEXT_TYPES.has(type.toLowerCase()) &&
-            !manager.canvases.includes(this)
-          ) {
-            manager.canvases.push(this);
-          }
-        }
-        return ctx;
-      } as typeof HTMLCanvasElement.prototype.getContext;
-    })(this);
   }
 
   override destroy(): void {
@@ -559,12 +500,6 @@ export class ScreenCaptureManager extends WavedashManager {
     // Best-effort: flush an in-flight recording to the parent on teardown.
     this.pendingStart = null;
     void this.stop();
-
-    if (this.originalGetContext) {
-      HTMLCanvasElement.prototype.getContext = this.originalGetContext;
-      this.originalGetContext = null;
-    }
-    this.canvases = [];
 
     super.destroy();
   }
