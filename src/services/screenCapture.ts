@@ -74,12 +74,19 @@ interface RecordingChangedMessage {
   fps?: number;
 }
 
+interface FixedSizeCapture {
+  stream: MediaStream;
+  width: number;
+  height: number;
+  dispose: () => void;
+}
+
 interface ActiveRecording {
   recorder: MediaRecorder;
   chunks: Blob[];
   stream: MediaStream;
   mimeType: string | null;
-  canvas: HTMLCanvasElement;
+  capture: FixedSizeCapture;
   audioTap: { tracks: MediaStreamTrack[]; dispose: () => void } | null;
   startedAt: number;
   /** Set when the recorder errors; stop() then reports failure, not a clip. */
@@ -89,6 +96,11 @@ interface ActiveRecording {
 const DEFAULT_FPS = 60;
 /** Ask the recorder to flush a chunk every second so memory stays bounded. */
 const TIMESLICE_MS = 1_000;
+/**
+ * Recording resolution cap (long edge). A high-DPI canvas can be well past
+ * 1080p; encoding that steals frame time from the game for little gain.
+ */
+const MAX_CAPTURE_EDGE = 1920;
 /** ~13 MB/min — comfortably above what canvas content needs at 1080p60. */
 const VIDEO_BITS_PER_SECOND = 14_000_000;
 
@@ -237,7 +249,9 @@ export class ScreenCaptureManager extends WavedashManager {
   private start(options: RecordingChangedMessage): void {
     const canvas = this.pickCanvas();
     if (!canvas) {
-      this.postFailure("No game canvas found.");
+      // DOM-rendered games (or ones whose canvas lives in a frame we can't
+      // reach) have nothing for captureStream() to record.
+      this.postFailure("No game canvas found.", "no-canvas");
       return;
     }
 
@@ -246,13 +260,14 @@ export class ScreenCaptureManager extends WavedashManager {
         ? Math.min(Math.max(options.fps, 1), 60)
         : DEFAULT_FPS;
 
-    let stream: MediaStream;
+    let capture: FixedSizeCapture;
     try {
-      stream = canvas.captureStream(fps);
+      capture = this.createFixedSizeCapture(canvas, fps);
     } catch (error) {
       this.postFailure(`canvas.captureStream failed: ${errorMessage(error)}`);
       return;
     }
+    const stream = capture.stream;
 
     // Audio is best-effort — a silent clip beats no clip.
     let audioTap: ActiveRecording["audioTap"] = null;
@@ -282,6 +297,7 @@ export class ScreenCaptureManager extends WavedashManager {
       recorder.start(TIMESLICE_MS);
     } catch (error) {
       for (const track of stream.getTracks()) track.stop();
+      capture.dispose();
       audioTap?.dispose();
       this.postFailure(`MediaRecorder failed: ${errorMessage(error)}`);
       return;
@@ -292,7 +308,7 @@ export class ScreenCaptureManager extends WavedashManager {
       chunks,
       stream,
       mimeType,
-      canvas,
+      capture,
       audioTap,
       startedAt: Date.now(),
       error: null
@@ -307,7 +323,7 @@ export class ScreenCaptureManager extends WavedashManager {
     };
     this.active = active;
     logger.info(
-      `Screen capture: recording started ${canvas.width}x${canvas.height} @ ${fps}fps`,
+      `Screen capture: recording started ${capture.width}x${capture.height} @ ${fps}fps`,
       mimeType
     );
   }
@@ -343,6 +359,7 @@ export class ScreenCaptureManager extends WavedashManager {
     });
 
     for (const track of active.stream.getTracks()) track.stop();
+    active.capture.dispose();
     active.audioTap?.dispose();
 
     if (active.error) {
@@ -363,15 +380,19 @@ export class ScreenCaptureManager extends WavedashManager {
       success: true,
       blob,
       mimeType: active.mimeType ?? blob.type,
-      width: active.canvas.width,
-      height: active.canvas.height,
+      width: active.capture.width,
+      height: active.capture.height,
       durationMs
     });
   }
 
-  private postFailure(error: string): void {
+  /**
+   * `reason` is a machine-readable cause the parent can explain to the player
+   * (see RecordingFailureReason in @wvdsh/api); `error` is free-form detail.
+   */
+  private postFailure(error: string, reason?: "no-canvas"): void {
     logger.warn(`Screen capture: ${error}`);
-    this.postToParent({ success: false, error });
+    this.postToParent({ success: false, error, ...(reason && { reason }) });
   }
 
   private postToParent(data: Record<string, unknown>): void {
@@ -379,6 +400,75 @@ export class ScreenCaptureManager extends WavedashManager {
       SCREEN_CAPTURE_MESSAGE_TYPE.RECORDING_COMPLETE as ParentMessageType,
       data
     );
+  }
+
+  /**
+   * Re-render a canvas's capture stream onto a fixed-size canvas (sized from
+   * the source at start, letterboxed after), so the recording's resolution
+   * never changes. Games resize their canvas mid-session — dynamic resolution
+   * scaling, window resizes, fullscreen — and MediaRecorder freezes or
+   * corrupts the clip when its input resolution changes.
+   *
+   * The source is read through captureStream() + a <video>, not drawImage on
+   * the canvas itself: that's reliable for WebGL canvases without
+   * preserveDrawingBuffer, whose buffer may already be cleared when we read.
+   */
+  private createFixedSizeCapture(
+    source: HTMLCanvasElement,
+    fps: number
+  ): FixedSizeCapture {
+    const scale = Math.min(
+      1,
+      MAX_CAPTURE_EDGE / Math.max(source.width, source.height)
+    );
+    // Even dimensions: H.264 encoders reject or pad odd sizes.
+    const width = Math.max(2, Math.round((source.width * scale) / 2) * 2);
+    const height = Math.max(2, Math.round((source.height * scale) / 2) * 2);
+
+    const output = document.createElement("canvas");
+    output.width = width;
+    output.height = height;
+    // Native getContext, so our own canvas never lands in `canvases`.
+    const getContext = this.originalGetContext ?? output.getContext;
+    const ctx = getContext.call(output, "2d", {
+      alpha: false
+    }) as CanvasRenderingContext2D | null;
+    if (!ctx) throw new Error("2D context unavailable");
+
+    const sourceStream = source.captureStream(fps);
+    const video = document.createElement("video");
+    this.sdk.audioManager.ignoreMediaElement(video);
+    video.muted = true;
+    video.playsInline = true;
+    video.srcObject = sourceStream;
+    video.play().catch(() => {});
+
+    let frame = 0;
+    const draw = (): void => {
+      frame = requestAnimationFrame(draw);
+      const vw = video.videoWidth;
+      const vh = video.videoHeight;
+      if (!vw || !vh) return;
+      const fit = Math.min(width / vw, height / vh);
+      const dw = vw * fit;
+      const dh = vh * fit;
+      ctx.fillStyle = "#000";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(video, (width - dw) / 2, (height - dh) / 2, dw, dh);
+    };
+    frame = requestAnimationFrame(draw);
+
+    return {
+      stream: output.captureStream(fps),
+      width,
+      height,
+      dispose: () => {
+        cancelAnimationFrame(frame);
+        video.pause();
+        video.srcObject = null;
+        for (const track of sourceStream.getTracks()) track.stop();
+      }
+    };
   }
 
   /**
