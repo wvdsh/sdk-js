@@ -157,6 +157,9 @@ export class HeartbeatManager extends WavedashManager {
 
   /** Stop the heartbeat and clear the inactivity timer. Idempotent. */
   stop(): void {
+    // The backend session may end while stopped, so the next
+    // updateUserPresence must go out even if its data is unchanged
+    this.lastSentPresenceData = null;
     if (this.inactivityTimeout !== null) {
       clearTimeout(this.inactivityTimeout);
       this.inactivityTimeout = null;
@@ -288,9 +291,12 @@ export class HeartbeatManager extends WavedashManager {
       .then((accepted: boolean) => {
         if (accepted) {
           this.lastHeartbeatTime = Date.now();
+        } else {
+          this.lastSentPresenceData = null;
         }
       })
       .catch((error: unknown) => {
+        this.lastSentPresenceData = null;
         logger.error(`Heartbeat failed: ${error}`);
       })
       .finally(() => {
