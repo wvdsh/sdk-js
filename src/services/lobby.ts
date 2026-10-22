@@ -42,6 +42,7 @@ import { getAvatarUrl } from "../utils/cdn";
 import { logger } from "../utils/logger";
 import { getErrorMessage } from "../utils/errors";
 import { hasParentFrame } from "../utils/parentOrigin";
+import { PromiseCache } from "../utils/promiseCache";
 
 /** Whether a Convex error is the backend's "User is not a member of this lobby". */
 function isNotLobbyMemberError(error: unknown): boolean {
@@ -72,6 +73,12 @@ export class LobbyManager extends WavedashManager {
   // Cache results of queries for a list of lobbies
   // We'll cache metadata and num users for each lobby and return that info synchronously when requested by the game
   private cachedLobbies: Record<LobbyId, Lobby> = {};
+  // Reuse listAvailable results briefly so lobby browsers that poll don't hit
+  // the backend on every poll. Keyed by friendsOnly, cleared on create/join/leave.
+  private static readonly LOBBY_LIST_CACHE_TTL_MS = 2_000;
+  private lobbyListCache = new PromiseCache<boolean, Lobby[]>(
+    LobbyManager.LOBBY_LIST_CACHE_TTL_MS
+  );
 
   // Track lobby invites
   private unsubscribeLobbyInvites: (() => void) | null = null;
@@ -191,9 +198,13 @@ export class LobbyManager extends WavedashManager {
   async leaveLobby(lobbyId: LobbyId): Promise<LobbyId> {
     // Clean up subscriptions BEFORE leaving lobby so we don't trigger updates to ourselves from leaving
     this.cleanupLobbyState();
-    await this.sdk.convexClient.mutation(api.sdk.gameLobby.leaveLobby, {
-      lobbyId
-    });
+    try {
+      await this.sdk.convexClient.mutation(api.sdk.gameLobby.leaveLobby, {
+        lobbyId
+      });
+    } finally {
+      this.lobbyListCache.clear();
+    }
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LOBBY_LEFT, {
       lobbyId
     });
@@ -202,11 +213,13 @@ export class LobbyManager extends WavedashManager {
 
   // TODO: Implement more query filters (IP distance, arbitrary key/value matching, etc)
   async listAvailableLobbies(friendsOnly: boolean = false): Promise<Lobby[]> {
-    const filters = friendsOnly ? { friendsOnly } : undefined;
-    const lobbies = await this.sdk.convexClient.query(
-      api.sdk.gameLobby.listAvailable,
-      { filters }
-    );
+    const lobbies = await this.lobbyListCache.get(friendsOnly, () => {
+      const filters = friendsOnly ? { friendsOnly } : undefined;
+      return this.sdk.convexClient.query(api.sdk.gameLobby.listAvailable, {
+        filters
+      });
+    });
+    // Filter on every return, cached or not: the maybe-deleted set changes independently
     const filteredLobbies = lobbies.filter(
       (lobby) => !this.maybeBeingDeletedLobbyIds.has(lobby.lobbyId)
     );
@@ -305,6 +318,8 @@ export class LobbyManager extends WavedashManager {
     // Unsubscribe from previous lobby (if any) and switch to the new lobby id
     // in one step so the launch param is written once, not cleared then re-set
     this.cleanupLobbyState(response.lobbyId);
+    // Our membership changed, so cached lobby lists are out of date
+    this.lobbyListCache.clear();
 
     // Initialize local state from response
     this.lobbyHostId = response.hostId;
@@ -504,6 +519,7 @@ export class LobbyManager extends WavedashManager {
     // Clear other state
     this.seenInviteIds.clear();
     this.cachedLobbies = {};
+    this.lobbyListCache.clear();
   }
 
   // leading: false so the first call doesn't fire synchronously inside setLobbyData
