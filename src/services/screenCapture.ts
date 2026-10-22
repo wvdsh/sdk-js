@@ -1,44 +1,17 @@
+import {
+  IFRAME_MESSAGE_TYPE,
+  type IFrameEventPayloadMap,
+  type RecordingCompletePayload,
+  type RecordingFailureReason
+} from "@wvdsh/api";
 import { type WavedashSDK } from "../index";
-import type { IFrameMessenger } from "../utils/iframeMessenger";
 import { logger } from "../utils/logger";
 import { WavedashManager } from "./manager";
 
-/**
- * Iframe message types for gameplay capture.
- * TODO: fold these into IFRAME_MESSAGE_TYPE in @wvdsh/api once the host-side
- * support ships; the casts below go away with it.
- */
-export const SCREEN_CAPTURE_MESSAGE_TYPE = {
-  /**
-   * Parent → SDK: desired recording state, `{ isRecording, recordingId? }`.
-   * Broadcast like VOLUME_CHANGED/FULLSCREEN_CHANGED — we start/stop capture
-   * to match, and a broadcast that already matches our state is a no-op.
-   */
-  RECORDING_CHANGED: "RecordingChanged",
-  /**
-   * SDK → Parent: recording result, echoing the start's `recordingId`. On
-   * success carries the recording Blob (`{ success: true, recordingId, blob,
-   * mimeType, width, height, durationMs }`), on failure `{ success: false,
-   * recordingId, error, reason? }`. The Blob rides postMessage's
-   * structured clone, which hands over a reference to the same immutable
-   * backing data — not a byte-by-byte copy — so this is cheap even for a
-   * long clip.
-   */
-  RECORDING_COMPLETE: "RecordingComplete",
-  /**
-   * Parent → SDK: the recording hotkey to intercept, `{ hotkey }` (null =
-   * none). The initial value arrives as SDKConfig.recordingHotkey.
-   */
-  RECORDING_HOTKEY_CHANGED: "RecordingHotkeyChanged",
-  /** SDK → Parent: the player pressed the hotkey while the game had focus. */
-  RECORDING_HOTKEY_PRESSED: "RecordingHotkeyPressed"
-} as const;
-
-// The IFrameMessenger is typed against the published IFrameEventPayloadMap,
-// which doesn't know about these message types yet (see TODO above).
-type IFrameMessageType = Parameters<IFrameMessenger["addEventListener"]>[0];
-type IFrameMessageListener = Parameters<IFrameMessenger["addEventListener"]>[1];
-type ParentMessageType = Parameters<IFrameMessenger["postToParent"]>[0];
+type RecordingChangedMessage =
+  IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.RECORDING_CHANGED];
+type RecordingHotkeyChangedMessage =
+  IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED];
 
 const MODIFIER_CODES = new Set([
   "ShiftLeft",
@@ -68,12 +41,6 @@ function hotkeyFromEvent(event: KeyboardEvent): string | null {
   if (event.metaKey) parts.push("Meta");
   parts.push(event.code);
   return parts.join("+");
-}
-
-interface RecordingChangedMessage {
-  isRecording: boolean;
-  /** Echoed back in RecordingComplete so the parent can drop stale results. */
-  recordingId?: number;
 }
 
 interface FixedSizeCapture {
@@ -162,7 +129,15 @@ function errorMessage(error: unknown): string {
  *   `canvas.captureStream()`, mix in the game's audio through AudioManager's
  *   capture tap, and feed a MediaRecorder. The parent owns recording
  *   duration — the SDK records until RecordingChanged isRecording:false
- *   arrives, then posts the resulting Blob back as RecordingComplete.
+ *   arrives, then posts the resulting Blob back as RecordingComplete,
+ *   echoing the start's `recordingId` so the parent can drop stale results.
+ *   The Blob rides postMessage's structured clone, which hands over a
+ *   reference to the same immutable backing data — not a byte-by-byte copy —
+ *   so this is cheap even for a long clip.
+ *
+ * The parent also sends the recording hotkey (SDKConfig.recordingHotkey,
+ * then RecordingHotkeyChanged); we intercept it while the game has focus and
+ * report RecordingHotkeyPressed.
  *
  * The game's canvas is found when recording starts: the largest one in the
  * document (see pickCanvas).
@@ -180,12 +155,12 @@ export class ScreenCaptureManager extends WavedashManager {
     super(sdk);
     this.hotkey = recordingHotkey || null;
     this.sdk.iframeMessenger.addEventListener(
-      SCREEN_CAPTURE_MESSAGE_TYPE.RECORDING_CHANGED as IFrameMessageType,
-      this.handleRecordingChanged as IFrameMessageListener
+      IFRAME_MESSAGE_TYPE.RECORDING_CHANGED,
+      this.handleRecordingChanged
     );
     this.sdk.iframeMessenger.addEventListener(
-      SCREEN_CAPTURE_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED as IFrameMessageType,
-      this.handleHotkeyChanged as IFrameMessageListener
+      IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED,
+      this.handleHotkeyChanged
     );
     if (typeof window !== "undefined") {
       // Capture phase, so we see it before game handlers registered on window.
@@ -209,7 +184,7 @@ export class ScreenCaptureManager extends WavedashManager {
     }
   };
 
-  private handleHotkeyChanged = (data: { hotkey: string | null }): void => {
+  private handleHotkeyChanged = (data: RecordingHotkeyChangedMessage): void => {
     this.hotkey =
       typeof data.hotkey === "string" && data.hotkey ? data.hotkey : null;
   };
@@ -226,7 +201,7 @@ export class ScreenCaptureManager extends WavedashManager {
     event.preventDefault();
     event.stopImmediatePropagation();
     this.sdk.iframeMessenger.postToParent(
-      SCREEN_CAPTURE_MESSAGE_TYPE.RECORDING_HOTKEY_PRESSED as ParentMessageType,
+      IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_PRESSED,
       {}
     );
   };
@@ -381,12 +356,12 @@ export class ScreenCaptureManager extends WavedashManager {
 
   /**
    * `reason` is a machine-readable cause the parent can explain to the player
-   * (see RecordingFailureReason in @wvdsh/api); `error` is free-form detail.
+   * (RecordingFailureReason); `error` is free-form detail.
    */
   private postFailure(
     recordingId: number | undefined,
     error: string,
-    reason?: "no-canvas"
+    reason?: RecordingFailureReason
   ): void {
     logger.warn(`Screen capture: ${error}`);
     this.postToParent({
@@ -397,10 +372,10 @@ export class ScreenCaptureManager extends WavedashManager {
     });
   }
 
-  private postToParent(data: Record<string, unknown>): void {
+  private postToParent(payload: RecordingCompletePayload): void {
     this.sdk.iframeMessenger.postToParent(
-      SCREEN_CAPTURE_MESSAGE_TYPE.RECORDING_COMPLETE as ParentMessageType,
-      data
+      IFRAME_MESSAGE_TYPE.RECORDING_COMPLETE,
+      payload
     );
   }
 
@@ -507,12 +482,12 @@ export class ScreenCaptureManager extends WavedashManager {
 
   override destroy(): void {
     this.sdk.iframeMessenger.removeEventListener(
-      SCREEN_CAPTURE_MESSAGE_TYPE.RECORDING_CHANGED as IFrameMessageType,
-      this.handleRecordingChanged as IFrameMessageListener
+      IFRAME_MESSAGE_TYPE.RECORDING_CHANGED,
+      this.handleRecordingChanged
     );
     this.sdk.iframeMessenger.removeEventListener(
-      SCREEN_CAPTURE_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED as IFrameMessageType,
-      this.handleHotkeyChanged as IFrameMessageListener
+      IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED,
+      this.handleHotkeyChanged
     );
     if (typeof window !== "undefined") {
       window.removeEventListener("keydown", this.handleKeyDown, true);

@@ -204,8 +204,7 @@ class WavedashSDK extends EventTarget {
     // Depends on audioManager for the capture audio tap.
     this.screenCaptureManager = new ScreenCaptureManager(
       this,
-      // Not in the published SDKConfig type yet (see SCREEN_CAPTURE_MESSAGE_TYPE).
-      (sdkConfig as SDKConfig & { recordingHotkey?: string }).recordingHotkey
+      sdkConfig.recordingHotkey
     );
     this.paidContentManager = new PaidContentManager(this);
     this.externalLinkManager = new ExternalLinkManager(this);
