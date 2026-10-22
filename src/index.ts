@@ -202,7 +202,11 @@ class WavedashSDK extends EventTarget {
     this.fullscreenManager = new FullscreenManager(this);
     this.audioManager = new AudioManager(this, sdkConfig.initialVolume);
     // Depends on audioManager for the capture audio tap.
-    this.screenCaptureManager = new ScreenCaptureManager(this);
+    this.screenCaptureManager = new ScreenCaptureManager(
+      this,
+      // Not in the published SDKConfig type yet (see SCREEN_CAPTURE_MESSAGE_TYPE).
+      (sdkConfig as SDKConfig & { recordingHotkey?: string }).recordingHotkey
+    );
     this.paidContentManager = new PaidContentManager(this);
     this.externalLinkManager = new ExternalLinkManager(this);
 
@@ -222,8 +226,10 @@ class WavedashSDK extends EventTarget {
       this.friendsManager,
       this.gameEventManager,
       this.fullscreenManager,
-      this.audioManager,
+      // Out of construction order: an in-flight recording must start flushing
+      // while the audio graph its capture tap rides is still shimmed.
       this.screenCaptureManager,
+      this.audioManager,
       this.paidContentManager,
       this.externalLinkManager
     ];
