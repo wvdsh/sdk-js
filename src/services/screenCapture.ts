@@ -10,7 +10,7 @@ import { WavedashManager } from "./manager";
  */
 export const SCREEN_CAPTURE_MESSAGE_TYPE = {
   /**
-   * Parent → SDK: desired recording state, `{ isRecording, fps? }`. Broadcast
+   * Parent → SDK: desired recording state, `{ isRecording, recordingId? }`. Broadcast
    * like VOLUME_CHANGED/FULLSCREEN_CHANGED — we start/stop capture to match,
    * and a broadcast that already matches our state is a no-op.
    */
@@ -71,7 +71,8 @@ function hotkeyFromEvent(event: KeyboardEvent): string | null {
 
 interface RecordingChangedMessage {
   isRecording: boolean;
-  fps?: number;
+  /** Echoed back in RecordingComplete so the parent can drop stale results. */
+  recordingId?: number;
 }
 
 interface FixedSizeCapture {
@@ -91,9 +92,11 @@ interface ActiveRecording {
   startedAt: number;
   /** Set when the recorder errors; stop() then reports failure, not a clip. */
   error: string | null;
+  /** From the RecordingChanged that started this; echoed in the result. */
+  recordingId: number | undefined;
 }
 
-const DEFAULT_FPS = 60;
+const CAPTURE_FPS = 60;
 /** Ask the recorder to flush a chunk every second so memory stays bounded. */
 const TIMESLICE_MS = 1_000;
 /**
@@ -251,20 +254,22 @@ export class ScreenCaptureManager extends WavedashManager {
     if (!canvas) {
       // DOM-rendered games (or ones whose canvas lives in a frame we can't
       // reach) have nothing for captureStream() to record.
-      this.postFailure("No game canvas found.", "no-canvas");
+      this.postFailure(
+        options.recordingId,
+        "No game canvas found.",
+        "no-canvas"
+      );
       return;
     }
 
-    const fps =
-      typeof options.fps === "number" && Number.isFinite(options.fps)
-        ? Math.min(Math.max(options.fps, 1), 60)
-        : DEFAULT_FPS;
-
     let capture: FixedSizeCapture;
     try {
-      capture = this.createFixedSizeCapture(canvas, fps);
+      capture = this.createFixedSizeCapture(canvas);
     } catch (error) {
-      this.postFailure(`canvas.captureStream failed: ${errorMessage(error)}`);
+      this.postFailure(
+        options.recordingId,
+        `canvas.captureStream failed: ${errorMessage(error)}`
+      );
       return;
     }
     const stream = capture.stream;
@@ -299,7 +304,10 @@ export class ScreenCaptureManager extends WavedashManager {
       for (const track of stream.getTracks()) track.stop();
       capture.dispose();
       audioTap?.dispose();
-      this.postFailure(`MediaRecorder failed: ${errorMessage(error)}`);
+      this.postFailure(
+        options.recordingId,
+        `MediaRecorder failed: ${errorMessage(error)}`
+      );
       return;
     }
 
@@ -311,6 +319,7 @@ export class ScreenCaptureManager extends WavedashManager {
       capture,
       audioTap,
       startedAt: Date.now(),
+      recordingId: options.recordingId,
       error: null
     };
     recorder.onerror = (event: Event) => {
@@ -323,7 +332,7 @@ export class ScreenCaptureManager extends WavedashManager {
     };
     this.active = active;
     logger.info(
-      `Screen capture: recording started ${capture.width}x${capture.height} @ ${fps}fps`,
+      `Screen capture: recording started ${capture.width}x${capture.height} @ ${CAPTURE_FPS}fps`,
       mimeType
     );
   }
@@ -363,7 +372,7 @@ export class ScreenCaptureManager extends WavedashManager {
     active.audioTap?.dispose();
 
     if (active.error) {
-      this.postFailure(active.error);
+      this.postFailure(active.recordingId, active.error);
       return;
     }
 
@@ -378,6 +387,9 @@ export class ScreenCaptureManager extends WavedashManager {
 
     this.postToParent({
       success: true,
+      ...(active.recordingId !== undefined && {
+        recordingId: active.recordingId
+      }),
       blob,
       mimeType: active.mimeType ?? blob.type,
       width: active.capture.width,
@@ -390,9 +402,18 @@ export class ScreenCaptureManager extends WavedashManager {
    * `reason` is a machine-readable cause the parent can explain to the player
    * (see RecordingFailureReason in @wvdsh/api); `error` is free-form detail.
    */
-  private postFailure(error: string, reason?: "no-canvas"): void {
+  private postFailure(
+    recordingId: number | undefined,
+    error: string,
+    reason?: "no-canvas"
+  ): void {
     logger.warn(`Screen capture: ${error}`);
-    this.postToParent({ success: false, error, ...(reason && { reason }) });
+    this.postToParent({
+      success: false,
+      error,
+      ...(recordingId !== undefined && { recordingId }),
+      ...(reason && { reason })
+    });
   }
 
   private postToParent(data: Record<string, unknown>): void {
@@ -413,10 +434,7 @@ export class ScreenCaptureManager extends WavedashManager {
    * the canvas itself: that's reliable for WebGL canvases without
    * preserveDrawingBuffer, whose buffer may already be cleared when we read.
    */
-  private createFixedSizeCapture(
-    source: HTMLCanvasElement,
-    fps: number
-  ): FixedSizeCapture {
+  private createFixedSizeCapture(source: HTMLCanvasElement): FixedSizeCapture {
     const scale = Math.min(
       1,
       MAX_CAPTURE_EDGE / Math.max(source.width, source.height)
@@ -435,7 +453,7 @@ export class ScreenCaptureManager extends WavedashManager {
     }) as CanvasRenderingContext2D | null;
     if (!ctx) throw new Error("2D context unavailable");
 
-    const sourceStream = source.captureStream(fps);
+    const sourceStream = source.captureStream(CAPTURE_FPS);
     const video = document.createElement("video");
     this.sdk.audioManager.ignoreMediaElement(video);
     video.muted = true;
@@ -459,7 +477,7 @@ export class ScreenCaptureManager extends WavedashManager {
     frame = requestAnimationFrame(draw);
 
     return {
-      stream: output.captureStream(fps),
+      stream: output.captureStream(CAPTURE_FPS),
       width,
       height,
       dispose: () => {
