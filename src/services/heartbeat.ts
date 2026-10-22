@@ -28,6 +28,16 @@ const INPUT_LISTENER_OPTS: AddEventListenerOptions = {
   capture: true
 };
 
+/** Presence data is a flat record, so comparing top-level values is a deep equal */
+function isSamePresenceData(
+  a: Record<string, string | number | boolean | null>,
+  b: Record<string, string | number | boolean | null>
+): boolean {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  return aKeys.every((key) => key in b && a[key] === b[key]);
+}
+
 export class HeartbeatManager extends WavedashManager {
   private deviceFingerprint: DeviceFingerprint | undefined = undefined;
   // Always resolves — never rejects. Best-effort: the backend stamps whatever
@@ -51,6 +61,13 @@ export class HeartbeatManager extends WavedashManager {
   private readonly GAMEPAD_POLL_INTERVAL_MS = 1_000;
   private cachedPresenceData: Record<string, string | number | boolean | null> =
     {};
+  // Copy of the presence data the backend last accepted from
+  // updateUserPresence; null while an update is pending or after a failure
+  private lastSentPresenceData: Record<
+    string,
+    string | number | boolean | null
+  > | null = null;
+  private presenceUpdateSeq: number = 0;
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -162,6 +179,18 @@ export class HeartbeatManager extends WavedashManager {
   async updateUserPresence(
     data: Record<string, string | number | boolean | null>
   ): Promise<boolean> {
+    // Skip the network call when nothing changed since the last accepted update
+    if (
+      this.lastSentPresenceData &&
+      isSamePresenceData(this.lastSentPresenceData, data)
+    ) {
+      return true;
+    }
+    // Only the latest update may record what was sent, so an older one
+    // resolving late can't make us skip a change that is still pending
+    const seq = ++this.presenceUpdateSeq;
+    const sentData = { ...data };
+    this.lastSentPresenceData = null;
     try {
       this.cachedPresenceData = data;
       await this.sdk.convexClient.mutation(api.sdk.presence.heartbeat, {
@@ -169,6 +198,9 @@ export class HeartbeatManager extends WavedashManager {
         deviceFingerprint: this.deviceFingerprint,
         pageViewId: this.sdk.pageViewId
       });
+      if (seq === this.presenceUpdateSeq) {
+        this.lastSentPresenceData = sentData;
+      }
       return true;
     } catch (error) {
       logger.error(`Error updating presence: ${error}`);
