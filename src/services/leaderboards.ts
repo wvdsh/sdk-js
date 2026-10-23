@@ -53,10 +53,13 @@ export class LeaderboardManager extends WavedashManager {
     const cached = this.getCachedLeaderboardByName(name);
     if (cached) return cached;
     const leaderboard = await this.pendingGetLeaderboard.get(name, async () => {
-      const leaderboard = await this.sdk.convexClient.query(
-        api.sdk.leaderboards.getLeaderboard,
-        { name }
-      );
+      // A miss falls back to getLeaderboard so it throws its usual not-found error
+      const leaderboard =
+        (await this.findLeaderboard(name)) ??
+        (await this.sdk.convexClient.query(
+          api.sdk.leaderboards.getLeaderboard,
+          { name }
+        ));
       this.cacheLeaderboard(name, leaderboard);
       return leaderboard;
     });
@@ -79,10 +82,14 @@ export class LeaderboardManager extends WavedashManager {
       name,
       async () => {
         isFirstCaller = true;
-        const leaderboard = await this.sdk.convexClient.mutation(
-          api.sdk.leaderboards.getOrCreateLeaderboard,
-          { name, sortOrder, displayType }
-        );
+        // Live games almost always find it, so only a miss runs the mutation
+        const found = await this.findLeaderboard(name);
+        const leaderboard: CreatedLeaderboard = found
+          ? { ...found, created: false }
+          : await this.sdk.convexClient.mutation(
+              api.sdk.leaderboards.getOrCreateLeaderboard,
+              { name, sortOrder, displayType }
+            );
         this.cacheLeaderboard(name, leaderboard);
         return leaderboard;
       }
@@ -159,12 +166,23 @@ export class LeaderboardManager extends WavedashManager {
       leaderboardId,
       ["listEntries", offset, limit, friendsOnly],
       () =>
-        this.sdk.convexClient.query(api.sdk.leaderboards.listEntries, {
-          leaderboardId,
-          offset,
-          limit,
-          friendsOnly
-        })
+        friendsOnly
+          ? this.sdk.convexClient.query(api.sdk.leaderboards.listEntries, {
+              leaderboardId,
+              offset,
+              limit,
+              friendsOnly
+            })
+          : // Reads nothing player-specific, so every player shares one cached result
+            this.sdk.convexClient.query(
+              api.sdk.leaderboards.listGlobalEntries,
+              {
+                gameCloudId: this.sdk.gameCloudId,
+                leaderboardId,
+                offset,
+                limit
+              }
+            )
     );
     // Cache raw keys before URL-ifying so getUserAvatarUrl() can still size them.
     this.sdk.friendsManager.cacheLeaderboardPage(result.entries);
@@ -206,6 +224,14 @@ export class LeaderboardManager extends WavedashManager {
   // ================
   // Private Methods
   // ================
+
+  /** Reads nothing player-specific, so every player shares one cached result */
+  private findLeaderboard(name: string): Promise<Leaderboard | null> {
+    return this.sdk.convexClient.query(api.sdk.leaderboards.findLeaderboard, {
+      gameCloudId: this.sdk.gameCloudId,
+      name
+    });
+  }
 
   private cacheLeaderboard(name: string, leaderboard: Leaderboard): void {
     const { id, totalEntries } = leaderboard;

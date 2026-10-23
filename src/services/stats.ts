@@ -64,8 +64,8 @@ export class StatsManager extends WavedashManager {
   private subscribe(): void {
     this.subscriptions.push(
       this.sdk.convexClient.onUpdate(
-        api.sdk.gameAchievements.listStatIdentifiers,
-        {},
+        api.sdk.gameAchievements.listGameStatIdentifiers,
+        { gameCloudId: this.sdk.gameCloudId },
         (ids) => {
           this.knownStatIds = new Set(ids);
         },
@@ -74,8 +74,8 @@ export class StatsManager extends WavedashManager {
         }
       ),
       this.sdk.convexClient.onUpdate(
-        api.sdk.gameAchievements.listAchievementIdentifiers,
-        {},
+        api.sdk.gameAchievements.listGameAchievementIdentifiers,
+        { gameCloudId: this.sdk.gameCloudId },
         (ids) => {
           this.knownAchievementIds = new Set(ids);
         },
