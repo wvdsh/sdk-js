@@ -146,8 +146,8 @@ export class ScreenCaptureManager extends WavedashManager {
         this.hotkeyWindows.add(win);
       },
       detach: (win) => {
-        win.removeEventListener("keydown", this.handleKeyDown, true);
         this.hotkeyWindows.delete(win);
+        this.removeKeyListener(win);
       }
     });
   }
@@ -469,6 +469,14 @@ export class ScreenCaptureManager extends WavedashManager {
     return best;
   }
 
+  private removeKeyListener(win: Window): void {
+    try {
+      win.removeEventListener("keydown", this.handleKeyDown, true);
+    } catch {
+      // Navigated cross-origin: the old document, and its listener, are already gone
+    }
+  }
+
   override destroy(): void {
     this.sdk.iframeMessenger.removeEventListener(
       IFRAME_MESSAGE_TYPE.RECORDING_CHANGED,
@@ -479,9 +487,7 @@ export class ScreenCaptureManager extends WavedashManager {
       this.handleHotkeyChanged
     );
     this.unsubscribeFrames();
-    this.hotkeyWindows.forEach((win) =>
-      win.removeEventListener("keydown", this.handleKeyDown, true)
-    );
+    this.hotkeyWindows.forEach((win) => this.removeKeyListener(win));
     this.hotkeyWindows.clear();
 
     // Best-effort: flush an in-flight recording to the parent on teardown.

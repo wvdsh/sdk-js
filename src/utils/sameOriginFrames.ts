@@ -1,3 +1,5 @@
+import { logger } from "./logger";
+
 // A same-origin frame's window, with its globals typed
 export type FrameWindow = Window & typeof globalThis;
 
@@ -29,10 +31,23 @@ export class SameOriginFrames {
   // Attaches every current frame immediately, then reports changes; returns an unsubscribe
   subscribe(listener: FrameListener): () => void {
     this.listeners.add(listener);
-    this.frames.forEach((_, win) => listener.attach(win));
+    this.frames.forEach((_, win) => this.notify(listener, "attach", win));
     return () => {
       this.listeners.delete(listener);
     };
+  }
+
+  // One subscriber throwing must not block the others or leave frame state half-updated
+  private notify(
+    listener: FrameListener,
+    event: keyof FrameListener,
+    win: FrameWindow
+  ): void {
+    try {
+      listener[event](win);
+    } catch (error) {
+      logger.error(`SameOriginFrames: ${event} subscriber threw`, error);
+    }
   }
 
   private attachFrame(win: FrameWindow): void {
@@ -55,7 +70,7 @@ export class SameOriginFrames {
       children: new Set()
     };
     this.frames.set(win, record);
-    this.listeners.forEach((listener) => listener.attach(win));
+    this.listeners.forEach((listener) => this.notify(listener, "attach", win));
     doc
       .querySelectorAll("iframe")
       .forEach((iframe) => this.bindIframe(iframe, record));
@@ -72,7 +87,7 @@ export class SameOriginFrames {
     // Children's own removal events never fire when their containing document is discarded
     record.children.forEach((child) => this.unbindIframe(child, record));
     this.frames.delete(win);
-    this.listeners.forEach((listener) => listener.detach(win));
+    this.listeners.forEach((listener) => this.notify(listener, "detach", win));
   }
 
   // Skips the subtree scan for childless nodes, the common case on every DOM insertion
