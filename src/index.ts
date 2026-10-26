@@ -49,6 +49,7 @@ import {
   createTrackedSdk,
   trackSdkEventListener
 } from "./utils/sdkCallTracking";
+import { SameOriginFrames } from "./utils/sameOriginFrames";
 import { SwMessenger } from "./utils/swMessenger";
 
 // Create singleton instance for iframe messaging
@@ -160,6 +161,7 @@ class WavedashSDK extends EventTarget {
   swMessenger: SwMessenger;
   p2pManager: P2PManager;
   fullscreenManager: FullscreenManager;
+  sameOriginFrames: SameOriginFrames;
   audioManager: AudioManager;
   screenCaptureManager: ScreenCaptureManager;
   paidContentManager: PaidContentManager;
@@ -200,6 +202,8 @@ class WavedashSDK extends EventTarget {
     this.friendsManager = new FriendsManager(this);
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
+    // Before audio and screen capture, which both follow every same-origin frame through it
+    this.sameOriginFrames = new SameOriginFrames();
     this.audioManager = new AudioManager(this, sdkConfig.initialVolume);
     // Depends on audioManager for the capture audio tap.
     this.screenCaptureManager = new ScreenCaptureManager(
@@ -1658,6 +1662,7 @@ class WavedashSDK extends EventTarget {
     for (const manager of this.managers) {
       manager.destroy();
     }
+    this.sameOriginFrames.destroy();
   }
 
   private _setupSessionEndListeners(): void {

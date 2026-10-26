@@ -26,12 +26,7 @@ const MODIFIER_CODES = new Set([
   "Fn"
 ]);
 
-/**
- * Serialize a keypress the way the host stores hotkeys: held modifiers in a
- * fixed order, then KeyboardEvent.code (e.g. "Alt+Shift+KeyR"). `code` is the
- * physical key, so Option-combos on macOS still match. Null for a bare
- * modifier press.
- */
+// Host hotkey format: modifiers in fixed order + KeyboardEvent.code (e.g. "Alt+Shift+KeyR"); null for a bare modifier
 function hotkeyFromEvent(event: KeyboardEvent): string | null {
   if (!event.code || MODIFIER_CODES.has(event.code)) return null;
   const parts: string[] = [];
@@ -57,29 +52,21 @@ interface ActiveRecording {
   capture: FixedSizeCapture;
   audioTap: { tracks: MediaStreamTrack[]; dispose: () => void } | null;
   startedAt: number;
-  /** Set when the recorder errors; stop() then reports failure, not a clip. */
+  // Set when the recorder errors; stop() then reports failure, not a clip
   error: string | null;
-  /** From the RecordingChanged that started this; echoed in the result. */
+  // From the RecordingChanged that started this; echoed in the result
   recordingId: number | undefined;
 }
 
 const CAPTURE_FPS = 60;
-/** Ask the recorder to flush a chunk every second so memory stays bounded. */
+// Ask the recorder to flush a chunk every second so memory stays bounded
 const TIMESLICE_MS = 1_000;
-/**
- * Recording resolution cap (long edge): 900p. A smooth 60fps matters more
- * than resolution for gameplay clips, and at 1080p60 the copy + encode can't
- * keep up on typical laptops — every pixel also steals frame time from the
- * game itself.
- */
+// Long-edge cap (900p): 1080p60 copy + encode can't keep up on typical laptops
 const MAX_CAPTURE_EDGE = 1600;
-/** ~75 MB/min — comfortably above what 900p60 game footage needs. */
+// ~75 MB/min — comfortably above what 900p60 game footage needs
 const VIDEO_BITS_PER_SECOND = 10_000_000;
 
-// Preference order: H.264+AAC in MP4 first — same instant, transcode-free
-// pipeline, but the file is shareable everywhere (QuickTime, iOS, X/Twitter,
-// iMessage), which VP9 WebM is not. Chrome 126+, Edge, and Safari all mux MP4
-// natively in MediaRecorder; Firefox doesn't, so it walks down to WebM.
+// MP4 first since it's shareable everywhere; Firefox can't mux MP4 so it falls back to WebM
 const MIME_CANDIDATES_WITH_AUDIO = [
   'video/mp4;codecs="avc1.42E01E,mp4a.40.2"',
   "video/mp4",
@@ -88,8 +75,7 @@ const MIME_CANDIDATES_WITH_AUDIO = [
   "video/webm;codecs=vp8,opus",
   "video/webm"
 ];
-// Audio is best-effort, so the stream may be video-only — and some browsers
-// refuse to record a stream that lacks a track a codecs string names.
+// Some browsers refuse a stream missing a track its codecs string names
 const MIME_CANDIDATES_VIDEO_ONLY = [
   'video/mp4;codecs="avc1.42E01E"',
   "video/mp4",
@@ -114,42 +100,33 @@ function pickMimeType(hasAudio: boolean): string | null {
   return null;
 }
 
+function isElementHidden(element: Element): boolean {
+  const win = element.ownerDocument.defaultView!;
+  if (element.getClientRects().length === 0) return true;
+  if (win.getComputedStyle(element).visibility !== "visible") return true;
+  for (
+    let current: Element | null = element;
+    current;
+    current = current.parentElement
+  ) {
+    if (win.getComputedStyle(current).opacity === "0") return true;
+  }
+  return false;
+}
+
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * ScreenCaptureManager
- *
- * Records gameplay clips from inside the iframe — no getDisplayMedia
- * permission prompt, no picker, nothing but the game in frame. The parent
- * drives it over postMessage:
- *
- *   RecordingChanged isRecording:true → grab the game's canvas via
- *   `canvas.captureStream()`, mix in the game's audio through AudioManager's
- *   capture tap, and feed a MediaRecorder. The parent owns recording
- *   duration — the SDK records until RecordingChanged isRecording:false
- *   arrives, then posts the resulting Blob back as RecordingComplete,
- *   echoing the start's `recordingId` so the parent can drop stale results.
- *   The Blob rides postMessage's structured clone, which hands over a
- *   reference to the same immutable backing data — not a byte-by-byte copy —
- *   so this is cheap even for a long clip.
- *
- * The parent also sends the recording hotkey (SDKConfig.recordingHotkey,
- * then RecordingHotkeyChanged); we intercept it while the game has focus and
- * report RecordingHotkeyPressed.
- *
- * The game's canvas is found when recording starts: the largest one in the
- * document (see pickCanvas).
- */
+// Records the game canvas + audio while the parent's RecordingChanged says so, posting the Blob back as RecordingComplete
 export class ScreenCaptureManager extends WavedashManager {
   private active: ActiveRecording | null = null;
-  // The previous recorder's flush, while in flight. A start that arrives
-  // meanwhile is parked in pendingStart and runs once the flush finishes, so
-  // two recorders never overlap.
+  // In-flight flush; a start arriving meanwhile waits in pendingStart so recorders never overlap
   private stopping: Promise<void> | null = null;
   private pendingStart: RecordingChangedMessage | null = null;
   private hotkey: string | null;
+  private hotkeyWindows = new Set<Window>();
+  private unsubscribeFrames: () => void;
 
   constructor(sdk: WavedashSDK, recordingHotkey?: string) {
     super(sdk);
@@ -162,15 +139,21 @@ export class ScreenCaptureManager extends WavedashManager {
       IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED,
       this.handleHotkeyChanged
     );
-    if (typeof window !== "undefined") {
-      // Capture phase, so we see it before game handlers registered on window.
-      window.addEventListener("keydown", this.handleKeyDown, true);
-    }
+    // Every same-origin frame, since keys pressed in a nested game frame never reach ours
+    this.unsubscribeFrames = this.sdk.sameOriginFrames.subscribe({
+      attach: (win) => {
+        win.addEventListener("keydown", this.handleKeyDown, true);
+        this.hotkeyWindows.add(win);
+      },
+      detach: (win) => {
+        this.hotkeyWindows.delete(win);
+        this.removeKeyListener(win);
+      }
+    });
   }
 
   private handleRecordingChanged = (data: RecordingChangedMessage): void => {
-    // State broadcast, not a command — ignore no-op flips (e.g. the parent
-    // confirming a stop we initiated ourselves after a capture error).
+    // State broadcast, not a command: ignore no-op flips
     if (data.isRecording) {
       if (this.active) return;
       if (this.stopping) {
@@ -189,11 +172,7 @@ export class ScreenCaptureManager extends WavedashManager {
       typeof data.hotkey === "string" && data.hotkey ? data.hotkey : null;
   };
 
-  /**
-   * Keyboard focus sits in the game frame during play, so the host page can't
-   * see its own hotkey — we catch it here and report it. The parent stays the
-   * source of truth and toggles recording via RecordingChanged as usual.
-   */
+  // The host page can't see keys while the game has focus, so we catch the hotkey and report it
   private handleKeyDown = (event: KeyboardEvent): void => {
     if (!this.hotkey || event.repeat) return;
     if (hotkeyFromEvent(event) !== this.hotkey) return;
@@ -209,8 +188,7 @@ export class ScreenCaptureManager extends WavedashManager {
   private start(options: RecordingChangedMessage): void {
     const canvas = this.pickCanvas();
     if (!canvas) {
-      // DOM-rendered games (or ones whose canvas lives in a frame we can't
-      // reach) have nothing for captureStream() to record.
+      // DOM-rendered games, or canvases in frames we can't reach
       this.postFailure(
         options.recordingId,
         "No game canvas found.",
@@ -254,8 +232,7 @@ export class ScreenCaptureManager extends WavedashManager {
       recorder.ondataavailable = (event: BlobEvent) => {
         if (event.data && event.data.size > 0) chunks.push(event.data);
       };
-      // start() can still reject the stream/encoder pairing after a
-      // successful constructor, so it shares the cleanup below.
+      // start() can still reject the stream/encoder pairing, so it shares the cleanup below
       recorder.start(TIMESLICE_MS);
     } catch (error) {
       for (const track of stream.getTracks()) track.stop();
@@ -307,7 +284,7 @@ export class ScreenCaptureManager extends WavedashManager {
     return this.stopping;
   }
 
-  /** Flush a stopped recording and report it to the parent. */
+  // Flush a stopped recording and report it to the parent
   private async finish(active: ActiveRecording): Promise<void> {
     // Wait for the recorder to flush its final chunk before assembling.
     await new Promise<void>((resolve) => {
@@ -354,10 +331,7 @@ export class ScreenCaptureManager extends WavedashManager {
     });
   }
 
-  /**
-   * `reason` is a machine-readable cause the parent can explain to the player
-   * (RecordingFailureReason); `error` is free-form detail.
-   */
+  // `reason` is machine-readable for the player-facing message; `error` is free-form detail
   private postFailure(
     recordingId: number | undefined,
     error: string,
@@ -379,25 +353,20 @@ export class ScreenCaptureManager extends WavedashManager {
     );
   }
 
-  /**
-   * Re-render a canvas's capture stream onto a fixed-size canvas (sized from
-   * the source at start, letterboxed after), so the recording's resolution
-   * never changes. Games resize their canvas mid-session — dynamic resolution
-   * scaling, window resizes, fullscreen — and MediaRecorder freezes or
-   * corrupts the clip when its input resolution changes.
-   *
-   * The source is read through captureStream() + a <video>, not drawImage on
-   * the canvas itself: that's reliable for WebGL canvases without
-   * preserveDrawingBuffer, whose buffer may already be cleared when we read.
-   */
+  // Letterboxes the source into a fixed-size canvas, since MediaRecorder breaks if its input resolution changes
   private createFixedSizeCapture(source: HTMLCanvasElement): FixedSizeCapture {
+    // Sized from the on-screen size, since engines like Unity keep the default 300x150 backing store until after load
+    const rect = source.getBoundingClientRect();
+    const dpr = source.ownerDocument.defaultView!.devicePixelRatio;
+    const sourceWidth = rect.width ? rect.width * dpr : source.width;
+    const sourceHeight = rect.height ? rect.height * dpr : source.height;
     const scale = Math.min(
       1,
-      MAX_CAPTURE_EDGE / Math.max(source.width, source.height)
+      MAX_CAPTURE_EDGE / Math.max(sourceWidth, sourceHeight)
     );
     // Even dimensions: H.264 encoders reject or pad odd sizes.
-    const width = Math.max(2, Math.round((source.width * scale) / 2) * 2);
-    const height = Math.max(2, Math.round((source.height * scale) / 2) * 2);
+    const width = Math.max(2, Math.round((sourceWidth * scale) / 2) * 2);
+    const height = Math.max(2, Math.round((sourceHeight * scale) / 2) * 2);
 
     const output = document.createElement("canvas");
     output.width = width;
@@ -425,9 +394,7 @@ export class ScreenCaptureManager extends WavedashManager {
       ctx.drawImage(video, (width - dw) / 2, (height - dh) / 2, dw, dh);
     };
 
-    // Copy once per new game frame where supported, so the clip neither
-    // repeats nor skips frames the way an unsynced rAF loop does; rAF
-    // elsewhere (older Firefox).
+    // Copy once per game frame where supported; rAF fallback for older Firefox
     let cancelDraws: () => void;
     if (typeof video.requestVideoFrameCallback === "function") {
       let handle = 0;
@@ -460,24 +427,54 @@ export class ScreenCaptureManager extends WavedashManager {
     };
   }
 
-  /**
-   * Largest canvas in the document wins — games often allocate small scratch
-   * canvases for text measurement or sprite baking, while the main render
-   * target dominates the viewport. Detached canvases aren't on screen, so
-   * they're never candidates (nor are ones inside shadow roots).
-   */
+  // Most visible on-screen area wins, then backing-store size; ties go to the earliest (beneath overlays)
   private pickCanvas(): HTMLCanvasElement | null {
     if (typeof document === "undefined") return null;
     let best: HTMLCanvasElement | null = null;
-    let bestArea = 0;
-    document.querySelectorAll("canvas").forEach((canvas) => {
-      const area = (canvas.width || 0) * (canvas.height || 0);
-      if (area > bestArea) {
-        bestArea = area;
-        best = canvas;
-      }
-    });
+    let bestScore = [-1, -1];
+    const visit = (doc: Document, frameHidden: boolean): void => {
+      const win = doc.defaultView!;
+      doc.querySelectorAll("canvas").forEach((canvas) => {
+        const rect = canvas.getBoundingClientRect();
+        const visibleWidth = Math.max(
+          0,
+          Math.min(rect.right, win.innerWidth) - Math.max(rect.left, 0)
+        );
+        const visibleHeight = Math.max(
+          0,
+          Math.min(rect.bottom, win.innerHeight) - Math.max(rect.top, 0)
+        );
+        const score = [
+          frameHidden || isElementHidden(canvas)
+            ? 0
+            : visibleWidth * visibleHeight,
+          canvas.width * canvas.height
+        ];
+        if (
+          score[0] > bestScore[0] ||
+          (score[0] === bestScore[0] && score[1] > bestScore[1])
+        ) {
+          bestScore = score;
+          best = canvas;
+        }
+      });
+      // Same-origin child frames only; contentDocument is null cross-origin
+      doc.querySelectorAll("iframe").forEach((iframe) => {
+        if (iframe.contentDocument) {
+          visit(iframe.contentDocument, frameHidden || isElementHidden(iframe));
+        }
+      });
+    };
+    visit(document, false);
     return best;
+  }
+
+  private removeKeyListener(win: Window): void {
+    try {
+      win.removeEventListener("keydown", this.handleKeyDown, true);
+    } catch {
+      // Navigated cross-origin: the old document, and its listener, are already gone
+    }
   }
 
   override destroy(): void {
@@ -489,9 +486,9 @@ export class ScreenCaptureManager extends WavedashManager {
       IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED,
       this.handleHotkeyChanged
     );
-    if (typeof window !== "undefined") {
-      window.removeEventListener("keydown", this.handleKeyDown, true);
-    }
+    this.unsubscribeFrames();
+    this.hotkeyWindows.forEach((win) => this.removeKeyListener(win));
+    this.hotkeyWindows.clear();
 
     // Best-effort: flush an in-flight recording to the parent on teardown.
     this.pendingStart = null;
