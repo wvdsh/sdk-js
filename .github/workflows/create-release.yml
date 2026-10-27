@@ -14,12 +14,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
       - name: Create Release
-        uses: justincy/github-action-npm-release@2.0.2
         id: release
-        with:
-          token: ${{ secrets.GH_PAT }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+        run: |
+          VERSION=$(jq -r .version package.json)
+          PREVIOUS=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')
+          if [ "$VERSION" = "$PREVIOUS" ]; then
+            echo "Version has not changed."
+            exit 0
+          fi
+          git log ${PREVIOUS:+"$PREVIOUS..HEAD"} --pretty=format:'- %h %s' > "$RUNNER_TEMP/notes.md"
+          gh release create "$VERSION" --title "$VERSION" --target "$GITHUB_SHA" --notes-file "$RUNNER_TEMP/notes.md"
+          echo "released=true" >> "$GITHUB_OUTPUT"
+          echo "release_tag=$VERSION" >> "$GITHUB_OUTPUT"
