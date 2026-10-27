@@ -24,7 +24,7 @@ import { createThrottledSender } from "../utils/throttledSender";
 
 type PresenceData = Record<string, string | number | boolean | null>;
 
-const PRESENCE_UPDATE_THROTTLE_MS = 1_000;
+const PRESENCE_UPDATE_THROTTLE_MS = 2_000;
 
 // Capture so we see input regardless of which descendant handles it; passive
 // so we never block the game's own handlers.
