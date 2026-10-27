@@ -176,7 +176,8 @@ class WavedashSDK extends EventTarget {
   constructor(sdkConfig: SDKConfig) {
     super();
     this.convexClient = new ConvexClient(sdkConfig.convexCloudUrl, {
-      expectAuth: true
+      expectAuth: true,
+      initialAuthTokenReuse: true
     });
     this.gameCloudId = sdkConfig.gameCloudId;
     this.pageViewId = sdkConfig.pageViewId;
