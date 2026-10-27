@@ -50,7 +50,7 @@
   },
   "dependencies": {
     "@wvdsh/api": "^0.1.102",
-    "convex": "^1.39.1",
+    "convex": "^1.48.0",
     "lodash.throttle": "^4.1.1"
   }
 }

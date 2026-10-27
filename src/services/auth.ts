@@ -15,7 +15,9 @@ const RETRY_MAX_MS = 30_000;
  * paused, and a `null` token drops it into a terminal `noAuth` state where it
  * never asks again. So the fetcher never rejects, returns the cached JWT on
  * failure (Convex keeps a good token, or rejects a bad one itself), and we run
- * our own backoff retry that re-arms Convex via `setAuth` on success.
+ * our own backoff retry that re-arms Convex via `setAuth` on success. A 401
+ * means the session is gone for good (only a reload mints a new one), so
+ * retries stop there and the game keeps running offline.
  */
 export class AuthManager extends WavedashManager {
   private jwt: string | null = null;
@@ -26,6 +28,7 @@ export class AuthManager extends WavedashManager {
   private jwtPromise: Promise<string> | null = null;
   private retryTimeout: ReturnType<typeof setTimeout> | null = null;
   private retryAttempt = 0;
+  private sessionExpired = false;
   private destroyed = false;
 
   constructor(sdk: WavedashSDK) {
@@ -46,6 +49,9 @@ export class AuthManager extends WavedashManager {
   getToken(forceRefresh = false): Promise<string> {
     if (!forceRefresh && this.jwt) return Promise.resolve(this.jwt);
     if (!forceRefresh && this.jwtPromise) return this.jwtPromise;
+    if (this.sessionExpired) {
+      return Promise.reject(new Error("Gameplay session expired"));
+    }
 
     const previous = this.jwtPromise;
     const fetchToken = async (): Promise<string> => {
@@ -59,6 +65,7 @@ export class AuthManager extends WavedashManager {
         }
       );
       if (!response.ok) {
+        if (response.status === 401) this.sessionExpired = true;
         throw new Error(`Failed to refresh gameplay token: ${response.status}`);
       }
       return response.text();
@@ -75,6 +82,11 @@ export class AuthManager extends WavedashManager {
           this.resolveFirstAuthenticatedAt = null;
         }
         this.retryAttempt = 0;
+        // A refresh queued behind the 401 succeeded; Convex may already be in noAuth, so re-arm it
+        if (this.sessionExpired) {
+          this.sessionExpired = false;
+          if (!this.destroyed) this.setupConvexAuth();
+        }
         if (this.jwtPromise === promise) {
           this.sdk.iframeMessenger.postToParent(
             IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY,
@@ -116,7 +128,7 @@ export class AuthManager extends WavedashManager {
 
   /** Exponential backoff; the counter resets only on a successful fetch */
   private scheduleRetry(): void {
-    if (this.destroyed || this.retryTimeout) return;
+    if (this.destroyed || this.sessionExpired || this.retryTimeout) return;
     const delayMs = Math.min(
       RETRY_MAX_MS,
       RETRY_BASE_MS * 2 ** Math.min(this.retryAttempt, 10)
