@@ -82,6 +82,11 @@ export class AuthManager extends WavedashManager {
           this.resolveFirstAuthenticatedAt = null;
         }
         this.retryAttempt = 0;
+        // A refresh queued behind the 401 succeeded; Convex may already be in noAuth, so re-arm it
+        if (this.sessionExpired) {
+          this.sessionExpired = false;
+          if (!this.destroyed) this.setupConvexAuth();
+        }
         if (this.jwtPromise === promise) {
           this.sdk.iframeMessenger.postToParent(
             IFRAME_MESSAGE_TYPE.GAMEPLAY_JWT_READY,
