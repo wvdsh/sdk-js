@@ -16,5 +16,5 @@ export function takeFocus(): void {
   const focusableElement = document.querySelector(
     "canvas, input, button, [tabindex]:not([tabindex='-1'])"
   ) as HTMLElement | null;
-  focusableElement?.focus({ preventScroll: true});
+  focusableElement?.focus({ preventScroll: true });
 }

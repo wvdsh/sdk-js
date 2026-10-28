@@ -50,7 +50,9 @@ export class ExternalLinkManager extends WavedashManager {
       await navigator.clipboard.writeText(attributed);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      logger.warn(`copyLink("${attributed}") failed to write the clipboard: ${message}`);
+      logger.warn(
+        `copyLink("${attributed}") failed to write the clipboard: ${message}`
+      );
       return false;
     }
     this.sdk.iframeMessenger.postToParent(IFRAME_MESSAGE_TYPE.LINK_COPIED, {
@@ -71,7 +73,8 @@ export class ExternalLinkManager extends WavedashManager {
       const navigatesInPlace =
         typeof target === "string" &&
         ["_self", "_parent", "_top"].includes(target.toLowerCase());
-      if (!resolved || navigatesInPlace) return nativeOpen(url, target, features);
+      if (!resolved || navigatesInPlace)
+        return nativeOpen(url, target, features);
       void this.copyLink(resolved);
       // Matches what the sandbox already hands back for a blocked popup, so
       // games that null-check the handle keep working.
@@ -85,9 +88,8 @@ export class ExternalLinkManager extends WavedashManager {
       if (event.defaultPrevented) return;
       // composedPath: clicks inside a shadow root retarget `event.target` to
       // the shadow host, hiding the real anchor.
-      const origin = (event.composedPath?.()[0] ?? event.target) as
-        | Element
-        | null;
+      const origin = (event.composedPath?.()[0] ??
+        event.target) as Element | null;
       const anchor = origin?.closest?.("a[href]");
       if (!(anchor instanceof HTMLAnchorElement)) return;
       // Only new-tab links. A target-less/_self anchor navigates the iframe
