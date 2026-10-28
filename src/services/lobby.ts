@@ -4,7 +4,7 @@
  * Implements each of the lobby methods of the Wavedash SDK
  */
 
-import throttle from "lodash.throttle";
+import { createThrottledSender } from "../utils/throttledSender";
 import type {
   Lobby,
   LobbyVisibility,
@@ -65,10 +65,8 @@ export class LobbyManager extends WavedashManager {
   private resetMaybeBeingDeletedLobbyIdTimeouts: Map<LobbyId, number> =
     new Map();
 
-  // Throttle (not debounce) batches rapid setLobbyData calls; the in-flight
-  // gate in setMetadata prevents OCC self-conflicts.
+  // Throttle (not debounce) batches rapid setLobbyData calls
   private static readonly METADATA_UPDATE_THROTTLE_MS = 150;
-  private inFlightMetadataUpdate: Promise<unknown> | null = null;
 
   // Cache results of queries for a list of lobbies
   // We'll cache metadata and num users for each lobby and return that info synchronously when requested by the game
@@ -174,7 +172,7 @@ export class LobbyManager extends WavedashManager {
       this.lobbyMetadata[key] = value;
     }
     this.pendingMetadataUpdates[key] = value;
-    this.throttledSetMetadata();
+    this.metadataSender.schedule();
     return true;
   }
 
@@ -441,7 +439,7 @@ export class LobbyManager extends WavedashManager {
     // Swap lobbyId immediately to guard against multiple calls (e.g., from concurrent subscription errors)
     this.setLobbyId(nextLobbyId);
 
-    this.throttledSetMetadata.cancel();
+    this.metadataSender.cancel();
     this.pendingMetadataUpdates = {};
 
     if (this.unsubscribeLobbyMessages) {
@@ -527,35 +525,29 @@ export class LobbyManager extends WavedashManager {
   }
 
   // leading: false so the first call doesn't fire synchronously inside setLobbyData
-  // (which is called from a tight loop); trailing: true to flush coalesced updates
-  // at the end of the window.
-  private throttledSetMetadata = throttle(
-    () => this.setMetadata(),
-    LobbyManager.METADATA_UPDATE_THROTTLE_MS,
-    { leading: false, trailing: true }
-  );
+  // (which is called from a tight loop)
+  private metadataSender = createThrottledSender({
+    waitMs: LobbyManager.METADATA_UPDATE_THROTTLE_MS,
+    leading: false,
+    hasPending: () =>
+      this.lobbyId !== null &&
+      Object.keys(this.pendingMetadataUpdates).length > 0,
+    send: () => this.setMetadata()
+  });
 
-  private setMetadata(): void {
-    // Skip if a mutation is already in flight; .finally() will reschedule.
-    if (this.inFlightMetadataUpdate !== null) return;
-    if (this.lobbyId === null) return;
-    if (Object.keys(this.pendingMetadataUpdates).length === 0) return;
-
-    const lobbyId = this.lobbyId;
+  private async setMetadata(): Promise<void> {
+    const lobbyId = this.lobbyId!;
     const updates = this.pendingMetadataUpdates;
     this.pendingMetadataUpdates = {};
-    this.inFlightMetadataUpdate = this.sdk.convexClient
-      .mutation(api.sdk.gameLobby.setLobbyMetadata, { lobbyId, updates })
-      .catch((error) => {
-        logger.error("Error updating lobby metadata:", error);
-        this.handleLobbyMutationError(lobbyId, error);
-      })
-      .finally(() => {
-        this.inFlightMetadataUpdate = null;
-        if (Object.keys(this.pendingMetadataUpdates).length > 0) {
-          this.throttledSetMetadata();
-        }
+    try {
+      await this.sdk.convexClient.mutation(api.sdk.gameLobby.setLobbyMetadata, {
+        lobbyId,
+        updates
       });
+    } catch (error) {
+      logger.error("Error updating lobby metadata:", error);
+      this.handleLobbyMutationError(lobbyId, error);
+    }
   }
 
   /**

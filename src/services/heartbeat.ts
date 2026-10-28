@@ -20,6 +20,11 @@ import { logger } from "../utils/logger";
 import { hasParentFrame } from "../utils/parentOrigin";
 import { hasGamepadActivity } from "../utils/gamepad";
 import type { WavedashSDK } from "../index";
+import { createThrottledSender } from "../utils/throttledSender";
+
+type PresenceData = Record<string, string | number | boolean | null>;
+
+export const PRESENCE_UPDATE_THROTTLE_MS = 2_000;
 
 // Capture so we see input regardless of which descendant handles it; passive
 // so we never block the game's own handlers.
@@ -67,7 +72,15 @@ export class HeartbeatManager extends WavedashManager {
     string,
     string | number | boolean | null
   > | null = null;
-  private presenceUpdateSeq: number = 0;
+  // Latest data awaiting the next throttled send, and the callers waiting on it
+  private pendingPresenceData: PresenceData | null = null;
+  private pendingPresenceWaiters: ((accepted: boolean) => void)[] = [];
+  private presenceSender = createThrottledSender({
+    waitMs: PRESENCE_UPDATE_THROTTLE_MS,
+    leading: true,
+    hasPending: () => this.pendingPresenceData !== null,
+    send: () => this.sendPresence()
+  });
 
   constructor(sdk: WavedashSDK) {
     super(sdk);
@@ -179,42 +192,24 @@ export class HeartbeatManager extends WavedashManager {
    * @param data - Data to send to the backend
    * @returns true if the presence was updated successfully
    */
-  async updateUserPresence(
-    data: Record<string, string | number | boolean | null>
-  ): Promise<boolean> {
-    // Skip the network call when nothing changed since the last accepted update
+  async updateUserPresence(data: PresenceData): Promise<boolean> {
+    // Skip the network call when nothing changed since the last accepted
+    // update and no other update is queued or in flight
     if (
+      this.pendingPresenceData === null &&
       this.lastSentPresenceData &&
       isSamePresenceData(this.lastSentPresenceData, data)
     ) {
       return true;
     }
-    // Only the latest update may record what was sent, so an older one
-    // resolving late can't make us skip a change that is still pending
-    const seq = ++this.presenceUpdateSeq;
     // Snapshot so the caller mutating `data` later can't change what
-    // reestablish heartbeats resend or what we dedupe against
-    const sentData = { ...data };
-    this.lastSentPresenceData = null;
-    try {
-      this.cachedPresenceData = sentData;
-      const accepted = await this.sdk.convexClient.mutation(
-        api.sdk.presence.heartbeat,
-        {
-          data: sentData,
-          deviceFingerprint: this.deviceFingerprint,
-          pageViewId: this.sdk.pageViewId
-        }
-      );
-      // A rejected update must stay retryable, so only record accepted ones
-      if (accepted && seq === this.presenceUpdateSeq) {
-        this.lastSentPresenceData = sentData;
-      }
-      return accepted;
-    } catch (error) {
-      logger.error(`Error updating presence: ${error}`);
-      return false;
-    }
+    // reestablish heartbeats resend or what we dedupe against. A newer call
+    // replaces queued data, so rapid updates coalesce into one send.
+    this.pendingPresenceData = { ...data };
+    return new Promise((resolve) => {
+      this.pendingPresenceWaiters.push(resolve);
+      this.presenceSender.schedule();
+    });
   }
 
   isCurrentlyConnected(): boolean {
@@ -224,6 +219,10 @@ export class HeartbeatManager extends WavedashManager {
   /** Full teardown — stops intervals and removes all listeners */
   destroy(): void {
     this.stop();
+    // A queued update sent after teardown would start a new backend session
+    this.presenceSender.cancel();
+    this.pendingPresenceData = null;
+    for (const resolve of this.pendingPresenceWaiters.splice(0)) resolve(false);
     if (this.gamepadPollInterval !== null) {
       clearInterval(this.gamepadPollInterval);
       this.gamepadPollInterval = null;
@@ -257,6 +256,32 @@ export class HeartbeatManager extends WavedashManager {
   // =================
   // Private functions
   // =================
+  private sendPresence(): Promise<void> {
+    const sentData = this.pendingPresenceData!;
+    const waiters = this.pendingPresenceWaiters;
+    this.pendingPresenceData = null;
+    this.pendingPresenceWaiters = [];
+    this.lastSentPresenceData = null;
+    this.cachedPresenceData = sentData;
+    return this.sdk.convexClient
+      .mutation(api.sdk.presence.heartbeat, {
+        data: sentData,
+        deviceFingerprint: this.deviceFingerprint,
+        pageViewId: this.sdk.pageViewId
+      })
+      .then((accepted: boolean) => {
+        // A rejected update must stay retryable, so only record accepted ones
+        if (accepted) this.lastSentPresenceData = sentData;
+        return accepted;
+      })
+      .catch((error: unknown) => {
+        logger.error(`Error updating presence: ${error}`);
+        return false;
+      })
+      .then((accepted) => {
+        for (const resolve of waiters) resolve(accepted);
+      });
+  }
   private tickHeartbeat(): void {
     const timeSinceLastHeartbeat = Date.now() - this.lastHeartbeatTime;
     const needsReestablish =

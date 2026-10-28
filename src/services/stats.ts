@@ -4,11 +4,11 @@ import type { StatsStoredPayload } from "../types";
 import { WavedashEvents } from "../events";
 import { WavedashManager } from "./manager";
 import { logger } from "../utils/logger";
-import throttle from "lodash.throttle";
+import { createThrottledSender } from "../utils/throttledSender";
 
 type StatEntry = { identifier: string; value: number };
 
-const STORE_THROTTLE_MS = 1000;
+export const STORE_THROTTLE_MS = 1000;
 
 export class StatsManager extends WavedashManager {
   // Current user values
@@ -30,15 +30,6 @@ export class StatsManager extends WavedashManager {
   // Subscription cleanup
   private subscriptions: (() => void)[] = [];
 
-  // Single in-flight persist mutation; prevents OCC self-conflicts.
-  private inFlightPersist: Promise<unknown> | null = null;
-
-  // Set when a storeNow flush hits the in-flight gate; persist's .finally()
-  // checks this and fires immediately on the next cycle instead of waiting
-  // out the throttle window. (lodash treats the gated flush as a successful
-  // invocation, so without this flag a contended storeNow waits ~THROTTLE_MS.)
-  private flushRequested = false;
-
   constructor(sdk: WavedashSDK) {
     super(sdk);
     this.subscribe();
@@ -48,7 +39,7 @@ export class StatsManager extends WavedashManager {
   }
 
   destroy(): void {
-    this.throttledPersist.cancel();
+    this.persistSender.cancel();
     for (const unsub of this.subscriptions) unsub();
     this.subscriptions = [];
   }
@@ -118,39 +109,26 @@ export class StatsManager extends WavedashManager {
   // ================
 
   // leading: false so a single setStat doesn't fire synchronously inside the
-  // setter; trailing: true to flush coalesced edits at the end of the window.
-  // storeNow=true (and storeStats()) call .flush() to fire the pending invocation
-  // immediately. The in-flight gate in persist() covers mutations that outlast
-  // the throttle window, which would otherwise overlap and cause OCC conflicts.
-  private throttledPersist = throttle(() => this.persist(), STORE_THROTTLE_MS, {
+  // setter. storeNow=true (and storeStats()) flush to fire the pending
+  // invocation immediately.
+  private persistSender = createThrottledSender({
+    waitMs: STORE_THROTTLE_MS,
     leading: false,
-    trailing: true
+    hasPending: () =>
+      this.dirtyStats.size > 0 || this.dirtyAchievements.size > 0,
+    send: () => this.persist()
   });
 
   storeStats(): boolean {
     if (!this.isReady()) return false;
-    this.throttledPersist();
-    this.requestPersistFlush();
+    this.persistSender.schedule();
+    this.persistSender.flush();
     return true;
   }
 
-  // Force-fire the throttled persist now. If a mutation is already in flight,
-  // the gate will swallow the flush(), so we also flag flushRequested so the
-  // next .finally() flushes again instead of waiting a full throttle window.
-  private requestPersistFlush(): void {
-    if (this.inFlightPersist !== null) this.flushRequested = true;
-    this.throttledPersist.flush();
-  }
-
-  private persist(): void {
-    // Skip if a mutation is already in flight; .finally() will reschedule.
-    if (this.inFlightPersist !== null) return;
-    if (this.dirtyStats.size === 0 && this.dirtyAchievements.size === 0) return;
-
-    const pending = this.getPendingData();
-    if (!pending) return;
-
-    this.inFlightPersist = Promise.all([
+  private async persist(): Promise<void> {
+    const pending = this.getPendingData()!;
+    await Promise.all([
       pending.stats.length > 0
         ? this.sdk.convexClient.mutation(
             api.sdk.gameAchievements.setUserGameStats,
@@ -179,15 +157,6 @@ export class StatsManager extends WavedashManager {
           success: false,
           message
         } satisfies StatsStoredPayload);
-      })
-      .finally(() => {
-        this.inFlightPersist = null;
-        const shouldFlushNow = this.flushRequested;
-        this.flushRequested = false;
-        if (this.dirtyStats.size > 0 || this.dirtyAchievements.size > 0) {
-          this.throttledPersist();
-          if (shouldFlushNow) this.throttledPersist.flush();
-        }
       });
   }
 
@@ -209,9 +178,9 @@ export class StatsManager extends WavedashManager {
     if (this.stats.get(identifier) !== value) {
       this.stats.set(identifier, value);
       this.dirtyStats.add(identifier);
-      this.throttledPersist();
+      this.persistSender.schedule();
     }
-    if (storeNow) this.requestPersistFlush();
+    if (storeNow) this.persistSender.flush();
     return true;
   }
 
@@ -231,9 +200,9 @@ export class StatsManager extends WavedashManager {
     if (!this.unlockedAchievements.has(identifier)) {
       this.unlockedAchievements.add(identifier);
       this.dirtyAchievements.add(identifier);
-      this.throttledPersist();
+      this.persistSender.schedule();
     }
-    if (storeNow) this.requestPersistFlush();
+    if (storeNow) this.persistSender.flush();
     return true;
   }
 
