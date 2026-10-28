@@ -24,7 +24,7 @@ import { createThrottledSender } from "../utils/throttledSender";
 
 type PresenceData = Record<string, string | number | boolean | null>;
 
-const PRESENCE_UPDATE_THROTTLE_MS = 2_000;
+export const PRESENCE_UPDATE_THROTTLE_MS = 2_000;
 
 // Capture so we see input regardless of which descendant handles it; passive
 // so we never block the game's own handlers.
@@ -219,6 +219,10 @@ export class HeartbeatManager extends WavedashManager {
   /** Full teardown — stops intervals and removes all listeners */
   destroy(): void {
     this.stop();
+    // A queued update sent after teardown would start a new backend session
+    this.presenceSender.cancel();
+    this.pendingPresenceData = null;
+    for (const resolve of this.pendingPresenceWaiters.splice(0)) resolve(false);
     if (this.gamepadPollInterval !== null) {
       clearInterval(this.gamepadPollInterval);
       this.gamepadPollInterval = null;

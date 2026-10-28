@@ -8,7 +8,7 @@ import { createThrottledSender } from "../utils/throttledSender";
 
 type StatEntry = { identifier: string; value: number };
 
-const STORE_THROTTLE_MS = 1000;
+export const STORE_THROTTLE_MS = 1000;
 
 export class StatsManager extends WavedashManager {
   // Current user values

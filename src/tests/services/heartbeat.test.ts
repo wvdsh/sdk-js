@@ -1,9 +1,10 @@
 import { api } from "@wvdsh/api";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WavedashSDK } from "../../index";
-import { HeartbeatManager } from "../../services/heartbeat";
-
-const THROTTLE_MS = 1_000;
+import {
+  HeartbeatManager,
+  PRESENCE_UPDATE_THROTTLE_MS as THROTTLE_MS
+} from "../../services/heartbeat";
 
 function setup() {
   const responses: {
@@ -144,6 +145,33 @@ describe("HeartbeatManager.updateUserPresence", () => {
     const result = manager.updateUserPresence({ level: 1 });
     await fail();
     await expect(result).resolves.toBe(false);
+  });
+
+  it("drops a queued update on destroy and resolves it false", async () => {
+    const { manager, sentData, respond } = current;
+
+    void manager.updateUserPresence({ level: 1 });
+    await respond(true);
+    const queued = manager.updateUserPresence({ level: 2 });
+    manager.destroy();
+    await vi.advanceTimersByTimeAsync(THROTTLE_MS * 5);
+
+    expect(sentData()).toEqual([{ level: 1 }]);
+    await expect(queued).resolves.toBe(false);
+  });
+
+  it("does not send queued data after an in-flight update settles post-destroy", async () => {
+    const { manager, sentData, respond } = current;
+
+    const inFlight = manager.updateUserPresence({ level: 1 });
+    const queued = manager.updateUserPresence({ level: 2 });
+    manager.destroy();
+    await respond(true);
+    await vi.advanceTimersByTimeAsync(THROTTLE_MS * 5);
+
+    expect(sentData()).toEqual([{ level: 1 }]);
+    await expect(inFlight).resolves.toBe(true);
+    await expect(queued).resolves.toBe(false);
   });
 
   it("snapshots data so later caller mutations don't change what was sent", async () => {

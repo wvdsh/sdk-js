@@ -2,9 +2,10 @@ import { api } from "@wvdsh/api";
 import { getFunctionName, type FunctionReference } from "convex/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WavedashSDK } from "../../index";
-import { StatsManager } from "../../services/stats";
-
-const THROTTLE_MS = 1_000;
+import {
+  StatsManager,
+  STORE_THROTTLE_MS as THROTTLE_MS
+} from "../../services/stats";
 
 async function setup() {
   const responses: (() => void)[] = [];
