@@ -10,6 +10,7 @@ export type { AudioCaptureTap, FrameWindow, Logger, SameOriginFrames };
 type RecorderMessageType =
   | typeof IFRAME_MESSAGE_TYPE.RECORDING_STARTED
   | typeof IFRAME_MESSAGE_TYPE.RECORDING_DATA
+  | typeof IFRAME_MESSAGE_TYPE.RECORDING_THUMBNAIL_IMAGE
   | typeof IFRAME_MESSAGE_TYPE.RECORDING_FINISHED
   | typeof IFRAME_MESSAGE_TYPE.RECORDING_FAILED;
 
@@ -100,6 +101,9 @@ export class ScreenCaptureManager extends WavedashManager {
         this.removeKeyListener(win);
       }
     });
+    if ((window as RecorderWindow).__wavedashRecorder) {
+      this.loadRecorder().catch(() => undefined);
+    }
   }
 
   private handleRecordingChanged = (data: RecordingChangedMessage): void => {
