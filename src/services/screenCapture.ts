@@ -1,41 +1,42 @@
 import { IFRAME_MESSAGE_TYPE, type IFrameEventPayloadMap } from "@wvdsh/api";
 import { type WavedashSDK } from "../index";
-import { logger } from "../utils/logger";
-import { type FrameWindow } from "../utils/sameOriginFrames";
+import { logger, type Logger } from "../utils/logger";
+import { type SameOriginFrames } from "../utils/sameOriginFrames";
+import { type AudioCaptureTap } from "./audio";
 import { WavedashManager } from "./manager";
-import { RafTail } from "./recording/rafTail";
-import type * as RecorderModule from "./recording/recorder";
-import recorderSource from "./recording/recorder.ts?module-source";
-import { RecordingSession } from "./recording/session";
-
-type ActiveRecording = RecorderModule.ActiveRecording;
-
-let recorderModule: Promise<typeof RecorderModule> | null = null;
-
-function loadRecorder(): Promise<typeof RecorderModule> {
-  if (!recorderModule) {
-    const url = URL.createObjectURL(
-      new Blob([recorderSource], { type: "text/javascript" })
-    );
-    const loading = (
-      import(/* @vite-ignore */ url) as Promise<typeof RecorderModule>
-    )
-      .catch((error) => {
-        if (recorderModule === loading) recorderModule = null;
-        throw new Error(
-          `Recorder module could not load from a blob: URL (is blob: allowed by the page's Content-Security-Policy script-src?): ${errorMessage(error)}`
-        );
-      })
-      .finally(() => URL.revokeObjectURL(url));
-    recorderModule = loading;
-  }
-  return recorderModule;
-}
 
 type RecordingChangedMessage =
   IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.RECORDING_CHANGED];
 type RecordingHotkeyChangedMessage =
   IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED];
+
+type RecorderMessageType =
+  | typeof IFRAME_MESSAGE_TYPE.RECORDING_STARTED
+  | typeof IFRAME_MESSAGE_TYPE.RECORDING_DATA
+  | typeof IFRAME_MESSAGE_TYPE.RECORDING_FINISHED
+  | typeof IFRAME_MESSAGE_TYPE.RECORDING_FAILED;
+
+export interface RecorderHost {
+  version: 1;
+  postToParent: <T extends RecorderMessageType>(
+    type: T,
+    payload: IFrameEventPayloadMap[T],
+    transfer?: Transferable[]
+  ) => void;
+  createAudioTap: () => AudioCaptureTap | null;
+  sameOriginFrames: SameOriginFrames;
+  logger: Logger;
+}
+
+export interface Recorder {
+  start: (recordingId: number) => void;
+  stop: () => void;
+  destroy: () => void;
+}
+
+export interface RecorderModule {
+  createRecorder: (host: RecorderHost) => Recorder;
+}
 
 const MODIFIER_CODES = new Set([
   "ShiftLeft",
@@ -66,23 +67,19 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-interface CurrentRecording {
-  session: RecordingSession;
-  recorder: Promise<ActiveRecording | null>;
-}
-
 export class ScreenCaptureManager extends WavedashManager {
-  private current: CurrentRecording | null = null;
-  private finishing: CurrentRecording | null = null;
-  private stopping: Promise<void> | null = null;
-  private pendingStart: RecordingChangedMessage | null = null;
+  private recorder: Promise<Recorder> | null = null;
   private hotkey: string | null;
   private hotkeyWindows = new Set<Window>();
-  private frameWindows = new Set<FrameWindow>();
-  private rafTail = new RafTail();
   private unsubscribeFrames: () => void;
 
-  constructor(sdk: WavedashSDK, recordingHotkey?: string) {
+  constructor(
+    sdk: WavedashSDK,
+    recordingHotkey: string | undefined,
+    private readonly loadRecorderModule:
+      | (() => Promise<RecorderModule>)
+      | undefined
+  ) {
     super(sdk);
     this.hotkey = recordingHotkey || null;
     this.sdk.iframeMessenger.addEventListener(
@@ -93,44 +90,75 @@ export class ScreenCaptureManager extends WavedashManager {
       IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED,
       this.handleHotkeyChanged
     );
+    // Every same-origin frame, since keys pressed in a nested game frame never reach ours
     this.unsubscribeFrames = this.sdk.sameOriginFrames.subscribe({
       attach: (win) => {
         win.addEventListener("keydown", this.handleKeyDown, true);
         this.hotkeyWindows.add(win);
-        this.frameWindows.add(win);
-        this.rafTail.attach(win);
       },
       detach: (win) => {
         this.hotkeyWindows.delete(win);
-        this.frameWindows.delete(win);
-        this.rafTail.detach(win);
         this.removeKeyListener(win);
       }
     });
   }
 
   private handleRecordingChanged = (data: RecordingChangedMessage): void => {
-    if (data.isRecording) {
-      if (this.current) return;
-      if (this.stopping) {
-        this.pendingStart = data;
-        return;
-      }
-      this.start(data.recordingId!);
-    } else {
-      this.pendingStart = null;
-      void this.stop();
+    if (!data.isRecording) {
+      void this.recorder?.then(
+        (recorder) => recorder.stop(),
+        () => undefined
+      );
+      return;
     }
+    const recordingId = data.recordingId!;
+    this.loadRecorder().then(
+      (recorder) => recorder.start(recordingId),
+      (error) => {
+        logger.error("Screen capture: recorder unavailable", error);
+        this.sdk.iframeMessenger.postToParent(
+          IFRAME_MESSAGE_TYPE.RECORDING_FAILED,
+          { recordingId, error: `Recorder unavailable: ${errorMessage(error)}` }
+        );
+      }
+    );
   };
+
+  private loadRecorder(): Promise<Recorder> {
+    if (this.recorder) return this.recorder;
+    const load = this.loadRecorderModule;
+    if (!load) {
+      return Promise.reject(new Error("no recorder in this environment"));
+    }
+    const host: RecorderHost = {
+      version: 1,
+      postToParent: (type, payload, transfer) => {
+        this.sdk.iframeMessenger.postToParent(type, payload, transfer);
+      },
+      createAudioTap: () => this.sdk.audioManager.createCaptureTap(),
+      sameOriginFrames: this.sdk.sameOriginFrames,
+      logger
+    };
+    const loading = load()
+      .then((module) => module.createRecorder(host))
+      .catch((error) => {
+        if (this.recorder === loading) this.recorder = null;
+        throw error;
+      });
+    this.recorder = loading;
+    return loading;
+  }
 
   private handleHotkeyChanged = (data: RecordingHotkeyChangedMessage): void => {
     this.hotkey =
       typeof data.hotkey === "string" && data.hotkey ? data.hotkey : null;
   };
 
+  // The host page can't see keys while the game has focus, so we catch the hotkey and report it
   private handleKeyDown = (event: KeyboardEvent): void => {
     if (!this.hotkey || event.repeat) return;
     if (hotkeyFromEvent(event) !== this.hotkey) return;
+    // The hotkey belongs to Wavedash; keep it from the game.
     event.preventDefault();
     event.stopImmediatePropagation();
     this.sdk.iframeMessenger.postToParent(
@@ -139,65 +167,11 @@ export class ScreenCaptureManager extends WavedashManager {
     );
   };
 
-  private start(recordingId: number): void {
-    const session = new RecordingSession(
-      recordingId,
-      (type, payload, transfer) =>
-        this.sdk.iframeMessenger.postToParent(type, payload, transfer)
-    );
-    const recorder = loadRecorder()
-      .then(({ startRecording }) =>
-        startRecording({
-          session,
-          windows: Array.from(this.frameWindows),
-          top: window as FrameWindow,
-          rafTail: this.rafTail,
-          createAudioTap: () => this.sdk.audioManager.createCaptureTap()
-        })
-      )
-      .catch((error) => {
-        logger.error("Screen capture: recorder failed to load", error);
-        session.failed(`Recorder failed to load: ${errorMessage(error)}`);
-        return null;
-      });
-    this.current = { session, recorder };
-    void recorder.then((active) => {
-      if (!active && this.current?.session === session) this.current = null;
-    });
-  }
-
-  private stop(): Promise<void> {
-    if (this.stopping) return this.stopping;
-    const current = this.current;
-    if (!current) return Promise.resolve();
-    this.current = null;
-    this.finishing = current;
-    this.stopping = this.finish(current).finally(() => {
-      this.stopping = null;
-      this.finishing = null;
-      const pending = this.pendingStart;
-      this.pendingStart = null;
-      if (pending) this.start(pending.recordingId!);
-    });
-    return this.stopping;
-  }
-
-  private async finish(current: CurrentRecording): Promise<void> {
-    const recorder = await current.recorder;
-    if (!recorder || !current.session.isOpen) return;
-    try {
-      await recorder.stop();
-    } catch (error) {
-      logger.error("Screen capture: recording failed while stopping", error);
-      recorder.abort(`Recording failed while stopping: ${errorMessage(error)}`);
-    }
-  }
-
   private removeKeyListener(win: Window): void {
     try {
       win.removeEventListener("keydown", this.handleKeyDown, true);
     } catch {
-      return;
+      // Navigated cross-origin: the old document, and its listener, are already gone
     }
   }
 
@@ -213,17 +187,10 @@ export class ScreenCaptureManager extends WavedashManager {
     this.unsubscribeFrames();
     this.hotkeyWindows.forEach((win) => this.removeKeyListener(win));
     this.hotkeyWindows.clear();
-    this.pendingStart = null;
-    const error = "Recording interrupted: the game session ended";
-    for (const recording of [this.current, this.finishing]) {
-      if (!recording) continue;
-      recording.session.failed(error);
-      void recording.recorder.then((recorder) => recorder?.abort(error));
-    }
-    this.current = null;
-    this.finishing = null;
-    this.rafTail.destroy();
-    this.frameWindows.clear();
+    void this.recorder?.then(
+      (recorder) => recorder.destroy(),
+      () => undefined
+    );
     super.destroy();
   }
 }

@@ -29,7 +29,10 @@ import { LobbyManager } from "./services/lobby";
 import type { WavedashManager } from "./services/manager";
 import { P2PManager } from "./services/p2p";
 import { PaidContentManager } from "./services/paidContent";
-import { ScreenCaptureManager } from "./services/screenCapture";
+import {
+  ScreenCaptureManager,
+  type RecorderModule
+} from "./services/screenCapture";
 import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
 import type {
@@ -173,7 +176,7 @@ class WavedashSDK extends EventTarget {
   uploadsHost: string;
   staticHost: string;
 
-  constructor(sdkConfig: SDKConfig) {
+  constructor(sdkConfig: SDKConfig, options: WavedashSDKOptions = {}) {
     super();
     this.convexClient = new ConvexClient(sdkConfig.convexCloudUrl, {
       expectAuth: true,
@@ -209,7 +212,8 @@ class WavedashSDK extends EventTarget {
     // Depends on audioManager for the capture audio tap.
     this.screenCaptureManager = new ScreenCaptureManager(
       this,
-      sdkConfig.recordingHotkey
+      sdkConfig.recordingHotkey,
+      options.loadRecorder
     );
     this.paidContentManager = new PaidContentManager(this);
     this.externalLinkManager = new ExternalLinkManager(this);
@@ -1710,9 +1714,23 @@ declare global {
 
 export * from "./types";
 export type { WavedashSDK };
+export type { AudioCaptureTap } from "./services/audio";
+export type {
+  Recorder,
+  RecorderHost,
+  RecorderModule
+} from "./services/screenCapture";
+export type { Logger } from "./utils/logger";
+export type { FrameWindow, SameOriginFrames } from "./utils/sameOriginFrames";
+
+export interface WavedashSDKOptions {
+  loadRecorder?: () => Promise<RecorderModule>;
+}
 
 // Type-safe initialization helper (idempotent — safe to call more than once).
-export function setupWavedashSDK(): WavedashSDK {
+export function setupWavedashSDK(
+  options: WavedashSDKOptions = {}
+): WavedashSDK {
   const existing = window.Wavedash;
   if (existing) return existing;
 
@@ -1742,7 +1760,7 @@ export function setupWavedashSDK(): WavedashSDK {
   // see the right value.
   setParentOrigin(sdkConfig.parentOrigin);
 
-  const sdk = createTrackedSdk(new WavedashSDK(sdkConfig));
+  const sdk = createTrackedSdk(new WavedashSDK(sdkConfig, options));
   window.Wavedash = sdk;
 
   // Kept for backwards compatibility
