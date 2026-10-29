@@ -1,14 +1,11 @@
 import { IFRAME_MESSAGE_TYPE, type IFrameEventPayloadMap } from "@wvdsh/api";
 import { type WavedashSDK } from "../index";
 import { logger, type Logger } from "../utils/logger";
-import { type SameOriginFrames } from "../utils/sameOriginFrames";
-import { type AudioCaptureTap } from "./audio";
+import type { FrameWindow, SameOriginFrames } from "../utils/sameOriginFrames";
+import type { AudioCaptureTap } from "./audio";
 import { WavedashManager } from "./manager";
 
-type RecordingChangedMessage =
-  IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.RECORDING_CHANGED];
-type RecordingHotkeyChangedMessage =
-  IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED];
+export type { AudioCaptureTap, FrameWindow, Logger, SameOriginFrames };
 
 type RecorderMessageType =
   | typeof IFRAME_MESSAGE_TYPE.RECORDING_STARTED
@@ -17,7 +14,6 @@ type RecorderMessageType =
   | typeof IFRAME_MESSAGE_TYPE.RECORDING_FAILED;
 
 export interface RecorderHost {
-  version: 1;
   postToParent: <T extends RecorderMessageType>(
     type: T,
     payload: IFrameEventPayloadMap[T],
@@ -37,6 +33,15 @@ export interface Recorder {
 export interface RecorderModule {
   createRecorder: (host: RecorderHost) => Recorder;
 }
+
+export interface RecorderWindow {
+  __wavedashRecorder?: Promise<RecorderModule>;
+}
+
+type RecordingChangedMessage =
+  IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.RECORDING_CHANGED];
+type RecordingHotkeyChangedMessage =
+  IFrameEventPayloadMap[typeof IFRAME_MESSAGE_TYPE.RECORDING_HOTKEY_CHANGED];
 
 const MODIFIER_CODES = new Set([
   "ShiftLeft",
@@ -73,13 +78,7 @@ export class ScreenCaptureManager extends WavedashManager {
   private hotkeyWindows = new Set<Window>();
   private unsubscribeFrames: () => void;
 
-  constructor(
-    sdk: WavedashSDK,
-    recordingHotkey: string | undefined,
-    private readonly loadRecorderModule:
-      | (() => Promise<RecorderModule>)
-      | undefined
-  ) {
+  constructor(sdk: WavedashSDK, recordingHotkey: string | undefined) {
     super(sdk);
     this.hotkey = recordingHotkey || null;
     this.sdk.iframeMessenger.addEventListener(
@@ -126,12 +125,11 @@ export class ScreenCaptureManager extends WavedashManager {
 
   private loadRecorder(): Promise<Recorder> {
     if (this.recorder) return this.recorder;
-    const load = this.loadRecorderModule;
-    if (!load) {
+    const recorderModule = (window as RecorderWindow).__wavedashRecorder;
+    if (!recorderModule) {
       return Promise.reject(new Error("no recorder in this environment"));
     }
     const host: RecorderHost = {
-      version: 1,
       postToParent: (type, payload, transfer) => {
         this.sdk.iframeMessenger.postToParent(type, payload, transfer);
       },
@@ -139,7 +137,7 @@ export class ScreenCaptureManager extends WavedashManager {
       sameOriginFrames: this.sdk.sameOriginFrames,
       logger
     };
-    const loading = load()
+    const loading = recorderModule
       .then((module) => module.createRecorder(host))
       .catch((error) => {
         if (this.recorder === loading) this.recorder = null;
