@@ -3,6 +3,13 @@ import { type WavedashSDK } from "../index";
 import { type FrameWindow } from "../utils/sameOriginFrames";
 import { WavedashManager } from "./manager";
 
+export interface AudioCaptureTap {
+  tracks: MediaStreamTrack[];
+  context: AudioContext;
+  output: AudioNode;
+  dispose: () => void;
+}
+
 /**
  * Applies host volume and mute updates from iframe messages, with no
  * game-side code required.
@@ -87,10 +94,7 @@ export class AudioManager extends WavedashManager {
    * The tap stays open for the whole recording: contexts the game creates
    * and media it starts mid-recording join it as they appear.
    */
-  createCaptureTap(): {
-    tracks: MediaStreamTrack[];
-    dispose: () => void;
-  } | null {
+  createCaptureTap(): AudioCaptureTap | null {
     this.captureTap?.dispose();
     this.captureTap = null;
     if (!this.NativeAudioContext) return null;
@@ -109,6 +113,8 @@ export class AudioManager extends WavedashManager {
 
     return {
       tracks: tap.tracks,
+      context: tap.mixer,
+      output: tap.bus,
       dispose: () => {
         tap.dispose();
         if (this.captureTap === tap) this.captureTap = null;
@@ -787,7 +793,8 @@ function canRouteThroughWebAudio(
  * since nodes can't connect across contexts (or frames) directly.
  */
 class CaptureTap {
-  private mixer: AudioContext;
+  readonly mixer: AudioContext;
+  readonly bus: GainNode;
   private dest: MediaStreamAudioDestinationNode;
   private bridges = new Map<GainNode, () => void>();
 
@@ -797,12 +804,17 @@ class CaptureTap {
     // implies a user gesture happened upstream, so nudge it awake.
     if (this.mixer.state === "suspended") this.mixer.resume().catch(() => {});
     this.dest = this.mixer.createMediaStreamDestination();
+    this.bus = this.mixer.createGain();
+    this.bus.channelCount = 2;
+    this.bus.channelCountMode = "explicit";
+    this.bus.channelInterpretation = "speakers";
+    this.bus.connect(this.dest);
     // With nothing connected the destination emits no samples, and Chrome's
     // muxer then stalls the whole recording waiting for audio (games with no
     // Web Audio, or none started yet). A zero-valued source keeps it flowing.
     const silence = this.mixer.createConstantSource();
     silence.offset.value = 0;
-    silence.connect(this.dest);
+    silence.connect(this.bus);
     silence.start();
   }
 
@@ -817,10 +829,10 @@ class CaptureTap {
       const bridgeDest = ctx.createMediaStreamDestination();
       gain.connect(bridgeDest);
       const bridgeSrc = this.mixer.createMediaStreamSource(bridgeDest.stream);
-      bridgeSrc.connect(this.dest);
+      bridgeSrc.connect(this.bus);
       this.bridges.set(gain, () => {
         gain.disconnect(bridgeDest);
-        bridgeSrc.disconnect(this.dest);
+        bridgeSrc.disconnect(this.bus);
       });
     } catch {
       // Context closed between the state check and wiring; nothing to tap.

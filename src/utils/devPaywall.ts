@@ -10,6 +10,7 @@ export function showDevPaywall(contentIdentifier: string): Promise<boolean> {
 
   return new Promise<boolean>((resolve) => {
     const overlay = document.createElement("div");
+    overlay.dataset.wavedash = "";
     overlay.style.cssText =
       "position:fixed;inset:0;z-index:" +
       Z_INDEX +
