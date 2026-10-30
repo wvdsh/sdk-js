@@ -33,8 +33,7 @@ export class AudioManager extends WavedashManager {
   private captureTap: CaptureTap | null = null;
   private NativeAudioContext: typeof AudioContext | null = null;
 
-  // Media the SDK itself plays (e.g. ScreenCaptureManager's frame copier):
-  // never tracked, volume-scaled, or rerouted for capture.
+  // Media the SDK itself plays: never tracked, volume-scaled, or rerouted for capture.
   private ignoredMedia = new WeakSet<HTMLMediaElement>();
 
   constructor(sdk: WavedashSDK, initialVolume = 1) {
@@ -79,7 +78,7 @@ export class AudioManager extends WavedashManager {
 
   /**
    * Build a MediaStream audio tap of everything the game plays, for gameplay
-   * capture (see ScreenCaptureManager). Returns the tap's audio tracks plus a
+   * capture by play's recorder. Returns the tap's audio tracks plus a
    * `dispose()` that tears down the capture-only graph edges. One tap at a
    * time; creating a new one disposes the previous.
    *
