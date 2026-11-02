@@ -33,9 +33,6 @@ export class AudioManager extends WavedashManager {
   private captureTap: CaptureTap | null = null;
   private NativeAudioContext: typeof AudioContext | null = null;
 
-  // Media the SDK itself plays: never tracked, volume-scaled, or rerouted for capture.
-  private ignoredMedia = new WeakSet<HTMLMediaElement>();
-
   constructor(sdk: WavedashSDK, initialVolume = 1) {
     super(sdk);
     if (
@@ -123,15 +120,6 @@ export class AudioManager extends WavedashManager {
 
   isCapturing(): boolean {
     return this.captureTap !== null;
-  }
-
-  /** Exempt an SDK-internal media element from all audio shimming. */
-  ignoreMediaElement(el: HTMLMediaElement): void {
-    this.ignoredMedia.add(el);
-  }
-
-  isIgnoredMedia(el: HTMLMediaElement): boolean {
-    return this.ignoredMedia.has(el);
   }
 
   /** Called by frame shims when a context appears while a tap is open. */
@@ -291,11 +279,7 @@ class AudioFrameShim {
    * CORS-clean is left alone (see canRouteThroughWebAudio).
    */
   private routeForCapture(el: HTMLMediaElement): void {
-    if (
-      this.webAudioElements.has(el) ||
-      this.manager.isIgnoredMedia(el) ||
-      !canRouteThroughWebAudio(el, this.win)
-    )
+    if (this.webAudioElements.has(el) || !canRouteThroughWebAudio(el, this.win))
       return;
     const live = this.liveContexts();
     let target = live[live.length - 1];
@@ -323,7 +307,7 @@ class AudioFrameShim {
 
   /** Track a media element and silence it if currently muted. Idempotent. */
   private trackElement(el: HTMLMediaElement): void {
-    if (this.intendedVolume.has(el) || this.manager.isIgnoredMedia(el)) return;
+    if (this.intendedVolume.has(el)) return;
     const volume = this.originalVolumeDescriptor?.get?.call(el) ?? el.volume;
     this.intendedVolume.set(el, volume);
     this.originalVolumeDescriptor?.set?.call(

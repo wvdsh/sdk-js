@@ -56,8 +56,7 @@ export class RecordingHotkeyManager extends WavedashManager {
   }
 
   private handleHotkeyChanged = (data: RecordingHotkeyChangedMessage): void => {
-    this.hotkey =
-      typeof data.hotkey === "string" && data.hotkey ? data.hotkey : null;
+    this.hotkey = data.hotkey || null;
   };
 
   // The host page can't see keys while the game has focus, so we catch the hotkey and report it
