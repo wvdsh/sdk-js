@@ -29,7 +29,7 @@ import { LobbyManager } from "./services/lobby";
 import type { WavedashManager } from "./services/manager";
 import { P2PManager } from "./services/p2p";
 import { PaidContentManager } from "./services/paidContent";
-import { ScreenCaptureManager } from "./services/screenCapture";
+import { RecordingHotkeyManager } from "./services/recordingHotkey";
 import { StatsManager } from "./services/stats";
 import { UGCManager } from "./services/ugc";
 import type {
@@ -163,7 +163,7 @@ class WavedashSDK extends EventTarget {
   fullscreenManager: FullscreenManager;
   sameOriginFrames: SameOriginFrames;
   audioManager: AudioManager;
-  screenCaptureManager: ScreenCaptureManager;
+  recordingHotkeyManager: RecordingHotkeyManager;
   paidContentManager: PaidContentManager;
   externalLinkManager: ExternalLinkManager;
   launchParamManager: LaunchParamManager;
@@ -203,11 +203,10 @@ class WavedashSDK extends EventTarget {
     this.friendsManager = new FriendsManager(this);
     this.gameEventManager = new GameEventManager(this);
     this.fullscreenManager = new FullscreenManager(this);
-    // Before audio and screen capture, which both follow every same-origin frame through it
+    // Before audio and the recording hotkey, which both follow every same-origin frame through it
     this.sameOriginFrames = new SameOriginFrames();
     this.audioManager = new AudioManager(this, sdkConfig.initialVolume);
-    // Depends on audioManager for the capture audio tap.
-    this.screenCaptureManager = new ScreenCaptureManager(
+    this.recordingHotkeyManager = new RecordingHotkeyManager(
       this,
       sdkConfig.recordingHotkey
     );
@@ -230,10 +229,8 @@ class WavedashSDK extends EventTarget {
       this.friendsManager,
       this.gameEventManager,
       this.fullscreenManager,
-      // Out of construction order: an in-flight recording must start flushing
-      // while the audio graph its capture tap rides is still shimmed.
-      this.screenCaptureManager,
       this.audioManager,
+      this.recordingHotkeyManager,
       this.paidContentManager,
       this.externalLinkManager
     ];

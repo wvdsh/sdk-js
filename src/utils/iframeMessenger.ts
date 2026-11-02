@@ -95,7 +95,7 @@ export class IFrameMessenger {
 
   postToParent(
     requestType: (typeof IFRAME_MESSAGE_TYPE)[keyof typeof IFRAME_MESSAGE_TYPE],
-    // Any structured-cloneable value is fine here (e.g. Blobs for capture).
+    // Any structured-cloneable value is fine here.
     data: Record<string, unknown>
   ): boolean {
     const parentOrigin = getParentOrigin();
