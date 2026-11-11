@@ -17,7 +17,8 @@ const RETRY_MAX_MS = 30_000;
  * failure (Convex keeps a good token, or rejects a bad one itself), and we run
  * our own backoff retry that re-arms Convex via `setAuth` on success. A 401
  * means the session is gone for good (only a reload mints a new one), so
- * retries stop there and the game keeps running offline.
+ * retries stop there, the host is told so it can prompt a reload, and the game
+ * keeps running offline.
  */
 export class AuthManager extends WavedashManager {
   private jwt: string | null = null;
@@ -94,6 +95,17 @@ export class AuthManager extends WavedashManager {
           );
         }
         return token;
+      })
+      .catch((error: unknown) => {
+        // Only the latest refresh decides: one queued behind this 401 may still revive the session
+        if (this.sessionExpired && this.jwtPromise === promise) {
+          this.sdk.iframeMessenger.postToParent(
+            IFRAME_MESSAGE_TYPE.SESSION_EXPIRED,
+            {}
+          );
+          this.sdk._endExpiredSession();
+        }
+        throw error;
       })
       .finally(() => {
         if (this.jwtPromise === promise) this.jwtPromise = null;

@@ -216,6 +216,30 @@ export class HeartbeatManager extends WavedashManager {
     return this.isConnected;
   }
 
+  /**
+   * The gameplay session is gone for good: report a terminal disconnect,
+   * since testConnection won't run again to observe it, then tear down.
+   * Call before the Convex client is swapped out.
+   */
+  endExpiredSession(): void {
+    const state: ConnectionState =
+      this.sdk.convexClient.client.connectionState() as ConnectionState;
+    this.isConnected = false;
+    if (!this.sentDisconnectedEvent) {
+      this.sentDisconnectedEvent = true;
+      this.sdk.gameEventManager.notifyGame(
+        WavedashEvents.BACKEND_DISCONNECTED,
+        {
+          isConnected: false,
+          hasEverConnected: state.hasEverConnected,
+          connectionCount: state.connectionCount,
+          connectionRetries: state.connectionRetries
+        } satisfies BackendConnectionPayload
+      );
+    }
+    this.destroy();
+  }
+
   /** Full teardown — stops intervals and removes all listeners */
   destroy(): void {
     this.stop();
