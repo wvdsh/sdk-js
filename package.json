@@ -52,8 +52,8 @@
     "vitest": "^4.1.12"
   },
   "dependencies": {
-    "@wvdsh/api": "^0.1.102",
-    "convex": "^1.48.0",
+    "@wvdsh/api": "^0.1.108",
+    "convex": "^1.49.0",
     "lodash.throttle": "^4.1.1"
   }
 }

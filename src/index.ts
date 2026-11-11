@@ -1666,6 +1666,34 @@ class WavedashSDK extends EventTarget {
     this.sameOriginFrames.destroy();
   }
 
+  /**
+   * Cut every server call once the gameplay session is gone for good. Unlike
+   * `_destroy`, local features (audio, fullscreen, capture, open P2P
+   * connections) keep working so the game can run offline until a reload
+   * @internal
+   */
+  _endExpiredSession(): void {
+    const expired = this.convexClient;
+    if (expired.disabled) return;
+    // Every manager reads `sdk.convexClient` per call, so later calls hit the
+    // disabled client: calls reject and subscriptions never start
+    this.convexClient = new ConvexClient(expired.client.url, {
+      disabled: true
+    });
+    this.heartbeatManager.destroy();
+
+    // A closed client never settles in-flight requests, so let them finish first
+    const closeIfSettled = (): boolean => {
+      if (expired.connectionState().hasInflightRequests) return false;
+      void expired.close();
+      return true;
+    };
+    if (closeIfSettled()) return;
+    const unsubscribe = expired.subscribeToConnectionState(() => {
+      if (closeIfSettled()) unsubscribe();
+    });
+  }
+
   private _setupSessionEndListeners(): void {
     iframeMessenger.addEventListener(IFRAME_MESSAGE_TYPE.END_SESSION, () =>
       this._destroy()
