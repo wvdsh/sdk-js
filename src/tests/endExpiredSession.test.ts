@@ -1,6 +1,7 @@
 import { api } from "@wvdsh/api";
 import type { ConnectionState } from "convex/browser";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
 
 class SilentWebSocket {
@@ -71,6 +72,23 @@ describe("WavedashSDK._endExpiredSession", () => {
 
     sdk._endExpiredSession();
     expect(close).toHaveBeenCalledTimes(1);
+  });
+
+  it("tells the game the backend is gone for good", () => {
+    const notifyGame = vi.spyOn(sdk.gameEventManager, "notifyGame");
+
+    sdk._endExpiredSession();
+    sdk._endExpiredSession();
+
+    const disconnected = notifyGame.mock.calls.filter(
+      ([event]) => event === WavedashEvents.BACKEND_DISCONNECTED
+    );
+    expect(disconnected).toEqual([
+      [
+        WavedashEvents.BACKEND_DISCONNECTED,
+        expect.objectContaining({ isConnected: false })
+      ]
+    ]);
   });
 
   it("closes the expired client only once its in-flight requests settle", () => {

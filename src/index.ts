@@ -1675,12 +1675,12 @@ class WavedashSDK extends EventTarget {
   _endExpiredSession(): void {
     const expired = this.convexClient;
     if (expired.disabled) return;
+    this.heartbeatManager.endExpiredSession();
     // Every manager reads `sdk.convexClient` per call, so later calls hit the
     // disabled client: calls reject and subscriptions never start
     this.convexClient = new ConvexClient(expired.client.url, {
       disabled: true
     });
-    this.heartbeatManager.destroy();
 
     // A closed client never settles in-flight requests, so let them finish first
     const closeIfSettled = (): boolean => {
