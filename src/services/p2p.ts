@@ -23,14 +23,11 @@ import type {
 import { WavedashEvents } from "../events";
 import type { WavedashSDK } from "../index";
 import { WavedashManager } from "./manager";
+import { TurnCredentialsManager } from "./turnCredentials";
 import { logger } from "../utils/logger";
 import { api, P2P_SIGNALING_MESSAGE_TYPE, SDKPeer } from "@wvdsh/api";
 
-// Internal P2P signaling/TURN types — not part of the public SDK surface.
-type P2PTurnCredentials = FunctionReturnType<
-  typeof api.sdk.turnCredentials.getOrCreate
->;
-
+// Internal P2P signaling types — not part of the public SDK surface.
 type P2PSessionDescriptionData = RTCSessionDescriptionInit & {
   offerId?: string;
   // Set by SDKs that accept P2PIceCandidateBatchData; older ones omit it
@@ -149,9 +146,8 @@ export class P2PManager extends WavedashManager {
   >();
   private readonly PACKET_DROP_WINDOW_MS = 500;
 
-  // TURN server credentials
-  private turnCredentials: P2PTurnCredentials | null = null;
-  private turnCredentialsInitPromise: Promise<void> | null = null;
+  // TURN server credentials, only fetched once P2P first needs ICE servers
+  private readonly turnCredentials: TurnCredentialsManager;
 
   // Signaling state
   private unsubscribeFromSignalingMessages: (() => void) | null = null;
@@ -232,10 +228,12 @@ export class P2PManager extends WavedashManager {
   constructor(sdk: WavedashSDK) {
     super(sdk);
     this.config = { ...DEFAULT_P2P_CONFIG };
+    this.turnCredentials = new TurnCredentialsManager(sdk);
   }
 
   destroy(): void {
     this.disconnectP2P();
+    this.turnCredentials.destroy();
   }
 
   private ensureInitialized(): void {
@@ -372,43 +370,6 @@ export class P2PManager extends WavedashManager {
     this.currentConnection = connection;
     await this.establishWebRTCConnections(connection);
     return connection;
-  }
-
-  /**
-   * Get ICE servers, initializing TURN credentials if necessary.
-   * Uses a promise to debounce concurrent calls and prevent race conditions.
-   */
-  private async getIceServers(): Promise<RTCIceServer[] | null> {
-    const CREDENTIALS_EXPIRY_BUFFER_MS = 1000 * 60 * 60; // 1 hour buffer
-
-    // If already initialized and not expired, return cached
-    if (
-      this.turnCredentials &&
-      this.turnCredentials.expiresAt > Date.now() + CREDENTIALS_EXPIRY_BUFFER_MS
-    ) {
-      return this.turnCredentials.iceServers;
-    }
-
-    // If initialization is already in progress, wait for it and return cached
-    if (this.turnCredentialsInitPromise) {
-      await this.turnCredentialsInitPromise;
-      return this.turnCredentials?.iceServers ?? null;
-    }
-
-    // Start initialization
-    this.turnCredentialsInitPromise = (async () => {
-      try {
-        this.turnCredentials = await this.sdk.convexClient.action(
-          api.sdk.turnCredentials.getOrCreate,
-          {}
-        );
-      } finally {
-        this.turnCredentialsInitPromise = null;
-      }
-    })();
-
-    await this.turnCredentialsInitPromise;
-    return this.turnCredentials?.iceServers ?? null;
   }
 
   private async updateP2PConnection(
@@ -991,7 +952,7 @@ export class P2PManager extends WavedashManager {
     connection: P2PConnection,
     shouldCreateChannels: boolean = false
   ): Promise<boolean> {
-    const iceServers = await this.getIceServers();
+    const iceServers = await this.turnCredentials.getIceServers();
     // While we awaited: we may have left this connection, the peer may have
     // left it, or another path (an incoming offer vs. a member list update)
     // may have created this peer's pc. Replacing that would orphan whatever
