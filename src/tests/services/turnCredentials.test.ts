@@ -115,16 +115,16 @@ describe("TurnCredentialsManager", () => {
     expect(mutation).toHaveBeenCalledTimes(1);
   });
 
-  it("rejects when generated credentials never arrive, then retries on the next call", async () => {
+  it("returns null when generated credentials never arrive, then retries on the next call", async () => {
     const { getIceServers, mutation, emit } = setup(async () => true);
 
-    const pending = getIceServers();
-    const rejection = expect(pending).rejects.toThrow(
-      "Timed out waiting for TURN credentials"
-    );
+    let result: RTCIceServer[] | null | undefined;
+    void getIceServers().then((value) => (result = value));
     emit(null);
-    await vi.advanceTimersByTimeAsync(15_000);
-    await rejection;
+    await vi.advanceTimersByTimeAsync(15_000 - 1);
+    expect(result).toBeUndefined();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(result).toBeNull();
 
     const retry = getIceServers();
     await vi.advanceTimersByTimeAsync(0);
@@ -133,13 +133,75 @@ describe("TurnCredentialsManager", () => {
     expect(await retry).toEqual(ICE_SERVERS);
   });
 
-  it("rejects when the subscription errors", async () => {
-    const { getIceServers, emitError } = setup(async () => true);
+  it("returns null when the subscription never responds", async () => {
+    const { getIceServers, mutation } = setup(async () => true);
+
+    const pending = getIceServers();
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(await pending).toBeNull();
+    expect(mutation).not.toHaveBeenCalled();
+  });
+
+  it("returns null when the mutation never settles", async () => {
+    const { getIceServers, emit } = setup(() => new Promise(() => {}));
+
+    const pending = getIceServers();
+    emit(null);
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(await pending).toBeNull();
+  });
+
+  it("resubscribes and retries after a subscription error", async () => {
+    const { getIceServers, onUpdate, unsubscribe, emit, emitError } = setup(
+      async () => true
+    );
 
     const pending = getIceServers();
     emitError(new Error("Not authenticated"));
+    // The old subscription won't report anything again; the retry must not
+    // wait on it.
+    expect(unsubscribe).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(onUpdate).toHaveBeenCalledTimes(2);
 
-    await expect(pending).rejects.toThrow("Not authenticated");
+    emit({ iceServers: ICE_SERVERS, expiresAt: Date.now() + 2 * HOUR_MS });
+    expect(await pending).toEqual(ICE_SERVERS);
+  });
+
+  it("retries a failing mutation with backoff, then gives up at the deadline", async () => {
+    const { getIceServers, mutation, emit } = setup(async () => {
+      throw new Error("Server Error");
+    });
+
+    let result: RTCIceServer[] | null | undefined;
+    void getIceServers().then((value) => (result = value));
+    emit(null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mutation).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1_000);
+    expect(mutation).toHaveBeenCalledTimes(2);
+    await vi.advanceTimersByTimeAsync(2_000);
+    expect(mutation).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(12_000);
+    expect(result).toBeNull();
+    const attempts = mutation.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(mutation).toHaveBeenCalledTimes(attempts);
+  });
+
+  it("keeps credentials it already has when a refresh fails", async () => {
+    const { getIceServers, emit } = setup(async () => {
+      throw new Error("Server Error");
+    });
+
+    const pending = getIceServers();
+    emit({ iceServers: ICE_SERVERS, expiresAt: Date.now() + HOUR_MS / 2 });
+    await vi.advanceTimersByTimeAsync(15_000);
+
+    expect(await pending).toEqual(ICE_SERVERS);
   });
 
   it("unsubscribes on destroy", async () => {
