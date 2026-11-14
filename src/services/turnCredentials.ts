@@ -31,11 +31,22 @@ export class TurnCredentialsManager extends WavedashManager {
   // Called on every subscription result, or with the subscription's error
   private listeners = new Set<(error?: unknown) => void>();
   private refreshing: Promise<void> | null = null;
+  // Ends the backoff before a refresh retry early
+  private skipBackoff: (() => void) | null = null;
+  private destroyed = false;
 
+  /**
+   * Stops for good: no refresh attempt runs or subscribes after this, and
+   * callers waiting on one get whatever credentials there are (none).
+   */
   destroy(): void {
+    this.destroyed = true;
     this.unsubscribe?.();
     this.unsubscribe = null;
     this.credentials = undefined;
+    const destroyed = new Error("TURN credentials manager destroyed");
+    for (const listener of [...this.listeners]) listener(destroyed);
+    this.skipBackoff?.();
   }
 
   /**
@@ -65,11 +76,12 @@ export class TurnCredentialsManager extends WavedashManager {
   /** Retries failed refresh attempts with backoff until the deadline. */
   private async refreshWithRetries(): Promise<void> {
     const deadline = Date.now() + REFRESH_TIMEOUT_MS;
-    for (let attempt = 0; ; attempt++) {
+    for (let attempt = 0; !this.destroyed; attempt++) {
       try {
         await this.refresh(deadline);
         return;
       } catch (error) {
+        if (this.destroyed) return;
         const delay = Math.min(
           RETRY_BASE_DELAY_MS * 2 ** attempt,
           RETRY_MAX_DELAY_MS
@@ -81,7 +93,14 @@ export class TurnCredentialsManager extends WavedashManager {
         logger.warn(
           `Failed to refresh TURN credentials, retrying in ${delay}ms: ${error}`
         );
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        await new Promise<void>((resolve) => {
+          const timer = setTimeout(resolve, delay);
+          this.skipBackoff = () => {
+            clearTimeout(timer);
+            resolve();
+          };
+        });
+        this.skipBackoff = null;
       }
     }
   }
@@ -114,7 +133,7 @@ export class TurnCredentialsManager extends WavedashManager {
   }
 
   private subscribe(): void {
-    if (this.unsubscribe) return;
+    if (this.unsubscribe || this.destroyed) return;
 
     this.unsubscribe = this.sdk.convexClient.onUpdate(
       api.sdk.turnCredentials.get,
@@ -155,6 +174,10 @@ export class TurnCredentialsManager extends WavedashManager {
         () => listener(new Error("Timed out waiting for TURN credentials")),
         deadline - Date.now()
       );
+      if (this.destroyed) {
+        listener(new Error("TURN credentials manager destroyed"));
+        return;
+      }
       this.listeners.add(listener);
       listener();
     });

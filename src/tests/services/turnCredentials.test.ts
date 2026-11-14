@@ -204,6 +204,40 @@ describe("TurnCredentialsManager", () => {
     expect(await pending).toEqual(ICE_SERVERS);
   });
 
+  it("doesn't resubscribe when destroyed during backoff", async () => {
+    const { manager, getIceServers, onUpdate, emitError } = setup(
+      async () => true
+    );
+
+    const pending = getIceServers();
+    emitError(new Error("Not authenticated"));
+    await vi.advanceTimersByTimeAsync(0);
+    manager.destroy();
+
+    expect(await pending).toBeNull();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles and stops when destroyed mid-refresh", async () => {
+    let finishMutation!: (generating: boolean) => void;
+    const { manager, getIceServers, onUpdate, mutation, emit } = setup(
+      () => new Promise((resolve) => (finishMutation = resolve))
+    );
+
+    const pending = getIceServers();
+    emit(null);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(mutation).toHaveBeenCalledTimes(1);
+    manager.destroy();
+    finishMutation(true);
+
+    expect(await pending).toBeNull();
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(onUpdate).toHaveBeenCalledTimes(1);
+    expect(mutation).toHaveBeenCalledTimes(1);
+  });
+
   it("unsubscribes on destroy", async () => {
     const { manager, getIceServers, unsubscribe, emit } = setup(
       async () => true
