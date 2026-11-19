@@ -42,7 +42,7 @@
   "devDependencies": {
     "@eslint/js": "^9.39.2",
     "@types/lodash.throttle": "^4.1.9",
-    "eslint": "^9.39.2",
+    "eslint": "^10.14.0",
     "eslint-config-prettier": "^10.1.8",
     "happy-dom": "^21.0.4",
     "prettier": "^3.7.4",
