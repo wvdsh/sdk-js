@@ -46,9 +46,7 @@ type P2PSignalingMessage = Omit<
   "data"
 > & {
   data:
-    | P2PSessionDescriptionData
-    | RTCIceCandidateInit
-    | P2PIceCandidateBatchData;
+    P2PSessionDescriptionData | RTCIceCandidateInit | P2PIceCandidateBatchData;
 };
 
 // Default P2P configuration
@@ -767,8 +765,7 @@ export class P2PManager extends WavedashManager {
 
       case P2P_SIGNALING_MESSAGE_TYPE.ICE_CANDIDATE: {
         const data = message.data as
-          | RTCIceCandidateInit
-          | P2PIceCandidateBatchData;
+          RTCIceCandidateInit | P2PIceCandidateBatchData;
         await this.addRemoteIceCandidates(
           remoteUserId,
           pc,
