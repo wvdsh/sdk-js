@@ -1,11 +1,33 @@
 name: Publish Package to npm
 
 on:
-  release:
-    types: [created]
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      previous: ${{ steps.version.outputs.previous }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read versions
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "version=$(jq -r .version package.json)" >> "$GITHUB_OUTPUT"
+          echo "previous=$(gh release list --limit 1 --json tagName --jq '.[0].tagName // empty')" >> "$GITHUB_OUTPUT"
+
   publish:
+    needs: check
+    if: needs.check.outputs.version != needs.check.outputs.previous
     runs-on: ubuntu-latest
     permissions:
       id-token: write # Required for OIDC trusted publishing + provenance
@@ -25,10 +47,25 @@ jobs:
       - name: Build package
         run: npm run build
 
-      - name: Set version (if manual trigger)
-        if: github.event_name == 'workflow_dispatch'
-        run: npm version ${{ github.event.inputs.version }} --no-git-tag-version
-
       # No NODE_AUTH_TOKEN needed - uses OIDC trusted publisher configured on npmjs.com
       - name: Publish package
         run: npm publish --access public --provenance
+
+  release:
+    needs: [check, publish]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.check.outputs.version }}
+          PREVIOUS: ${{ needs.check.outputs.previous }}
+        run: |
+          git log ${PREVIOUS:+"$PREVIOUS..HEAD"} --pretty=format:'- %h %s' > "$RUNNER_TEMP/notes.md"
+          gh release create "$VERSION" --title "$VERSION" --target "$GITHUB_SHA" --notes-file "$RUNNER_TEMP/notes.md"
