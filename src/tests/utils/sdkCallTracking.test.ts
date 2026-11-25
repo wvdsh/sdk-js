@@ -14,14 +14,18 @@ class FakeSdk {
   }
   joinLobby() {}
   getLobbyUsers() {}
-  sendP2PMessage() {}
+  sendP2PMessage(...args: unknown[]) {
+    return args;
+  }
   getP2PMaxPayloadSize() {}
   getP2PMaxIncomingMessages() {}
   getP2POutgoingMessageBuffer() {}
   listUGCItems() {}
   uploadRemoteFile() {}
   downloadRemoteFile() {}
-  getUser() {}
+  getUser() {
+    return this;
+  }
 }
 
 type Tracking = typeof import("../../utils/sdkCallTracking");
@@ -56,6 +60,43 @@ describe("SDK feature usage tracking", () => {
     sdk.getLobbyUsers();
 
     expect(recordedFeatures()).toEqual([SDK_FEATURE.LOBBY]);
+  });
+
+  it("does not count reading a function the game never calls", () => {
+    const { createLobby, joinLobby } = sdk;
+    const listUGCItems = sdk.listUGCItems.bind(sdk);
+    expect(typeof sdk.sendP2PMessage).toBe("function");
+    expect([createLobby, joinLobby, listUGCItems]).toHaveLength(3);
+
+    expect(recordedFeatures()).toEqual([]);
+    expect(fake.iframeMessenger.postToParent).not.toHaveBeenCalled();
+  });
+
+  it("records the first call through a reference read earlier and passes arguments through", () => {
+    const payload = new Uint8Array([1, 2, 3]);
+    const send = sdk.sendP2PMessage;
+
+    expect(send("user1", 2, false, payload)).toEqual([
+      "user1",
+      2,
+      false,
+      payload
+    ]);
+    expect(send("user2")).toEqual(["user2"]);
+    expect(sdk.sendP2PMessage("user3")).toEqual(["user3"]);
+
+    expect(recordedFeatures()).toEqual([SDK_FEATURE.P2P]);
+    expect(fake.iframeMessenger.postToParent).toHaveBeenCalledTimes(1);
+  });
+
+  it("swaps in the SDK-bound function after the first call", () => {
+    const beforeCall = sdk.getUser;
+    expect(beforeCall()).toBe(fake);
+
+    const afterCall = sdk.getUser;
+    expect(afterCall).not.toBe(beforeCall);
+    expect(afterCall()).toBe(fake);
+    expect(fake.iframeMessenger.postToParent).toHaveBeenCalledTimes(1);
   });
 
   it("records lobby, P2P, and UGC separately", () => {

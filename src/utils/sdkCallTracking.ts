@@ -94,16 +94,24 @@ export function createTrackedSdk(sdk: WavedashSDK): WavedashSDK {
       });
     };
 
+    // Tracks the first call, not the first read, so feature detection,
+    // destructuring, or glue code that binds methods up front doesn't count as
+    // the game using a function. The first call swaps in the original so later
+    // calls skip this wrapper and its ...args copy.
+    let called = false;
+    const trackFirstCall = (...args: unknown[]) => {
+      if (!called) {
+        called = true;
+        install(original);
+        trackSdkCall(sdk, name);
+      }
+      return original(...args);
+    };
+
     Object.defineProperty(sdk, name, {
       configurable: true,
       enumerable: descriptor.enumerable,
-      get() {
-        // Only the first call should come with the overhead of trackSdkCall
-        // After that use the original so no copying of ...args per call
-        install(original);
-        trackSdkCall(sdk, name);
-        return original;
-      },
+      get: () => trackFirstCall,
       set: install
     });
   }
