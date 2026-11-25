@@ -4,11 +4,6 @@ import type { WavedashSDK } from "../index";
 
 type SdkFeature = (typeof SDK_FEATURE)[keyof typeof SDK_FEATURE];
 
-// Calling any of these records the feature against the game on the backend,
-// which feeds the game's content rating. The P2P limit and buffer getters are
-// left out because engine SDKs call them during init whether or not the game
-// uses P2P, and event listeners are left out because engine SDKs register
-// every event up front.
 const FEATURE_BY_FUNCTION: Partial<Record<keyof WavedashSDK, SdkFeature>> = {
   createLobby: SDK_FEATURE.LOBBY,
   joinLobby: SDK_FEATURE.LOBBY,
